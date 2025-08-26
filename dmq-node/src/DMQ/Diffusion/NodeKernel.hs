@@ -110,10 +110,10 @@ newNodeKernel rng = do
   nextEpochVar <- newTVarIO Nothing
   stakePoolsVar <- newTVarIO Map.empty
   let poolValidationCtx = do
-        (nextEpochBoundary, stakePools) <-
+        (nextEpochBoundary, stakePools') <-
           atomically $ (,) <$> readTVar nextEpochVar <*> readTVar stakePoolsVar
         now <- getCurrentTime
-        return $ DMQPoolValidationCtx now nextEpochBoundary stakePools
+        return $ DMQPoolValidationCtx now nextEpochBoundary stakePools'
 
       stakePools = StakePools { stakePoolsVar, poolValidationCtx }
 
@@ -152,6 +152,7 @@ withNodeKernel :: forall crypto ntnAddr m a.
                => (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
                -> Configuration
                -> StdGen
+               -> (NodeKernel crypto ntnAddr m -> m (Either SomeException Void))
                -> (NodeKernel crypto ntnAddr m -> m a)
                -- ^ as soon as the callback exits the `mempoolWorker` and all
                -- decision logic threads will be killed
@@ -160,8 +161,8 @@ withNodeKernel tracer
                Configuration {
                  dmqcSigSubmissionLogicTracer = I sigSubmissionLogicTracer
                }
-               evolutionConfig
-               rng k = do
+               rng
+               mkStakePoolMonitor k = do
   nodeKernel@NodeKernel { mempool,
                           sigChannelVar,
                           sigSharedTxStateVar
@@ -177,10 +178,12 @@ withNodeKernel tracer
                 defaultSigDecisionPolicy
                 sigChannelVar
                 sigSharedTxStateVar)
-            $ \sigLogicThread
-      -> link mempoolThread
-      >> link sigLogicThread
-      >> k nodeKernel
+            $ \sigLogicThread ->
+      withAsync (mkStakePoolMonitor nodeKernel) \spmAid -> do
+        link mempoolThread
+        link sigLogicThread
+        link spmAid
+        k nodeKernel
 
 
 mempoolWorker :: forall crypto m.
