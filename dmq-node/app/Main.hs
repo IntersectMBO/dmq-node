@@ -70,6 +70,7 @@ runDMQ commandLineConfig = do
           dmqcTopologyFile         = I topologyFile,
           dmqcHandshakeTracer      = I handshakeTracer,
           dmqcLocalHandshakeTracer = I localHandshakeTracer,
+          dmqcCardanoNodeSocket    = I snocketPath,
           dmqcVersion              = I version
         } = config' <> commandLineConfig
             `act`
