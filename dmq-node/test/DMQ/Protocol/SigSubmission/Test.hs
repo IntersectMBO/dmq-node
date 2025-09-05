@@ -38,7 +38,7 @@ import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map qualified as Map
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Typeable
-import Data.Word (Word32)
+import Data.Word (Word32, Word64)
 import GHC.TypeNats (KnownNat)
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -140,6 +140,12 @@ tests =
 #endif
       ]
     ]
+
+-- | Maximum number of KES evolutions, we use the same value that is currently
+-- configured by Shelley genesis file.
+--
+maxKESEvo :: Word64
+maxKESEvo = 62
 
 instance Arbitrary (Hash Blake2b_256 a) where
   arbitrary = do
@@ -359,10 +365,8 @@ instance ( Crypto crypto
     -- generated.  The codec is using `floor` function to map `POSIXTime` to
     -- a `Word32` value.
     sigRawExpiresAt <- fromIntegral @Word32 <$> arbitrary
-    let maxKESOffset :: Word
-        maxKESOffset = totalPeriodsKES (Proxy :: Proxy kesCrypto)
     -- offset since `ocertKESPeriod`, so that the signature is still valid
-    kesOffset <- arbitrary `suchThat` (< maxKESOffset)
+    kesOffset <- arbitrary `suchThat` (< fromIntegral maxKESEvo)
     payload <- arbitrary
     crypto <- arbitrary
     return $ withConstrBind crypto \CryptoCtx {ocert, coldKey, snKESKey} -> do
@@ -969,8 +973,8 @@ prop_validateSig constr validity = labelValidity validity $ ioProperty do
           case validity of
             InvalidViaSigExpired {}
               -> StakeSnapshot { ssMarkPool = mempty,
-                                 ssSetPool  = mempty,
-                                 ssGoPool   = succ mempty
+                                 ssSetPool  = succ mempty,
+                                 ssGoPool   = mempty
                                }
             InvalidViaPoolNotEligible {}
               -> StakeSnapshot { ssMarkPool = mempty,
@@ -978,8 +982,8 @@ prop_validateSig constr validity = labelValidity validity $ ioProperty do
                                  ssGoPool   = mempty
                                }
             _ -> StakeSnapshot { ssMarkPool = mempty,
-                                 ssSetPool  = mempty,
-                                 ssGoPool   = succ mempty
+                                 ssSetPool  = succ mempty,
+                                 ssGoPool   = mempty
                                }
 
         posixNow  :: POSIXTime
@@ -1006,7 +1010,13 @@ prop_validateSig constr validity = labelValidity validity $ ioProperty do
               -> Map.fromList [(poolId, succ ocertN)]
             _ -> Map.fromList [(poolId, ocertN)]
 
-        validationCtx = PoolValidationCtx { vctxNow, vctxReadiness, vctxStakeMap, vctxOcertMap }
+        validationCtx = PoolValidationCtx {
+            vctxNow,
+            vctxReadiness,
+            vctxStakeMap,
+            vctxOcertMap,
+            vctxPraosMaxKESEvo = maxKESEvo -- hard coded Shelley value for testing
+          }
 
     return
       . counterexample ("KES seed: " ++ show (ctx constr))
@@ -1044,7 +1054,6 @@ prop_validateSig_mockcrypto
   -> Property
 prop_validateSig_mockcrypto = prop_validateSig . getBlind
 
--- TODO: FAILS, why?
 prop_validateSig_standardcrypto
   :: Blind (WithConstrKES (SeedSizeKES (KES StandardCrypto)) (KES StandardCrypto) (Sig StandardCrypto))
   -> Validity

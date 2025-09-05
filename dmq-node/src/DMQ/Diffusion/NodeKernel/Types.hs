@@ -90,14 +90,16 @@ data StakePools m = StakePools {
 
 data PoolValidationCtx =
   PoolValidationCtx {
-      vctxNow       :: UTCTime
+      vctxNow            :: UTCTime
       -- ^ current time
-    , vctxReadiness :: !Readiness
+    , vctxReadiness      :: !Readiness
       -- ^ if pool validation ctx was initialised by local state query
       -- mini-prototocol
-    , vctxStakeMap  :: !(Map PoolId LedgerQuery.StakeSnapshot)
+    , vctxStakeMap       :: !(Map PoolId LedgerQuery.StakeSnapshot)
       -- ^ for signature validation
-    , vctxOcertMap  :: !(Map PoolId Word64)
+    , vctxOcertMap       :: !(Map PoolId Word64)
       -- ^ ocert counters to check monotonicity
+    , vctxPraosMaxKESEvo :: !Word64
+      -- ^ maximum number of KES iterations (read from the Shelley genesis file)
     }
   deriving Show

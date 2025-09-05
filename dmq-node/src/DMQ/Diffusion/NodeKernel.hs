@@ -42,6 +42,7 @@ import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 import DMQ.Configuration
 import DMQ.Diffusion.NodeKernel.Types
 import DMQ.Diffusion.PeerSelection.PeerMetric (mkPeerMetric)
+import DMQ.Genesis
 import DMQ.Policy qualified as Policy
 import DMQ.Protocol.SigSubmission.Type (Sig (sigExpiresAt, sigId), SigId)
 import DMQ.Tracer
@@ -52,8 +53,9 @@ newNodeKernel :: forall crypto ntnAddr m.
                  , Ord ntnAddr
                  )
               => StdGen
+              -> ShelleyGenesis
               -> m (NodeKernel crypto ntnAddr m)
-newNodeKernel rng = do
+newNodeKernel rng ShelleyGenesis {sgMaxKESEvolutions} = do
   publicPeerSelectionStateVar <- makePublicPeerSelectionStateVar
 
   keepAliveRegistry <- newKeepAliveRegistry
@@ -78,6 +80,7 @@ newNodeKernel rng = do
                 <$> readTVar readinessVar
                 <*> readTVar stakePoolsVar
                 <*> readTVar ocertCountersVar
+                <*> pure sgMaxKESEvolutions
         let (a, PoolValidationCtx {vctxOcertMap}) = f ctx
         writeTVar ocertCountersVar vctxOcertMap
         return a
@@ -124,6 +127,7 @@ withNodeKernel :: forall crypto ntnAddr ntcAddr m a.
                   )
                => DMQTracers crypto ntnAddr ntcAddr m
                -> Configuration
+               -> ShelleyGenesis
                -> StdGen
                -> (NetworkMagic -> NodeKernel crypto ntnAddr m -> m (Either SomeException Void))
                -> (NodeKernel crypto ntnAddr m -> m a)
@@ -134,13 +138,14 @@ withNodeKernel DMQTracers { sigSubmissionLogicTracer }
                Configuration {
                  dmqcCardanoNetworkMagic = I networkMagic
                }
+               shelleyGenesis
                rng
                mkStakePoolMonitor k = do
   nodeKernel@NodeKernel { mempool,
                           sigChannelVar,
                           sigSharedTxStateVar
                         }
-    <- newNodeKernel rng
+    <- newNodeKernel rng shelleyGenesis
   withAsync (mempoolWorker mempool)
           $ \mempoolThread ->
     withAsync (decisionLogicThreads

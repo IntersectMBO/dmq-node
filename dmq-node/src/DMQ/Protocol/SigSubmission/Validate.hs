@@ -27,7 +27,6 @@ import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Map.Strict qualified as Map
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
-import Data.Typeable
 
 import Cardano.Crypto.DSIGN.Class qualified as DSIGN
 import Cardano.Crypto.Hash.Class (castHash, hashWith)
@@ -71,7 +70,7 @@ validateSig :: forall crypto.
             => [Sig crypto]
             -> PoolValidationCtx
             -> ([Either (SigId, SigValidationError) (Sig crypto)], PoolValidationCtx)
-validateSig sigs ctx0@PoolValidationCtx { vctxNow = now } =
+validateSig sigs ctx0@PoolValidationCtx { vctxNow = now, vctxPraosMaxKESEvo = maxKESEvo } =
     State.runState (traverse (exceptions . validate) sigs) ctx0
   where
     exceptions :: StateT s (Except e) a
@@ -168,10 +167,8 @@ validateSig sigs ctx0@PoolValidationCtx { vctxNow = now } =
         startKESPeriod, endKESPeriod :: KESPeriod
 
         startKESPeriod = ocertKESPeriod
-        -- TODO: is `totalPeriodsKES` the same as `praosMaxKESEvo`
-        -- or `sgMaxKESEvolution` in the genesis file?
         endKESPeriod   = KESPeriod $ unKESPeriod startKESPeriod
-                                   + totalPeriodsKES (Proxy :: Proxy (KES crypto))
+                                   + fromIntegral maxKESEvo
 
         (?!:) :: Either err ()
               -> (err -> SigValidationError)

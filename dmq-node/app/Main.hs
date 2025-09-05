@@ -17,6 +17,7 @@ import Control.Monad (unless, void, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
+import Control.Monad.Trans.Except (runExceptT)
 import "contra-tracer" Control.Tracer (nullTracer, traceWith)
 
 import Data.Act
@@ -48,6 +49,7 @@ import DMQ.Diffusion.Applications (diffusionApplications)
 import DMQ.Diffusion.Arguments
 import DMQ.Diffusion.NodeKernel as NodeKernel
 import DMQ.Diffusion.PeerSelectionPolicy (policy)
+import DMQ.Genesis
 import DMQ.Handlers.TopLevel (toplevelExceptionHandler)
 import DMQ.NodeToClient qualified as NtC
 import DMQ.NodeToClient.LocalStateQueryClient
@@ -57,6 +59,7 @@ import DMQ.Policy qualified as Policy
 import DMQ.Protocol.SigSubmission.Type (Sig (..))
 import DMQ.Protocol.SigSubmission.Validate
 import DMQ.Tracer (DMQStartupTrace (..), DMQTracers (..), mkDMQTracers)
+
 import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.PeerSharing.Codec (decodeRemoteAddress,
@@ -94,7 +97,10 @@ runDMQ commandLineConfig = do
           dmqcTopologyFile          = I topologyFile,
           dmqcCardanoNodeSocket     = I socketPath,
           dmqcVersion               = I version,
-          dmqcLedgerPeers           = I ledgerPeers
+          dmqcLedgerPeers           = I ledgerPeers,
+          dmqcShelleyGenesisFile    = I genesisFile,
+          dmqcShelleyGenesisHash    = I genesisHash
+
         } =     fromRight mempty config'
              <> commandLineConfig
             `act`
@@ -168,6 +174,9 @@ runDMQ commandLineConfig = do
     let (psRng, policyRng) = Random.splitGen stdGen
     policyRngVar <- newTVarIO policyRng
 
+    (shelleyGenesis, _) <-
+      runExceptT (readGenesis genesisFile genesisHash) >>= either throwIO pure
+
     -- TODO: this might not work, since `ouroboros-network` creates its own IO Completion Port.
     withIOManager \iocp -> do
       let localSnocket'      = localSnocket iocp
@@ -180,6 +189,7 @@ runDMQ commandLineConfig = do
       withNodeKernel @StandardCrypto
                      dmqTracers
                      dmqConfig
+                     shelleyGenesis
                      psRng
                      mkStakePoolMonitor $ \nodeKernel -> do
         dmqDiffusionConfiguration <-
