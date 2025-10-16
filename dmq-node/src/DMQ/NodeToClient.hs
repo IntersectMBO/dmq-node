@@ -16,6 +16,7 @@ module DMQ.NodeToClient
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy (ByteString)
 import Data.Functor.Contravariant ((>$<))
+import Data.Typeable
 import Data.Void
 import Data.Word
 
@@ -137,15 +138,17 @@ _ntc_MAX_SIGS_TO_ACK = 1000
 -- | Construct applications for the node-to-client protocols
 --
 ntcApps
-  :: forall crypto idx ntcAddr failure m.
+  :: forall crypto idx ntcAddr m.
      ( MonadThrow m
      , MonadThread m
      , MonadSTM m
      , Crypto crypto
      , Aeson.ToJSON ntcAddr
      , Aeson.ToJSON (MempoolAddFail (Sig crypto))
+     , Show (MempoolAddFail (Sig crypto))
      , ShowProxy (MempoolAddFail (Sig crypto))
      , ShowProxy (Sig crypto)
+     , Typeable crypto
      )
   => (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
   -> Configuration
