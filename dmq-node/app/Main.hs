@@ -1,5 +1,7 @@
+{-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE MultiWayIf               #-}
+{-# LANGUAGE OverloadedRecordDot      #-}
 {-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TemplateHaskell          #-}
@@ -8,7 +10,7 @@
 
 module Main where
 
-import Control.Exception (throwIO)
+import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad (void, when)
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
 
@@ -16,6 +18,7 @@ import Data.Act
 import Data.Aeson (ToJSON)
 import Data.ByteString.Lazy qualified as BSL
 import Data.Functor.Contravariant ((>$<))
+import Data.List.NonEmpty (NonEmpty)
 import Data.Maybe (maybeToList)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
@@ -48,6 +51,7 @@ import DMQ.Diffusion.PeerSelection (policy)
 import DMQ.NodeToClient.LocalStateQueryClient
 import DMQ.Protocol.SigSubmission.Validate
 import Ouroboros.Network.Diffusion qualified as Diffusion
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.PeerSharing.Codec (decodeRemoteAddress,
            encodeRemoteAddress)
 import Ouroboros.Network.SizeInBytes
@@ -122,7 +126,8 @@ runDMQ commandLineConfig = do
                      dmqConfig
                      psRng
                      mkStakePoolMonitor $ \nodeKernel -> do
-        dmqDiffusionConfiguration <- mkDiffusionConfiguration dmqConfig nt
+        dmqDiffusionConfiguration <-
+          mkDiffusionConfiguration dmqConfig nt (nodeKernel.stakePools.ledgerBigPeersVar)
 
         let sigSize :: Sig StandardCrypto -> SizeInBytes
             sigSize = fromIntegral . BSL.length . sigRawBytes
@@ -164,6 +169,12 @@ runDMQ commandLineConfig = do
                                  (if localHandshakeTracer
                                     then WithEventType "Handshake" >$< tracer
                                     else nullTracer)
+                                 $ maybe [] out <$> (tryReadTMVar $ nodeKernel.stakePools.ledgerPeersVar)
+              where
+                out :: LedgerPeerSnapshot AllLedgerPeers
+                    -> [(PoolStake, NonEmpty LedgerRelayAccessPoint)]
+                out (LedgerAllPeerSnapshotV23 _pt _magic relays) = relays
+
             dmqDiffusionApplications =
               diffusionApplications nodeKernel
                                     dmqConfig
