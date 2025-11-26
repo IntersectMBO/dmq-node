@@ -1,0 +1,44 @@
+{ inputs, pkgs, lib }:
+
+let
+  cabalProject = pkgs.haskell-nix.cabalProject' (
+
+    { config, pkgs, ... }:
+
+    {
+      name = "dmq-node";
+
+      compiler-nix-name = lib.mkDefault "ghc967";
+
+      src = lib.cleanSource ../.;
+
+      flake.variants = {
+        ghc967 = { }; # Alias for the default variant
+        # ghc9122.compiler-nix-name = "ghc9122";
+      };
+
+      inputMap = { "https://chap.intersectmbo.org/" = inputs.CHaP; };
+
+      crossPlatforms = p:
+        lib.optionals (pkgs.stdenv.hostPlatform.isLinux && config.compiler-nix-name == "ghc966")
+                      [ p.ucrt64 p.musl64 ];
+
+      modules = [{
+        packages = lib.mkIf pkgs.stdenv.hostPlatform.isMusl {
+            # ruby fails to build with musl, hence we disable cddl tests
+            dmq-node.components.tests.dmq-cddl.build-tools = lib.mkForce [ ];
+            dmq-node.components.tests.dmq-cddl.doCheck = lib.mkForce false;
+            dmq-node.ghcOptions = with pkgs; [
+              "-L${lib.getLib static-gmp}/lib"
+              "-L${lib.getLib static-libsodium-vrf}/lib"
+              "-L${lib.getLib static-secp256k1}/lib"
+              "-L${lib.getLib static-libblst}/lib"
+            ];
+        };
+      }];
+    }
+  );
+
+in
+
+cabalProject
