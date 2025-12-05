@@ -1168,4 +1168,4 @@ There are more general guidelines on how we write and structure code.
    use that shared code in a test suite defined in another package. To avoid
    this problem, we avoid sharing source directories in `cabal` files.
 
-[consensus-style-guide]: ../ouroboros-consensus/docs/StyleGuide.md
+[consensus-style-guide]: https://github.com/IntersectMBO/ouroboros-consensus/blob/main/docs/website/contents/howtos/contributing/style_guide.md

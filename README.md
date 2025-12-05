@@ -1,5 +1,7 @@
 # Decentralized Message Queue
 
+TODO fix these links
+
 [![mingw64](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/build.yml?event=merge_group&label=mingw64&style=for-the-badge)](https://github.com/intersectmbo/ouroboros-network/actions/workflows/build.yml)
 [![Nightly CI](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/nightly.yml?branch=main&label=Nightly&style=for-the-badge)](https://github.com/intersectmbo/ouroboros-network/actions/workflows/nightly.yml)
 
@@ -8,7 +10,7 @@ and consuming messages which are diffused over a P2P network to other nodes.
 
 This repository provides the `dmq-node` executable to participate in the DMQ network.
 
-todo
+TODO diagram
 ```mermaid
 stateDiagram-v2
     dn: dmq-node
