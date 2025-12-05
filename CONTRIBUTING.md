@@ -89,6 +89,9 @@ is very helpful to diagnose build time compiler errors.
 Any contributions should be well documented.  APIs should have well-written
 `haddocks`.  If a particular function expects a precondition to be satisfied it
 should be explicitly mentioned.  The inline documentation is published at
+
+-- TODO link
+
 <https://ouroboros-network.cardano.intersectmbo.org>.  When writing haddocks
 it's always good to put oneself in the position of somebody who hasn't yet
 interacted with your code changes.  It's good to explain the key design choices
