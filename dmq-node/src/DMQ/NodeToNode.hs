@@ -4,7 +4,6 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeOperators       #-}
 
 module DMQ.NodeToNode
   ( RemoteAddress
@@ -148,10 +147,6 @@ data Apps addr m a b =
 ntnApps
   :: forall crypto m addr idx.
     ( Crypto crypto
-    -- , DSIGN.ContextDSIGN (DSIGN crypto) ~ ()
-    -- , DSIGN.Signable (DSIGN crypto) (OCertSignable crypto)
-    -- , KES.ContextKES (KES crypto) ~ ()
-    -- , KES.Signable (KES crypto) BS.ByteString
     , Typeable crypto
     , Alternative (STM m)
     , MonadAsync m
