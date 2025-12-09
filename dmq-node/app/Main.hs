@@ -127,7 +127,7 @@ runDMQ commandLineConfig = do
                      psRng
                      mkStakePoolMonitor $ \nodeKernel -> do
         dmqDiffusionConfiguration <-
-          mkDiffusionConfiguration dmqConfig nt (nodeKernel.stakePools.ledgerBigPeersVar)
+          mkDiffusionConfiguration dmqConfig nt nodeKernel.stakePools.ledgerBigPeersVar
 
         let sigSize :: Sig StandardCrypto -> SizeInBytes
             sigSize = fromIntegral . BSL.length . sigRawBytes
@@ -169,7 +169,7 @@ runDMQ commandLineConfig = do
                                  (if localHandshakeTracer
                                     then WithEventType "Handshake" >$< tracer
                                     else nullTracer)
-                                 $ maybe [] out <$> (tryReadTMVar $ nodeKernel.stakePools.ledgerPeersVar)
+                                 $ maybe [] out <$> tryReadTMVar nodeKernel.stakePools.ledgerPeersVar
               where
                 out :: LedgerPeerSnapshot AllLedgerPeers
                     -> [(PoolStake, NonEmpty LedgerRelayAccessPoint)]
