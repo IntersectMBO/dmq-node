@@ -108,43 +108,48 @@ cardanoClient _tracer StakePools { stakePoolsVar, ledgerPeersVar, ledgerBigPeers
       atomically do
         writeTVar stakePoolsVar ssStakeSnapshots
         writeTVar nextEpochVar $ Just nextEpoch
-      pure $
-        SendMsgQuery (BlockQuery . QueryIfCurrentConway $ GetLedgerPeerSnapshot AllLedgerPeers)
-        $ wrappingMismatch handleLedgerPeers
-      where
-        handleLedgerPeers (SomeLedgerPeerSnapshot (LedgerAllPeerSnapshotV23 pt magic peers)) = do
-          let bigSrvRelays = force
-                [(accStake, (stake, NonEmpty.fromList relays'))
-                | (accStake, (stake, relays)) <- accumulateBigLedgerStake peers
-                , let relays' = NonEmpty.filter
-                                  (\case
-                                      LedgerRelayAccessSRVDomain {} -> True
-                                      _ -> False
-                                  )
-                                  relays
-                , not (null relays')
-                ]
-              pt' = Point $ getPoint pt <&>
-                              \blk -> blk { blockPointSlot = maxBound }
-              srvRelays = force
-                [ (stake, NonEmpty.fromList relays')
-                | (stake, relays) <- peers
-                , let relays' = NonEmpty.filter
-                                  (\case
-                                      LedgerRelayAccessSRVDomain {} -> True
-                                      _ -> False
-                                  )
-                                  relays
-                , not (null relays')
-                ]
-          atomically do
-            writeTMVar ledgerPeersVar $ LedgerAllPeerSnapshotV23 pt magic srvRelays
-            writeTVar  ledgerBigPeersVar . Just $! LedgerBigPeerSnapshotV23 pt' magic bigSrvRelays
-          pure $ SendMsgRelease do
-            threadDelay $ min (realToFrac toNextEpoch) 86400 -- TODO fuzz this?
-            idle $ Just systemStart
+      pure $ SendMsgRelease do
+        threadDelay $ min (realToFrac toNextEpoch) 86400 -- TODO fuzz this?
+        idle $ Just systemStart
 
-        handleLedgerPeers _ = error "handleLedgerPeers: impossible!"
+      -- TODO uncomment once this functionality is integrated into cardano-node
+      -- pure $
+      --   SendMsgQuery (BlockQuery . QueryIfCurrentConway $ GetLedgerPeerSnapshot AllLedgerPeers)
+      --   $ wrappingMismatch handleLedgerPeers
+      -- where
+      --   handleLedgerPeers (SomeLedgerPeerSnapshot (LedgerAllPeerSnapshotV23 pt magic peers)) = do
+      --     let bigSrvRelays = force
+      --           [(accStake, (stake, NonEmpty.fromList relays'))
+      --           | (accStake, (stake, relays)) <- accumulateBigLedgerStake peers
+      --           , let relays' = NonEmpty.filter
+      --                             (\case
+      --                                 LedgerRelayAccessSRVDomain {} -> True
+      --                                 _ -> False
+      --                             )
+      --                             relays
+      --           , not (null relays')
+      --           ]
+      --         pt' = Point $ getPoint pt <&>
+      --                         \blk -> blk { blockPointSlot = maxBound }
+      --         srvRelays = force
+      --           [ (stake, NonEmpty.fromList relays')
+      --           | (stake, relays) <- peers
+      --           , let relays' = NonEmpty.filter
+      --                             (\case
+      --                                 LedgerRelayAccessSRVDomain {} -> True
+      --                                 _ -> False
+      --                             )
+      --                             relays
+      --           , not (null relays')
+      --           ]
+      --     atomically do
+      --       writeTMVar ledgerPeersVar $ LedgerAllPeerSnapshotV23 pt magic srvRelays
+      --       writeTVar  ledgerBigPeersVar . Just $! LedgerBigPeerSnapshotV23 pt' magic bigSrvRelays
+      --     pure $ SendMsgRelease do
+      --       threadDelay $ min (realToFrac toNextEpoch) 86400 -- TODO fuzz this?
+      --       idle $ Just systemStart
+
+      -- handleLedgerPeers _ = error "handleLedgerPeers: impossible!"
 
 
 connectToCardanoNode :: Tracer IO (WithEventType String)
