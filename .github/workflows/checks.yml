@@ -1,0 +1,28 @@
+name: Project checks
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+on:
+  pull_request:
+  merge_group:
+
+jobs:
+  check-changelogs:
+    name: Check changelogs
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+    - name: Install dependencies
+      run: sudo apt install -y fd-find
+
+    - uses: actions/checkout@v6
+      with:
+        fetch-depth: 0
+
+    - name: Check changelogs
+      run: ./scripts/ci/check-changelogs.sh

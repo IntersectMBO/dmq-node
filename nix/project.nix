@@ -21,10 +21,15 @@ let
 
       crossPlatforms = p:
         lib.optionals (pkgs.stdenv.hostPlatform.isLinux && config.compiler-nix-name == "ghc966")
-                      [ p.ucrt64 p.musl64 ];
+          [ p.ucrt64 p.musl64 ];
 
-      modules = [{
-        packages = lib.mkIf pkgs.stdenv.hostPlatform.isMusl {
+      modules = [
+        {
+          packages.dmq-node.components.tests.dmq-cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag pkgs.cddlc ];
+          packages.dmq-node.components.tests.dmq-cddl.preCheck = "export HOME=`pwd`";
+        }
+        {
+          packages = lib.mkIf pkgs.stdenv.hostPlatform.isMusl {
             # ruby fails to build with musl, hence we disable cddl tests
             dmq-node.components.tests.dmq-cddl.build-tools = lib.mkForce [ ];
             dmq-node.components.tests.dmq-cddl.doCheck = lib.mkForce false;
@@ -34,8 +39,9 @@ let
               "-L${lib.getLib static-secp256k1}/lib"
               "-L${lib.getLib static-libblst}/lib"
             ];
-        };
-      }];
+          };
+        }
+      ];
     }
   );
 
