@@ -20,9 +20,7 @@ import Data.Map.Strict qualified as Map
 import Data.Proxy
 import Data.Void
 
-import Cardano.Chain.Genesis
 import Cardano.Chain.Slotting
-import Cardano.Crypto.ProtocolMagic
 import Cardano.Network.NodeToClient
 import Cardano.Slotting.EpochInfo.API
 import Cardano.Slotting.Time
@@ -152,9 +150,10 @@ cardanoClient _tracer StakePools { stakePoolsVar, ledgerPeersVar, ledgerBigPeers
 connectToCardanoNode :: Tracer IO (WithEventType String)
                      -> LocalSnocket
                      -> FilePath
+                     -> NetworkMagic
                      -> NodeKernel crypto ntnAddr IO
                      -> IO (Either SomeException Void)
-connectToCardanoNode tracer localSnocket' snocketPath nodeKernel =
+connectToCardanoNode tracer localSnocket' snocketPath networkMagic nodeKernel =
   connectTo
    localSnocket'
    nullNetworkConnectTracers --debuggingNetworkConnectTracers
@@ -162,10 +161,7 @@ connectToCardanoNode tracer localSnocket' snocketPath nodeKernel =
      [ simpleSingletonVersions
          version
          NodeToClientVersionData {
-             networkMagic =
-                   NetworkMagic -- 2 {- preview net -}
-                 . unProtocolMagicId
-                 $ mainnetProtocolMagicId
+             networkMagic
            , query = False
          }
          \_version ->

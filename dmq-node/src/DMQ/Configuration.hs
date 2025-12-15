@@ -32,6 +32,8 @@ module DMQ.Configuration
   , LocalAddress (..)
   ) where
 
+import Cardano.Chain.Genesis (mainnetProtocolMagicId)
+import Cardano.Crypto.ProtocolMagic (ProtocolMagicId(..))
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI (DiffTime)
@@ -99,7 +101,10 @@ data Configuration' f =
     dmqcProtocolIdleTimeout                        :: f DiffTime,
     dmqcChurnInterval                              :: f DiffTime,
     dmqcPeerSharing                                :: f PeerSharing,
+    -- network magic for the DMQ network itself
     dmqcNetworkMagic                               :: f NetworkMagic,
+    -- network magic for local connections to a cardano-node
+    dmqcCardanoNetworkMagic                        :: f NetworkMagic,
     dmqcCardanoNodeSocket                          :: f FilePath,
     dmqcPrettyLog                                  :: f Bool,
 
@@ -205,6 +210,8 @@ defaultConfiguration = Configuration {
       dmqcIPv6                                       = I Nothing,
       dmqcLocalAddress                               = I (LocalAddress "dmq-node.socket"),
       dmqcNetworkMagic                               = I NetworkMagic { unNetworkMagic = 3_141_592 },
+      dmqcCardanoNetworkMagic                        =
+        I (NetworkMagic . unProtocolMagicId $ mainnetProtocolMagicId),
       dmqcPortNumber                                 = I 3_141,
       dmqcConfigFile                                 = I "dmq.configuration.yaml",
       dmqcTopologyFile                               = I "dmq.topology.json",
@@ -296,6 +303,7 @@ instance FromJSON PartialConfig where
       dmqcLocalAddress <- Last . fmap LocalAddress <$> v .:? "LocalAddress"
       dmqcPortNumber <- Last . fmap (fromIntegral @Int) <$> v.:? "PortNumber"
       dmqcNetworkMagic <- Last . fmap NetworkMagic <$> v .:? "NetworkMagic"
+      dmqcCardanoNetworkMagic <- Last . fmap NetworkMagic <$> v .:? "CardanoNetworkMagic"
       dmqcDiffusionMode <- Last <$> v .:? "DiffusionMode"
       dmqcPeerSharing <- Last <$> v .:? "PeerSharing"
       dmqcCardanoNodeSocket <- Last <$> v .:? "CardanoNodeSocket"
@@ -358,11 +366,11 @@ instance FromJSON PartialConfig where
 
       pure $
         Configuration
-          { dmqcIPv4         = Last dmqcIPv4
-          , dmqcIPv6         = Last dmqcIPv6
-          , dmqcConfigFile   = mempty
-          , dmqcTopologyFile = mempty
-          , dmqcVersion      = mempty
+          { dmqcIPv4                = Last dmqcIPv4
+          , dmqcIPv6                = Last dmqcIPv6
+          , dmqcConfigFile          = mempty
+          , dmqcTopologyFile        = mempty
+          , dmqcVersion             = mempty
           , ..
           }
 
@@ -390,6 +398,7 @@ instance ToJSON Configuration where
            , "ChurnInterval"                              .= unI dmqcChurnInterval
            , "PeerSharing"                                .= unI dmqcPeerSharing
            , "NetworkMagic"                               .= unNetworkMagic (unI dmqcNetworkMagic)
+           , "CardanoNetworkMagic"                        .= unNetworkMagic (unI dmqcCardanoNetworkMagic)
            , "PrettyLog"                                  .= unI dmqcPrettyLog
            , "MuxTracer"                                  .= unI dmqcMuxTracer
            , "ChannelTracer"                              .= unI dmqcChannelTracer

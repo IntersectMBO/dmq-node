@@ -40,6 +40,7 @@ import Ouroboros.Consensus.Shelley.Ledger.Query
 import Ouroboros.Network.BlockFetch (FetchClientRegistry,
            newFetchClientRegistry)
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
+import Ouroboros.Network.Magic (NetworkMagic (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
            (makePublicPeerSelectionStateVar)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
@@ -171,14 +172,15 @@ withNodeKernel :: forall crypto ntnAddr m a.
                => (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
                -> Configuration
                -> StdGen
-               -> (NodeKernel crypto ntnAddr m -> m (Either SomeException Void))
+               -> (NetworkMagic -> NodeKernel crypto ntnAddr m -> m (Either SomeException Void))
                -> (NodeKernel crypto ntnAddr m -> m a)
                -- ^ as soon as the callback exits the `mempoolWorker` and all
                -- decision logic threads will be killed
                -> m a
 withNodeKernel tracer
                Configuration {
-                 dmqcSigSubmissionLogicTracer = I sigSubmissionLogicTracer
+                 dmqcSigSubmissionLogicTracer = I sigSubmissionLogicTracer,
+                 dmqcCardanoNetworkMagic      = I networkMagic
                }
                rng
                mkStakePoolMonitor k = do
@@ -198,7 +200,7 @@ withNodeKernel tracer
                 sigChannelVar
                 sigSharedTxStateVar)
             $ \sigLogicThread ->
-      withAsync (mkStakePoolMonitor nodeKernel) \spmAid -> do
+      withAsync (mkStakePoolMonitor networkMagic nodeKernel) \spmAid -> do
         link mempoolThread
         link sigLogicThread
         link spmAid
