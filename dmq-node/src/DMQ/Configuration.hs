@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds                  #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleContexts           #-}
@@ -31,7 +32,9 @@ module DMQ.Configuration
   , LocalAddress (..)
   ) where
 
-import Control.Concurrent.Class.MonadSTM (MonadSTM (..))
+import Cardano.Chain.Genesis (mainnetProtocolMagicId)
+import Cardano.Crypto.ProtocolMagic (ProtocolMagicId(..))
+import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI (DiffTime)
 import Data.Act
@@ -48,11 +51,8 @@ import Data.Text (Text)
 import Data.Text qualified as Text
 import Generic.Data (gmappend, gmempty)
 import GHC.Generics (Generic)
-import GHC.Stack (HasCallStack)
 import Network.Socket (AddrInfo (..), AddrInfoFlag (..), PortNumber,
            SocketType (..), defaultHints, getAddrInfo)
-import System.Directory qualified as Directory
-import System.FilePath qualified as FilePath
 import System.IO.Error (isDoesNotExistError)
 import Text.Read (readMaybe)
 
@@ -69,14 +69,13 @@ import Ouroboros.Network.OrphanInstances ()
 import Ouroboros.Network.PeerSelection.Governor.Types
            (PeerSelectionTargets (..), makePublicPeerSelectionStateVar)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (LedgerPeerSnapshot (..))
+           (LedgerPeerSnapshot (..), LedgerPeersKind (..))
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
 import Ouroboros.Network.TxSubmission.Inbound.V2 (TxDecisionPolicy (..))
 
-import DMQ.Configuration.Topology (NoExtraConfig (..), NoExtraFlags (..),
-           readPeerSnapshotFileOrError)
+import DMQ.Configuration.Topology (NoExtraConfig (..), NoExtraFlags (..))
 
 -- | Configuration comes in two flavours paramemtrised by `f` functor:
 -- `PartialConfig` is using `Last` and `Configuration` is using an identity
@@ -102,7 +101,11 @@ data Configuration' f =
     dmqcProtocolIdleTimeout                        :: f DiffTime,
     dmqcChurnInterval                              :: f DiffTime,
     dmqcPeerSharing                                :: f PeerSharing,
+    -- network magic for the DMQ network itself
     dmqcNetworkMagic                               :: f NetworkMagic,
+    -- network magic for local connections to a cardano-node
+    dmqcCardanoNetworkMagic                        :: f NetworkMagic,
+    dmqcCardanoNodeSocket                          :: f FilePath,
     dmqcPrettyLog                                  :: f Bool,
 
     dmqcMuxTracer                                  :: f Bool,
@@ -207,11 +210,14 @@ defaultConfiguration = Configuration {
       dmqcIPv6                                       = I Nothing,
       dmqcLocalAddress                               = I (LocalAddress "dmq-node.socket"),
       dmqcNetworkMagic                               = I NetworkMagic { unNetworkMagic = 3_141_592 },
+      dmqcCardanoNetworkMagic                        =
+        I (NetworkMagic . unProtocolMagicId $ mainnetProtocolMagicId),
       dmqcPortNumber                                 = I 3_141,
       dmqcConfigFile                                 = I "dmq.configuration.yaml",
       dmqcTopologyFile                               = I "dmq.topology.json",
       dmqcAcceptedConnectionsLimit                   = I defaultAcceptedConnectionsLimit,
       dmqcDiffusionMode                              = I InitiatorAndResponderDiffusionMode,
+      dmqcCardanoNodeSocket                          = I "cardano-node.socket",
       dmqcTargetOfRootPeers                          = I targetNumberOfRootPeers,
       dmqcTargetOfKnownPeers                         = I targetNumberOfKnownPeers,
       dmqcTargetOfEstablishedPeers                   = I targetNumberOfEstablishedPeers,
@@ -297,8 +303,10 @@ instance FromJSON PartialConfig where
       dmqcLocalAddress <- Last . fmap LocalAddress <$> v .:? "LocalAddress"
       dmqcPortNumber <- Last . fmap (fromIntegral @Int) <$> v.:? "PortNumber"
       dmqcNetworkMagic <- Last . fmap NetworkMagic <$> v .:? "NetworkMagic"
+      dmqcCardanoNetworkMagic <- Last . fmap NetworkMagic <$> v .:? "CardanoNetworkMagic"
       dmqcDiffusionMode <- Last <$> v .:? "DiffusionMode"
       dmqcPeerSharing <- Last <$> v .:? "PeerSharing"
+      dmqcCardanoNodeSocket <- Last <$> v .:? "CardanoNodeSocket"
 
       dmqcTargetOfRootPeers                 <- Last <$> v .:? "TargetNumberOfRootPeers"
       dmqcTargetOfKnownPeers                <- Last <$> v .:? "TargetNumberOfKnownPeers"
@@ -358,11 +366,11 @@ instance FromJSON PartialConfig where
 
       pure $
         Configuration
-          { dmqcIPv4         = Last dmqcIPv4
-          , dmqcIPv6         = Last dmqcIPv6
-          , dmqcConfigFile   = mempty
-          , dmqcTopologyFile = mempty
-          , dmqcVersion      = mempty
+          { dmqcIPv4                = Last dmqcIPv4
+          , dmqcIPv6                = Last dmqcIPv6
+          , dmqcConfigFile          = mempty
+          , dmqcTopologyFile        = mempty
+          , dmqcVersion             = mempty
           , ..
           }
 
@@ -375,6 +383,7 @@ instance ToJSON Configuration where
            , "PortNumber"                                 .= unI dmqcPortNumber
            , "LocalAddress"                               .= unI dmqcLocalAddress
            , "ConfigFile"                                 .= unI dmqcConfigFile
+           , "CardanoNodeSocket"                          .= unI dmqcCardanoNodeSocket
            , "TopologyFile"                               .= unI dmqcTopologyFile
            , "AcceptedConnectionsLimit"                   .= unI dmqcAcceptedConnectionsLimit
            , "DiffusionMode"                              .= unI dmqcDiffusionMode
@@ -389,6 +398,7 @@ instance ToJSON Configuration where
            , "ChurnInterval"                              .= unI dmqcChurnInterval
            , "PeerSharing"                                .= unI dmqcPeerSharing
            , "NetworkMagic"                               .= unNetworkMagic (unI dmqcNetworkMagic)
+           , "CardanoNetworkMagic"                        .= unNetworkMagic (unI dmqcCardanoNetworkMagic)
            , "PrettyLog"                                  .= unI dmqcPrettyLog
            , "MuxTracer"                                  .= unI dmqcMuxTracer
            , "ChannelTracer"                              .= unI dmqcChannelTracer
@@ -467,16 +477,15 @@ readConfigurationFileOrError nc =
              pure
 
 mkDiffusionConfiguration
-  :: HasCallStack
-  => Configuration
+  :: Configuration
   -> NetworkTopology NoExtraConfig NoExtraFlags
+  -> StrictTVar IO (Maybe (LedgerPeerSnapshot BigLedgerPeers))
   -> IO (Diffusion.Configuration NoExtraFlags IO ntnFd RemoteAddress ntcFd LocalAddress)
 mkDiffusionConfiguration
   Configuration {
     dmqcIPv4                              = I ipv4
   , dmqcIPv6                              = I ipv6
   , dmqcLocalAddress                      = I localAddress
-  , dmqcTopologyFile                      = I topologyFile
   , dmqcPortNumber                        = I portNumber
   , dmqcDiffusionMode                     = I diffusionMode
   , dmqcAcceptedConnectionsLimit          = I acceptedConnectionsLimit
@@ -493,8 +502,8 @@ mkDiffusionConfiguration
   }
   nt@NetworkTopology {
     useLedgerPeers
-  , peerSnapshotPath
-  } = do
+  }
+  ledgerBigPeersVar = do
     case (ipv4, ipv6) of
       (Nothing, Nothing) ->
            throwIO NoAddressInformation
@@ -522,12 +531,6 @@ mkDiffusionConfiguration
     localRootsVar   <- newTVarIO localRoots
     publicRootsVar  <- newTVarIO publicRoots
     useLedgerVar    <- newTVarIO useLedgerPeers
-    ledgerPeerSnapshotPathVar <- newTVarIO peerSnapshotPath
-    topologyDir <- FilePath.takeDirectory <$> Directory.makeAbsolute topologyFile
-    ledgerPeerSnapshotVar <- newTVarIO =<< updateLedgerPeerSnapshot
-                                            topologyDir
-                                            (readTVar ledgerPeerSnapshotPathVar)
-                                            (const . pure $ ())
 
     return $
       Diffusion.Configuration {
@@ -549,7 +552,7 @@ mkDiffusionConfiguration
           }
       , Diffusion.dcReadLocalRootPeers       = readTVar localRootsVar
       , Diffusion.dcReadPublicRootPeers      = readTVar publicRootsVar
-      , Diffusion.dcReadLedgerPeerSnapshot   = readTVar ledgerPeerSnapshotVar
+      , Diffusion.dcReadLedgerPeerSnapshot   = readTVar ledgerBigPeersVar
       , Diffusion.dcPeerSharing              = peerSharing
       , Diffusion.dcReadUseLedgerPeers       = readTVar useLedgerVar
       , Diffusion.dcProtocolIdleTimeout      = protocolIdleTimeout
@@ -565,23 +568,6 @@ mkDiffusionConfiguration
               addrFlags = [AI_PASSIVE, AI_ADDRCONFIG]
             , addrSocketType = Stream
             }
-
-    updateLedgerPeerSnapshot :: HasCallStack
-                             => FilePath
-                             -> STM IO (Maybe FilePath)
-                             -> (Maybe LedgerPeerSnapshot -> STM IO ())
-                             -> IO (Maybe LedgerPeerSnapshot)
-    updateLedgerPeerSnapshot topologyDir readLedgerPeerPath writeVar = do
-      mPeerSnapshotFile <- atomically readLedgerPeerPath
-      mLedgerPeerSnapshot <- case mPeerSnapshotFile of
-        Nothing -> pure Nothing
-        Just peerSnapshotFile | FilePath.isRelative peerSnapshotFile -> do
-          peerSnapshotFile' <- Directory.makeAbsolute $ topologyDir FilePath.</> peerSnapshotFile
-          Just <$> readPeerSnapshotFileOrError peerSnapshotFile'
-        Just peerSnapshotFile ->
-          Just <$> readPeerSnapshotFileOrError peerSnapshotFile
-      atomically . writeVar $ mLedgerPeerSnapshot
-      pure mLedgerPeerSnapshot
 
 
 -- TODO: review this once we know what is the size of a `Sig`.
@@ -604,5 +590,3 @@ data ConfigurationError =
 
 instance Exception ConfigurationError where
   displayException NoAddressInformation = "no ipv4 or ipv6 address specified, use --host-addr or --host-ipv6-addr"
-
-

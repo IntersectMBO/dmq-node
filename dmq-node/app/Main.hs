@@ -1,17 +1,24 @@
-{-# LANGUAGE MultiWayIf          #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
-{-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE MultiWayIf               #-}
+{-# LANGUAGE OverloadedRecordDot      #-}
+{-# LANGUAGE OverloadedStrings        #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
+{-# LANGUAGE TemplateHaskell          #-}
+{-# LANGUAGE TypeApplications         #-}
+{-# LANGUAGE TypeOperators            #-}
 
 module Main where
 
+import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad (void, when)
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
 
 import Data.Act
 import Data.Aeson (ToJSON)
+import Data.ByteString.Lazy qualified as BSL
 import Data.Functor.Contravariant ((>$<))
+import Data.List.NonEmpty (NonEmpty)
 import Data.Maybe (maybeToList)
 import Data.Text qualified as Text
 import Data.Text.IO qualified as Text
@@ -23,13 +30,15 @@ import System.Random (newStdGen, split)
 
 import Cardano.Git.Rev (gitRev)
 import Cardano.KESAgent.Protocols.StandardCrypto (StandardCrypto)
+import Cardano.Ledger.Keys (VKey (..))
+import Cardano.Ledger.Hashes (hashKey)
 
 import DMQ.Configuration
 import DMQ.Configuration.CLIOptions (parseCLIOptions)
 import DMQ.Configuration.Topology (readTopologyFileOrError)
 import DMQ.Diffusion.Applications (diffusionApplications)
 import DMQ.Diffusion.Arguments
-import DMQ.Diffusion.NodeKernel (mempool, withNodeKernel)
+import DMQ.Diffusion.NodeKernel
 import DMQ.Handlers.TopLevel (toplevelExceptionHandler)
 import DMQ.NodeToClient qualified as NtC
 import DMQ.NodeToNode (NodeToNodeVersion, dmqCodecs, dmqLimitsAndTimeouts,
@@ -39,9 +48,14 @@ import DMQ.Protocol.SigSubmission.Type (Sig (..))
 import DMQ.Tracer
 
 import DMQ.Diffusion.PeerSelection (policy)
+import DMQ.NodeToClient.LocalStateQueryClient
+import DMQ.Protocol.SigSubmission.Validate
 import Ouroboros.Network.Diffusion qualified as Diffusion
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.PeerSharing.Codec (decodeRemoteAddress,
            encodeRemoteAddress)
+import Ouroboros.Network.SizeInBytes
+import Ouroboros.Network.Snocket
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 
 import Paths_dmq_node qualified as Meta
@@ -70,6 +84,7 @@ runDMQ commandLineConfig = do
           dmqcTopologyFile         = I topologyFile,
           dmqcHandshakeTracer      = I handshakeTracer,
           dmqcLocalHandshakeTracer = I localHandshakeTracer,
+          dmqcCardanoNodeSocket    = I snocketPath,
           dmqcVersion              = I version
         } = config' <> commandLineConfig
             `act`
@@ -101,49 +116,75 @@ runDMQ commandLineConfig = do
     stdGen <- newStdGen
     let (psRng, policyRng) = split stdGen
 
-    withNodeKernel @StandardCrypto
-                   tracer
-                   dmqConfig
-                   psRng $ \nodeKernel -> do
-      dmqDiffusionConfiguration <- mkDiffusionConfiguration dmqConfig nt
+    -- TODO: this might not work, since `ouroboros-network` creates its own IO Completion Port.
+    Diffusion.withIOManager \iocp -> do
+      let localSnocket'      = localSnocket iocp
+          mkStakePoolMonitor = connectToCardanoNode tracer localSnocket' snocketPath
 
-      let dmqNtNApps =
-            ntnApps tracer
-                    dmqConfig
-                    nodeKernel
-                    (dmqCodecs
-                       (encodeRemoteAddress (maxBound @NodeToNodeVersion))
-                       (decodeRemoteAddress (maxBound @NodeToNodeVersion)))
-                    dmqLimitsAndTimeouts
-                    defaultSigDecisionPolicy
-          dmqNtCApps =
-            let sigSize _ = 0 -- TODO
-                maxMsgs = 1000 -- TODO: make this dynamic?
-                mempoolReader = Mempool.getReader sigId sigSize (mempool nodeKernel)
-                mempoolWriter = Mempool.getWriter sigId (pure ())
-                                                        (\_ _ -> Right () :: Either Void ())
-                                                        (\_ -> True)
-                                                        (mempool nodeKernel)
-             in NtC.ntcApps tracer dmqConfig
-                            mempoolReader mempoolWriter maxMsgs
-                            (NtC.dmqCodecs encodeReject decodeReject)
-          dmqDiffusionArguments =
-            diffusionArguments (if handshakeTracer
-                                  then WithEventType "Handshake" >$< tracer
-                                  else nullTracer)
-                               (if localHandshakeTracer
-                                  then WithEventType "Handshake" >$< tracer
-                                  else nullTracer)
-          dmqDiffusionApplications =
-            diffusionApplications nodeKernel
-                                  dmqConfig
-                                  dmqDiffusionConfiguration
-                                  dmqLimitsAndTimeouts
-                                  dmqNtNApps
-                                  dmqNtCApps
-                                  (policy policyRng)
+      withNodeKernel @StandardCrypto
+                     tracer
+                     dmqConfig
+                     psRng
+                     mkStakePoolMonitor $ \nodeKernel -> do
+        dmqDiffusionConfiguration <-
+          mkDiffusionConfiguration dmqConfig nt nodeKernel.stakePools.ledgerBigPeersVar
 
-      Diffusion.run dmqDiffusionArguments
-                    (dmqDiffusionTracers dmqConfig tracer)
-                    dmqDiffusionConfiguration
-                    dmqDiffusionApplications
+        let sigSize :: Sig StandardCrypto -> SizeInBytes
+            sigSize = fromIntegral . BSL.length . sigRawBytes
+            mempoolReader = Mempool.getReader sigId sigSize (mempool nodeKernel)
+            dmqNtNApps =
+              let ntnMempoolWriter = Mempool.writerAdapter $
+                    Mempool.getWriter sigId
+                                      (poolValidationCtx $ stakePools nodeKernel)
+                                      (validateSig (hashKey . VKey))
+                                      SigDuplicate
+                                      (mempool nodeKernel)
+               in ntnApps tracer
+                          dmqConfig
+                          mempoolReader
+                          ntnMempoolWriter
+                          sigSize
+                          nodeKernel
+                          (dmqCodecs
+                                   -- TODO: `maxBound :: Cardano.Network.NodeToNode.NodeToNodeVersion`
+                                   -- is unsafe here!
+                                   (encodeRemoteAddress (maxBound @NodeToNodeVersion))
+                                   (decodeRemoteAddress (maxBound @NodeToNodeVersion)))
+                          dmqLimitsAndTimeouts
+                          defaultSigDecisionPolicy
+            dmqNtCApps =
+              let ntcMempoolWriter =
+                    Mempool.getWriter sigId
+                                      (poolValidationCtx $ stakePools nodeKernel)
+                                      (validateSig (hashKey . VKey))
+                                      SigDuplicate
+                                      (mempool nodeKernel)
+               in NtC.ntcApps tracer dmqConfig
+                              mempoolReader ntcMempoolWriter
+                              (NtC.dmqCodecs encodeReject decodeReject)
+            dmqDiffusionArguments =
+              diffusionArguments (if handshakeTracer
+                                    then WithEventType "Handshake" >$< tracer
+                                    else nullTracer)
+                                 (if localHandshakeTracer
+                                    then WithEventType "Handshake" >$< tracer
+                                    else nullTracer)
+                                 $ maybe [] out <$> tryReadTMVar nodeKernel.stakePools.ledgerPeersVar
+              where
+                out :: LedgerPeerSnapshot AllLedgerPeers
+                    -> [(PoolStake, NonEmpty LedgerRelayAccessPoint)]
+                out (LedgerAllPeerSnapshotV23 _pt _magic relays) = relays
+
+            dmqDiffusionApplications =
+              diffusionApplications nodeKernel
+                                    dmqConfig
+                                    dmqDiffusionConfiguration
+                                    dmqLimitsAndTimeouts
+                                    dmqNtNApps
+                                    dmqNtCApps
+                                    (policy policyRng)
+
+        Diffusion.run dmqDiffusionArguments
+                      (dmqDiffusionTracers dmqConfig tracer)
+                      dmqDiffusionConfiguration
+                      dmqDiffusionApplications

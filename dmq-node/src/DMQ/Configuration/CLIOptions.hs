@@ -4,6 +4,7 @@ import Data.Monoid (Last (..))
 import Options.Applicative
 
 import DMQ.Configuration
+import Ouroboros.Network.Magic (NetworkMagic (..))
 
 parseCLIOptions :: Parser PartialConfig
 parseCLIOptions =
@@ -54,6 +55,20 @@ parseCLIOptions =
           )
         )
     <*> optional (
+          strOption
+          (  long "cardano-node-socket"
+          <> metavar "Cardano node socket path"
+          <> help "Used for local connections to Cardano node"
+          )
+        )
+    <*> optional (
+          option auto
+          (  long "cardano-network-magic"
+          <> metavar "Cardano node network magic"
+          <> help "The network magic of cardano-node client for local connections"
+          )
+        )
+    <*> optional (
           switch
           (   long "version"
           <>  short 'v'
@@ -61,14 +76,15 @@ parseCLIOptions =
           )
         )
   where
-    mkConfiguration ipv4 ipv6 portNumber localAddress configFile topologyFile version =
-      mempty { dmqcIPv4         = Last (Just <$> ipv4),
-               dmqcIPv6         = Last (Just <$> ipv6),
-               dmqcLocalAddress = Last (LocalAddress <$> localAddress),
-               dmqcPortNumber   = Last portNumber,
-               dmqcConfigFile   = Last configFile,
-               dmqcTopologyFile = Last topologyFile,
-               dmqcVersion      = Last version
+    mkConfiguration ipv4 ipv6 portNumber localAddress
+                    configFile topologyFile cardanoNodeSocket networkMagic version =
+      mempty { dmqcIPv4              = Last (Just <$> ipv4),
+               dmqcIPv6              = Last (Just <$> ipv6),
+               dmqcLocalAddress      = Last (LocalAddress <$> localAddress),
+               dmqcPortNumber        = Last portNumber,
+               dmqcConfigFile        = Last configFile,
+               dmqcTopologyFile      = Last topologyFile,
+               dmqcCardanoNodeSocket = Last cardanoNodeSocket,
+               dmqcNetworkMagic      = Last (NetworkMagic <$> networkMagic),
+               dmqcVersion           = Last version
              }
-
-
