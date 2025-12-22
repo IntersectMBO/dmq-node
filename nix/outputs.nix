@@ -11,6 +11,8 @@ let
 
   mkShell = ghc: import ./shell.nix { inherit inputs pkgs lib project utils ghc; };
 
+  buildSystem = pkgs.buildPlatform.system;
+
   packages = rec {
     # TODO: `nix build .\#dmq-node` will have the git revision set in the binary,
     # `nib build .\#hydraJobs.x86_64-linux.packages.dmq-node:exe:dmq-node` won't
@@ -19,11 +21,27 @@ let
       # pkgs.setGitRev
       # (inputs.self.rev or inputs.self.dirtyShortRev)
       project.hsPkgs.dmq-node.components.exes.dmq-node;
+    default = dmq-node;
+  } // lib.optionalAttrs (buildSystem == "x86_64-linux") {
     dmq-node-static =
       # pkgs.setGitRev
       # (inputs.self.rev or inputs.self.dirtyShortRev)
       project.projectCross.musl64.hsPkgs.dmq-node.components.exes.dmq-node;
-    default = dmq-node;
+    docker-dmq = pkgs.dockerTools.buildImage {
+      name = "docker-dmq-node";
+      tag = "latest";
+      created = "now";
+      copyToRoot = pkgs.buildEnv {
+        name = "dmq-env";
+        paths = [
+          pkgs.busybox
+          pkgs.dockerTools.caCertificates
+        ];
+      };
+      config = {
+        Entrypoint = [ "${packages.dmq-node-static}/bin/dmq-node-static" ];
+      };
+    };
   };
 
   app = {

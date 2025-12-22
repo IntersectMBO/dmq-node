@@ -1,0 +1,7 @@
+max-backjumps: 5000
+reorder-goals: True
+tests:         True
+benchmarks:    True
+
+program-options
+  ghc-options: -fno-ignore-asserts -Werror
