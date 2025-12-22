@@ -1,0 +1,86 @@
+name: Post Release Upload
+# This makes it easy to get download release binaries built using
+# a github action for any tagged commit.
+#
+# This workflow builds and uploads the linux
+# binary packages as github assets.
+#
+# It uses `--builders "" --max-jobs 0` to ensure the assets are
+# from the IOG cache.
+on:
+  workflow_dispatch:
+  release:
+    types:
+      - published
+  push:
+    tags:
+      - '**'
+env:
+  # Only to avoid some repetition
+  FLAKE_REF: github:${{ github.repository }}/${{ github.ref_name }}
+  GH_TOKEN: ${{ github.token }}
+
+jobs:
+  wait-for-hydra:
+    name: "Wait for hydra check-runs"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Waiting for ci/hydra-build:x86_64-linux.required to complete
+        run: |
+          while [[ true ]]; do
+            check_name='ci/hydra-build:x86_64-linux.required'
+            conclusion=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs?check_name=$check_name" --paginate --jq '.check_runs[].conclusion')
+            case "$conclusion" in
+              success)
+                echo "$check_name succeeded"
+                exit 0;;
+              '')
+                echo "$check_name pending. Waiting 30s..."
+                sleep 30;;
+              *)
+                echo "$check_name terminated unsuccessfully"
+                exit 1;;
+            esac
+          done
+
+  pull:
+    needs: [wait-for-hydra]
+    strategy:
+      matrix:
+        arch: [linux]
+    name: "Download Asset from the Cache"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install Nix with good defaults
+        uses: input-output-hk/install-nix-action@v20
+        with:
+          extra_nix_config: |
+            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=
+            substituters = https://cache.iog.io/ https://cache.nixos.org/
+            experimental-features = nix-command flakes fetch-closure
+            allow-import-from-derivation = true
+            accept-flake-config = true
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Build
+        run: |
+          case ${{ matrix.arch }} in
+            linux)
+              nix build \
+                --builders "" \
+                --max-jobs 0 \
+                .#packages.x86_64-linux.dmq-node-static
+          esac
+
+      - name: Compress binary
+        run: tar -czf dmq-node-linux.tar.gz result/bin/dmq-node
+
+      - name: Release
+        uses: input-output-hk/action-gh-release@v1
+        with:
+          draft: true
+          files: |
+            dmq-node-linux.tar.gz
