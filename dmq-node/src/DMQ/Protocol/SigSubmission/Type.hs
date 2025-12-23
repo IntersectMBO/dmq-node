@@ -36,6 +36,7 @@ import Data.ByteString.Base16 as BS.Base16
 import Data.ByteString.Base16.Lazy as LBS.Base16
 import Data.ByteString.Lazy qualified as LBS
 import Data.ByteString.Lazy.Char8 qualified as LBS.Char8
+import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
 import Data.Time.Clock.POSIX (POSIXTime)
 import Data.Typeable
@@ -52,7 +53,10 @@ import Ouroboros.Network.Util.ShowProxy
 
 
 newtype SigHash = SigHash { getSigHash :: ByteString }
-  deriving stock (Show, Eq, Ord)
+  deriving stock (Eq, Ord)
+
+instance Show SigHash where
+  show (SigHash bs) = take 10 . Text.unpack . Text.decodeUtf8Lenient . BS.Base16.encode $ bs
 
 newtype SigId = SigId { getSigId :: SigHash }
   deriving stock (Show, Eq, Ord)
@@ -135,7 +139,7 @@ instance Crypto crypto
                 , sigRawOpCertificate
                 , sigRawColdKey -}
                 } =
-    object [ "id"            .= show (getSigHash (getSigId sigRawId))
+    object [ "id"            .= sigRawId
         {- , "body"          .= show (getSigBody sigRawBody)
            , "kesPeriod"     .= sigRawKESPeriod
            , "expiresAt"     .= show sigRawExpiresAt
@@ -181,11 +185,14 @@ data Sig crypto = SigWithBytes {
     -- ^ the `SigRaw` data type along with signed bytes
   }
 
-deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
-                  , Show (VerKeyKES (KES crypto))
-                  , Show (SigKES (KES crypto))
-                  )
-               => Show (Sig crypto)
+instance Show (Sig crypto) where
+  show Sig { sigId } = "Sig crypto ... " <> show sigId
+
+-- deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
+--                   , Show (VerKeyKES (KES crypto))
+--                   , Show (SigKES (KES crypto))
+--                   )
+--                => Show (Sig crypto)
 deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
                   , Eq (VerKeyKES (KES crypto))
                   , Eq (SigKES (KES crypto))

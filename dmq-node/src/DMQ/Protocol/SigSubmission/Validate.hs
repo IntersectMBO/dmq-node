@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiWayIf         #-}
 {-# LANGUAGE OverloadedStrings  #-}
 {-# LANGUAGE PatternSynonyms    #-}
+{-# LANGUAGE RankNTypes         #-}
 {-# LANGUAGE TupleSections      #-}
 {-# LANGUAGE TypeFamilies       #-}
 {-# LANGUAGE TypeOperators      #-}
@@ -21,6 +22,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.Except
 import Control.Monad.Trans.Except.Extra
+import Control.Tracer (Tracer, traceWith)
 import Data.Aeson
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LBS
@@ -116,27 +118,31 @@ validateSig :: forall crypto m.
                , Signable (KES crypto) ByteString
                , MonadSTM m
                )
-            => (DSIGN.VerKeyDSIGN (DSIGN crypto) -> KeyHash StakePool)
+            => Tracer m (Sig crypto, TxValidationFail (Sig crypto))
+            -> (DSIGN.VerKeyDSIGN (DSIGN crypto) -> KeyHash StakePool)
             -> [Sig crypto]
             -> PoolValidationCtx m
             -- ^ cardano pool id verification
             -> ExceptT (Sig crypto, TxValidationFail (Sig crypto)) m
                        [(Sig crypto, Either (TxValidationFail (Sig crypto)) ())]
-validateSig verKeyHashingFn sigs ctx = traverse process' sigs
+validateSig tracer verKeyHashingFn sigs ctx = traverse process' sigs
   where
     DMQPoolValidationCtx now mNextEpoch pools ocertCountersVar = ctx
 
-    process' sig = bimapExceptT (sig,) (sig,) $ process sig
+    process' sig =
+      let result = process sig
+      in bimapExceptT (sig,) (sig,) $
+           result `catchLeftT` \e -> result <* lift (traceWith tracer (sig, e))
 
-    process Sig { sigSignedBytes = signedBytes,
-                  sigKESPeriod,
-                  sigOpCertificate = SigOpCertificate ocert@OCert {
-                    ocertKESPeriod,
-                    ocertVkHot,
-                    ocertN
-                    },
-                  sigColdKey = SigColdKey coldKey,
-                  sigKESSignature = SigKESSignature kesSig
+    process sig@Sig { sigSignedBytes = signedBytes,
+                      sigKESPeriod,
+                      sigOpCertificate = SigOpCertificate ocert@OCert {
+                        ocertKESPeriod,
+                        ocertVkHot,
+                        ocertN
+                        },
+                      sigColdKey = SigColdKey coldKey,
+                      sigKESSignature = SigKESSignature kesSig
                 } = do
       sigKESPeriod < endKESPeriod
          ?! KESAfterEndOCERT endKESPeriod sigKESPeriod
@@ -191,7 +197,11 @@ validateSig verKeyHashingFn sigs ctx = traverse process' sigs
           Right ocertCounters' -> (void success, ocertCounters')
           Left  err            -> (throwE (SigInvalid err), ocertCounters)
       -- for eg. remember to run all results with possibly non-fatal errors
-      right e
+      let result = e
+      case result of
+        Left e' -> lift $ traceWith tracer (sig, e')
+        Right _ -> pure ()
+      right result
       where
         success = right $ Right ()
 

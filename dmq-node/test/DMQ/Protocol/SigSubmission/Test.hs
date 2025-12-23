@@ -30,6 +30,7 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad (zipWithM, (>=>))
 import Control.Monad.ST (runST)
 import Control.Monad.Trans.Except
+import Control.Tracer (nullTracer)
 import Data.Bifunctor (second)
 import Data.Binary qualified as Binary
 import Data.ByteString (ByteString)
@@ -846,7 +847,7 @@ prop_validateSig constr = ioProperty do
     let validationCtx =
           DMQPoolValidationCtx (posixSecondsToUTCTime 0) Nothing Map.empty countersVar
         dummyHash = KeyHash . castHash . hashWith (BS.toStrict . Binary.encode . const (0 :: Int))
-    result <- runExceptT $ validateSig dummyHash [sig] validationCtx
+    result <- runExceptT $ validateSig nullTracer dummyHash [sig] validationCtx
     return case result of
       Left err -> counterexample ("KES seed: " ++ show (ctx constr))
                 . counterexample ("KES vk key: " ++ show (ocertVkHot . getSigOpCertificate . sigOpCertificate $ sig))
