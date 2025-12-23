@@ -83,6 +83,7 @@ runDMQ commandLineConfig = do
           dmqcPrettyLog            = I prettyLog,
           dmqcTopologyFile         = I topologyFile,
           dmqcHandshakeTracer      = I handshakeTracer,
+          dmqcValidationTracer     = I validationTracer,
           dmqcLocalHandshakeTracer = I localHandshakeTracer,
           dmqcCardanoNodeSocket    = I snocketPath,
           dmqcVersion              = I version
@@ -132,11 +133,14 @@ runDMQ commandLineConfig = do
         let sigSize :: Sig StandardCrypto -> SizeInBytes
             sigSize = fromIntegral . BSL.length . sigRawBytes
             mempoolReader = Mempool.getReader sigId sigSize (mempool nodeKernel)
+            ntnValidationTracer = if validationTracer
+                                    then WithEventType "NtN Validation" >$< tracer
+                                    else nullTracer
             dmqNtNApps =
               let ntnMempoolWriter = Mempool.writerAdapter $
                     Mempool.getWriter sigId
                                       (poolValidationCtx $ stakePools nodeKernel)
-                                      (validateSig (hashKey . VKey))
+                                      (validateSig ntnValidationTracer (hashKey . VKey))
                                       SigDuplicate
                                       (mempool nodeKernel)
                in ntnApps tracer
@@ -152,11 +156,14 @@ runDMQ commandLineConfig = do
                                    (decodeRemoteAddress (maxBound @NodeToNodeVersion)))
                           dmqLimitsAndTimeouts
                           defaultSigDecisionPolicy
+            ntcValidationTracer = if validationTracer
+                                    then WithEventType "NtC Validation" >$< tracer
+                                    else nullTracer
             dmqNtCApps =
               let ntcMempoolWriter =
                     Mempool.getWriter sigId
                                       (poolValidationCtx $ stakePools nodeKernel)
-                                      (validateSig (hashKey . VKey))
+                                      (validateSig ntcValidationTracer (hashKey . VKey))
                                       SigDuplicate
                                       (mempool nodeKernel)
                in NtC.ntcApps tracer dmqConfig
