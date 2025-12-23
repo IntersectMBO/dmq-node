@@ -1,30 +1,31 @@
 # Decentralized Message Queue
 
-TODO fix these links
-
-[![mingw64](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/build.yml?event=merge_group&label=mingw64&style=for-the-badge)](https://github.com/intersectmbo/ouroboros-network/actions/workflows/build.yml)
-[![Nightly CI](https://img.shields.io/github/actions/workflow/status/intersectmbo/ouroboros-network/nightly.yml?branch=main&label=Nightly&style=for-the-badge)](https://github.com/intersectmbo/ouroboros-network/actions/workflows/nightly.yml)
-
 The DMQ node allows for client peers to communicate efficiently by publishing
 and consuming messages which are diffused over a P2P network to other nodes.
 
 This repository provides the `dmq-node` executable to participate in the DMQ network.
 
-TODO diagram
-```mermaid
-stateDiagram-v2
-    dn: dmq-node
-    tr: trace-dispatcher/iohk-monitoring-framework
-    on: ouroboros-network
-    oc: ouroboros-consensus
-    cl: cardano-ledger
-    dn --> tr
-    dn --> on
-```
-
 # Instructions
 
-TODO
+## Building the project
+
+We use cabal to build our project, potentially inside a Nix shell (nix develop or nix-shell). It should suffice with:
+```bash
+> cabal build dmq-node
+```
+
+The executable can be run with:
+```bash
+> cabal run dmq-node
+```
+
+## Testing the project
+
+To run the test suite, one can use:
+
+``` bash
+> cabal test all
+```
 
 # Contributing
 
