@@ -1,6 +1,8 @@
 { inputs, pkgs, lib }:
 
 let
+  defaultCompiler = "ghc967";
+
   cabalProject = pkgs.haskell-nix.cabalProject' (
 
     { config, pkgs, ... }:
@@ -8,7 +10,7 @@ let
     {
       name = "dmq-node";
 
-      compiler-nix-name = lib.mkDefault "ghc967";
+      compiler-nix-name = lib.mkDefault defaultCompiler;
 
       src = lib.cleanSource ../.;
 
