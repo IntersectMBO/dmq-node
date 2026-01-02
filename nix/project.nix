@@ -19,9 +19,10 @@ let
 
       inputMap = { "https://chap.intersectmbo.org/" = inputs.CHaP; };
 
+      # TODO: enable cross compilation for windows by adding `p.ucrt64`.
       crossPlatforms = p:
-        lib.optionals (pkgs.stdenv.hostPlatform.isLinux && config.compiler-nix-name == "ghc966")
-          [ p.ucrt64 p.musl64 ];
+        lib.optionals (pkgs.stdenv.hostPlatform.isLinux && config.compiler-nix-name == defaultCompiler)
+          [ p.musl64 ];
 
       modules = [
         {
