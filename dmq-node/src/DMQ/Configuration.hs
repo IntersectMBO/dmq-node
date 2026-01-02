@@ -257,7 +257,7 @@ defaultConfiguration = Configuration {
       dmqcLocalServerTracer                          = I False,
       dmqcLocalInboundGovernorTracer                 = I False,
       dmqcDnsTracer                                  = I False,
-      dmqcValidationTracer                           = I False,
+      dmqcValidationTracer                           = I True,
 
       dmqcSigSubmissionClientProtocolTracer          = I False,
       dmqcSigSubmissionServerProtocolTracer          = I False,
