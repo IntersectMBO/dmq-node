@@ -1,6 +1,8 @@
 { inputs, pkgs, lib }:
 
 let
+  defaultCompiler = "ghc967";
+
   cabalProject = pkgs.haskell-nix.cabalProject' (
 
     { config, pkgs, ... }:
@@ -8,7 +10,7 @@ let
     {
       name = "dmq-node";
 
-      compiler-nix-name = lib.mkDefault "ghc967";
+      compiler-nix-name = lib.mkDefault defaultCompiler;
 
       src = lib.cleanSource ../.;
 
@@ -19,9 +21,10 @@ let
 
       inputMap = { "https://chap.intersectmbo.org/" = inputs.CHaP; };
 
+      # TODO: enable cross compilation for windows by adding `p.ucrt64`.
       crossPlatforms = p:
-        lib.optionals (pkgs.stdenv.hostPlatform.isLinux && config.compiler-nix-name == "ghc966")
-          [ p.ucrt64 p.musl64 ];
+        lib.optionals (pkgs.stdenv.hostPlatform.isLinux && config.compiler-nix-name == defaultCompiler)
+          [ p.musl64 ];
 
       modules = [
         {

@@ -135,6 +135,7 @@ data Configuration' f =
     dmqcLocalServerTracer                          :: f Bool,
     dmqcLocalInboundGovernorTracer                 :: f Bool,
     dmqcDnsTracer                                  :: f Bool,
+    dmqcValidationTracer                           :: f Bool,
 
     -- low level verbose traces which trace protocol messages
     -- TODO: pref
@@ -256,6 +257,7 @@ defaultConfiguration = Configuration {
       dmqcLocalServerTracer                          = I False,
       dmqcLocalInboundGovernorTracer                 = I False,
       dmqcDnsTracer                                  = I False,
+      dmqcValidationTracer                           = I True,
 
       dmqcSigSubmissionClientProtocolTracer          = I False,
       dmqcSigSubmissionServerProtocolTracer          = I False,
@@ -349,6 +351,7 @@ instance FromJSON PartialConfig where
       dmqcLocalServerTracer                          <- Last <$> v .:? "LocalServerTracer"
       dmqcLocalInboundGovernorTracer                 <- Last <$> v .:? "LocalInboundGovernorTracer"
       dmqcDnsTracer                                  <- Last <$> v .:? "DnsTracer"
+      dmqcValidationTracer                           <- Last <$> v .:? "ValidationTracer"
 
       dmqcSigSubmissionClientProtocolTracer          <- Last <$> v .:? "SigSubmissionClientProtocolTracer"
       dmqcSigSubmissionServerProtocolTracer          <- Last <$> v .:? "SigSubmissionServerProtocolTracer"
@@ -427,6 +430,7 @@ instance ToJSON Configuration where
            , "LocalServerTracer"                          .= unI dmqcLocalServerTracer
            , "LocalInboundGovernorTracer"                 .= unI dmqcLocalInboundGovernorTracer
            , "DnsTracer"                                  .= unI dmqcDnsTracer
+           , "ValidationTracer"                           .= unI dmqcValidationTracer
            , "SigSubmissionClientProtocolTracer"          .= unI dmqcSigSubmissionClientProtocolTracer
            , "SigSubmissionServerProtocolTracer"          .= unI dmqcSigSubmissionServerProtocolTracer
            , "KeepAliveClientProtocolTracer"              .= unI dmqcKeepAliveClientProtocolTracer
