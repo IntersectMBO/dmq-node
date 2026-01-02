@@ -118,7 +118,7 @@ validateSig :: forall crypto m.
                , Signable (KES crypto) ByteString
                , MonadSTM m
                )
-            => Tracer m (Sig crypto, TxValidationFail (Sig crypto))
+            => Tracer m (SigId, TxValidationFail (Sig crypto))
             -> (DSIGN.VerKeyDSIGN (DSIGN crypto) -> KeyHash StakePool)
             -> [Sig crypto]
             -> PoolValidationCtx m
@@ -132,7 +132,7 @@ validateSig tracer verKeyHashingFn sigs ctx = traverse process' sigs
     process' sig =
       let result = process sig
       in bimapExceptT (sig,) (sig,) $
-           result `catchLeftT` \e -> result <* lift (traceWith tracer (sig, e))
+           result `catchLeftT` \e -> result <* lift (traceWith tracer (sigId sig, e))
 
     process sig@Sig { sigSignedBytes = signedBytes,
                       sigKESPeriod,
@@ -199,7 +199,7 @@ validateSig tracer verKeyHashingFn sigs ctx = traverse process' sigs
       -- for eg. remember to run all results with possibly non-fatal errors
       let result = e
       case result of
-        Left e' -> lift $ traceWith tracer (sig, e')
+        Left e' -> lift $ traceWith tracer (sigId sig, e')
         Right _ -> pure ()
       right result
       where

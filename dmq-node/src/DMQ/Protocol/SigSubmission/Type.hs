@@ -185,14 +185,11 @@ data Sig crypto = SigWithBytes {
     -- ^ the `SigRaw` data type along with signed bytes
   }
 
-instance Show (Sig crypto) where
-  show Sig { sigId } = "Sig crypto ... " <> show sigId
-
--- deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
---                   , Show (VerKeyKES (KES crypto))
---                   , Show (SigKES (KES crypto))
---                   )
---                => Show (Sig crypto)
+deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
+                  , Show (VerKeyKES (KES crypto))
+                  , Show (SigKES (KES crypto))
+                  )
+               => Show (Sig crypto)
 deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
                   , Eq (VerKeyKES (KES crypto))
                   , Eq (SigKES (KES crypto))
