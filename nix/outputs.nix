@@ -39,7 +39,7 @@ let
         ];
       };
       config = {
-        Entrypoint = [ "${packages.dmq-node-static}/bin/dmq-node-static" ];
+        Entrypoint = [ "${packages.dmq-node-static}/bin/dmq-node" ];
       };
     };
   };
