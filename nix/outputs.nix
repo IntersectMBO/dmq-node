@@ -11,7 +11,7 @@ let
 
   mkShell = ghc: import ./shell.nix { inherit inputs pkgs lib project utils ghc; };
 
-  buildSystem = pkgs.buildPlatform.system;
+  buildSystem = pkgs.stdenv.buildPlatform.system;
 
   packages = rec {
     # TODO: `nix build .\#dmq-node` will have the git revision set in the binary,

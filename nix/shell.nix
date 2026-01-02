@@ -16,7 +16,7 @@ let
 
   tools = allTools.${ghc};
 
-  preCommitCheck = inputs.pre-commit-hooks.lib.${pkgs.system}.run {
+  preCommitCheck = inputs.pre-commit-hooks.lib.${pkgs.stdenv.system}.run {
 
     src = lib.cleanSource ../.;
 
@@ -64,10 +64,10 @@ let
     };
   };
 
-  linuxPkgs = lib.optionals pkgs.hostPlatform.isLinux [
+  linuxPkgs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [
   ];
 
-  darwinPkgs = lib.optionals pkgs.hostPlatform.isDarwin [
+  darwinPkgs = lib.optionals pkgs.stdenv.hostPlatform.isDarwin [
   ];
 
   commonPkgs = [
