@@ -10,6 +10,7 @@ import Test.DMQ.NodeToNode qualified
 import DMQ.Protocol.LocalMsgNotification.Test qualified
 import DMQ.Protocol.LocalMsgSubmission.Test qualified
 import DMQ.Protocol.SigSubmission.Test qualified
+import DMQ.Protocol.SigSubmissionV2.Test qualified
 
 import Test.Tasty
 
@@ -28,6 +29,7 @@ tests =
 
     -- protocols
   , DMQ.Protocol.SigSubmission.Test.tests
+  , DMQ.Protocol.SigSubmissionV2.Test.tests
   , DMQ.Protocol.LocalMsgSubmission.Test.tests
   , DMQ.Protocol.LocalMsgNotification.Test.tests
   ]
