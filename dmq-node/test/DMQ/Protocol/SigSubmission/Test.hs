@@ -26,6 +26,7 @@ module DMQ.Protocol.SigSubmission.Test (tests) where
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
+import Codec.CBOR.FlatTerm qualified as CBOR
 import Control.Monad (zipWithM, (>=>))
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.ST (runST)
@@ -85,6 +86,7 @@ tests =
         [ testGroup "MockCrypto"
           [ testProperty "OCert"               prop_codec_ocert_mockcrypto
           , testProperty "Sig"                 prop_codec_sig_mockcrypto
+          , testProperty "Sig.encoding"        prop_codec_sig_encoding_mockcrypto
           , testProperty "codec"               prop_codec_mockcrypto
           , testProperty "codec id"            prop_codec_id_mockcrypto
           , testProperty "codec 2-splits"    $ withMaxSize 20
@@ -102,6 +104,7 @@ tests =
         , testGroup "StandardCrypto"
           [ testProperty "OCert"               prop_codec_ocert_standardcrypto
           , testProperty "Sig"                 prop_codec_sig_standardcrypto
+          , testProperty "Sig.encoding"        prop_codec_sig_encoding_standardcrypto
           , testProperty "codec"               prop_codec_standardcrypto
           , testProperty "codec id"            prop_codec_id_standardcrypto
           , testProperty "codec 2-splits"    $ withMaxSize 20
@@ -713,6 +716,27 @@ prop_codec_sig_standardcrypto
   :: Blind (WithConstrKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (Sig MockCrypto))
   -> Property
 prop_codec_sig_standardcrypto = prop_codec_sig . getBlind
+
+
+prop_codec_sig_encoding
+  :: forall crypto. Crypto crypto
+  => WithConstrKES (SeedSizeKES (KES crypto)) (KES crypto) (Sig crypto)
+  -> Property
+prop_codec_sig_encoding constr = ioProperty $ do
+  sig <- runWithConstr constr
+  let encoding = encodeSig sig
+  return . counterexample (show sig)
+         $ CBOR.validFlatTerm (CBOR.toFlatTerm encoding)
+
+prop_codec_sig_encoding_mockcrypto
+  :: Blind (WithConstrKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (Sig MockCrypto))
+  -> Property
+prop_codec_sig_encoding_mockcrypto = prop_codec_sig_encoding . getBlind
+
+prop_codec_sig_encoding_standardcrypto
+  :: Blind (WithConstrKES (SeedSizeKES (KES StandardCrypto)) (KES StandardCrypto) (Sig StandardCrypto))
+  -> Property
+prop_codec_sig_encoding_standardcrypto = prop_codec_sig_encoding . getBlind
 
 
 type AnySigMessage crypto = WithConstrKESList (SeedSizeKES (KES crypto)) (KES crypto) (AnyMessage (SigSubmission crypto))
