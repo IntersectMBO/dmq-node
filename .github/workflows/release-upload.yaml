@@ -78,9 +78,15 @@ jobs:
       - name: Compress binary
         run: tar -czf dmq-node-linux.tar.gz result/bin/dmq-node
 
+      - name: Checksums
+        run: |
+          sha256sum dmq-node-linux.tar.gz >> "dmq-node-linux.tar.gz.sha256sum.txt"
+
       - name: Release
         uses: input-output-hk/action-gh-release@v1
         with:
           draft: true
+          name: "Release dmq-node-${{ github.ref_name }}"
           files: |
             dmq-node-linux.tar.gz
+            dmq-node-linux.tar.gz.sha256sum.txt
