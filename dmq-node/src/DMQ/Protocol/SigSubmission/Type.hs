@@ -185,11 +185,18 @@ data Sig crypto = SigWithBytes {
     -- ^ the `SigRaw` data type along with signed bytes
   }
 
-deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
-                  , Show (VerKeyKES (KES crypto))
-                  , Show (SigKES (KES crypto))
-                  )
-               => Show (Sig crypto)
+-- TODO: this show instance is too minimal.  Proper `Show` instance is useful
+-- in `QuickCheck` tests.  This minimal instance is for example
+-- useful in `TraceTxLogic` tracer..
+--
+instance Show (Sig crypto) where
+  show Sig { sigId } = "Sig { sigId = \"" ++ show (getSigId sigId) ++ "\" }"
+
+-- deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
+--                   , Show (VerKeyKES (KES crypto))
+--                   , Show (SigKES (KES crypto))
+--                   )
+--                => Show (Sig crypto)
 deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
                   , Eq (VerKeyKES (KES crypto))
                   , Eq (SigKES (KES crypto))
