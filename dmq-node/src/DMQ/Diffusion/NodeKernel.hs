@@ -34,7 +34,6 @@ import System.Random (StdGen)
 import System.Random qualified as Random
 
 import Cardano.Ledger.Shelley.API hiding (I)
-import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Ouroboros.Consensus.Shelley.Ledger.Query
 
 import Ouroboros.Network.BlockFetch (FetchClientRegistry,
@@ -157,8 +156,7 @@ newNodeKernel rng = do
 
 
 withNodeKernel :: forall crypto ntnAddr m a.
-                  ( Crypto crypto
-                  , MonadAsync       m
+                  ( MonadAsync       m
                   , MonadFork        m
                   , MonadDelay       m
                   , MonadLabelledSTM m
