@@ -393,6 +393,8 @@ ntnApps
 
 data Protocols appType initiatorCtx responderCtx bytes m a b =
   Protocols {
+    -- | sig-submission mini-protocol
+    --
     sigSubmissionProtocol :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b
 
     -- | keep-alive mini-protocol
