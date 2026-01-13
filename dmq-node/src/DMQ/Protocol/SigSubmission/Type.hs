@@ -132,18 +132,18 @@ instance Crypto crypto
       => ToJSON (SigRaw crypto) where
   -- TODO: it is too verbose, we need verbosity levels for these JSON fields
   toJSON SigRaw { sigRawId
-             {- , sigRawBody
+             {- , sigRawBody -}
                 , sigRawKESPeriod
                 , sigRawExpiresAt
-                , sigRawKESSignature
+             {- , sigRawKESSignature
                 , sigRawOpCertificate
                 , sigRawColdKey -}
                 } =
     object [ "id"            .= sigRawId
-        {- , "body"          .= show (getSigBody sigRawBody)
-           , "kesPeriod"     .= sigRawKESPeriod
+        {- , "body"          .= show (getSigBody sigRawBody) -}
+           , "kesPeriod"     .= unKESPeriod sigRawKESPeriod
            , "expiresAt"     .= show sigRawExpiresAt
-           , "kesSignature"  .= show (getSigKESSignature sigRawKESSignature)
+        {- , "kesSignature"  .= show (getSigKESSignature sigRawKESSignature)
 
            , "opCertificate" .= show (getSignableRepresentation signable)
            , "coldKey"       .= show (getSigColdKey sigRawColdKey) -}
@@ -190,7 +190,11 @@ data Sig crypto = SigWithBytes {
 -- useful in `TraceTxLogic` tracer..
 --
 instance Show (Sig crypto) where
-  show Sig { sigId } = "Sig { sigId = \"" ++ show (getSigId sigId) ++ "\" }"
+  show Sig { sigId, sigKESPeriod, sigExpiresAt } =
+    "Sig { sigId = \"" ++ show (getSigId sigId)
+    ++ " , sigKESPeriod = " ++ show (unKESPeriod sigKESPeriod)
+    ++ " , sigExpiresAt = " ++ show sigExpiresAt
+    ++ "\" }"
 
 -- deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
 --                   , Show (VerKeyKES (KES crypto))
