@@ -18,11 +18,10 @@ module DMQ.Protocol.LocalMsgSubmission.Server
 import DMQ.Protocol.LocalMsgSubmission.Type
 import Network.TypedProtocol.Peer.Server
 import Ouroboros.Network.Protocol.LocalTxSubmission.Server as LocalTxSubmission
-import Ouroboros.Network.TxSubmission.Mempool.Simple
 
 -- | Type aliases for the high level client API
 --
-type LocalMsgSubmissionServer sig = LocalTxSubmissionServer sig (TxValidationFail sig)
+type LocalMsgSubmissionServer sig = LocalTxSubmissionServer sig SigValidationError
 
 
 -- | A non-pipelined 'Peer' representing the 'LocalMsgSubmissionServer'.

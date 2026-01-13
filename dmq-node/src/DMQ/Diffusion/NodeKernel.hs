@@ -81,9 +81,11 @@ type PoolId = KeyHash StakePool
 data StakePools m = StakePools {
     -- | contains map of cardano pool stake snapshot obtained
     -- via local state query client
-    stakePoolsVar     :: !(StrictTVar m (Map PoolId StakeSnapshot))
-    -- | acquires validation context for signature validation
-  , poolValidationCtx :: !(m (PoolValidationCtx m))
+    stakePoolsVar
+      :: !(StrictTVar m (Map PoolId StakeSnapshot))
+    -- | Acquire and update validation context for signature validation
+  , withPoolValidationCtx 
+      :: forall a. (PoolValidationCtx -> (a, PoolValidationCtx)) ->  STM m a
      -- | provides only those big peers which provide SRV endpoints
      -- as otherwise those are cardano-nodes
   , ledgerBigPeersVar
@@ -93,19 +95,19 @@ data StakePools m = StakePools {
       :: !(StrictTMVar m (LedgerPeerSnapshot AllLedgerPeers))
   }
 
-data PoolValidationCtx m =
-  DMQPoolValidationCtx !UTCTime
-                       -- ^ time of context acquisition
-                       !(Maybe UTCTime)
-                       -- ^ UTC time of next epoch boundary for handling clock skey
-                       !(Map PoolId StakeSnapshot)
-                       -- ^ for signature validation
-                       !(StrictTVar m (Map PoolId Word64))
-                       -- ^ ocert counter to validate only monotonically increasing values
+data PoolValidationCtx =
+  PoolValidationCtx {
+      vctxEpoch :: !(Maybe UTCTime)
+      -- ^ UTC time of next epoch boundary for handling clock skew
+    , vctxStakeMap :: !(Map PoolId StakeSnapshot)
+      -- ^ for signature validation
+    , vctxOcertMap :: !(Map PoolId Word64)
+      -- ^ ocert counters to check monotonicity
+    }
 
-newNodeKernel :: ( MonadLabelledSTM m
+newNodeKernel :: forall crypto ntnAddr m.
+                 ( MonadLabelledSTM m
                  , MonadMVar m
-                 , MonadTime m
                  , Ord ntnAddr
                  )
               => StdGen
@@ -127,14 +129,23 @@ newNodeKernel rng = do
            <*> newTVar Map.empty
            <*> newTVar Nothing
            <*> newEmptyTMVar
-  let poolValidationCtx = do
-        (nextEpochBoundary, stakePools') <-
-          atomically $
-            (,) <$> readTVar nextEpochVar <*> readTVar stakePoolsVar
-        now <- getCurrentTime
-        return $ DMQPoolValidationCtx now nextEpochBoundary stakePools' ocertCountersVar
 
-      stakePools = StakePools { stakePoolsVar, poolValidationCtx, ledgerBigPeersVar, ledgerPeersVar }
+  let withPoolValidationCtx
+        :: forall a. (PoolValidationCtx -> (a, PoolValidationCtx)) -> STM m a
+      withPoolValidationCtx f = do
+        ctx <- PoolValidationCtx <$> readTVar nextEpochVar
+                                 <*> readTVar stakePoolsVar
+                                 <*> readTVar ocertCountersVar
+        let (a, PoolValidationCtx {vctxOcertMap}) = f ctx
+        writeTVar ocertCountersVar vctxOcertMap
+        return a
+
+      stakePools = StakePools {
+          stakePoolsVar,
+          withPoolValidationCtx,
+          ledgerBigPeersVar,
+          ledgerPeersVar
+        }
 
   peerSharingAPI <-
     newPeerSharingAPI
