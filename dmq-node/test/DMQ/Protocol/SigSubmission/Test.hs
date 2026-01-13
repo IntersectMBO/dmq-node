@@ -26,11 +26,9 @@ module DMQ.Protocol.SigSubmission.Test (tests) where
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Codec.CBOR.Write qualified as CBOR
-import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad (zipWithM, (>=>))
+import Control.Monad.Class.MonadTime.SI
 import Control.Monad.ST (runST)
-import Control.Monad.Trans.Except
-import Control.Tracer (nullTracer)
 import Data.Bifunctor (second)
 import Data.Binary qualified as Binary
 import Data.ByteString (ByteString)
@@ -38,7 +36,6 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BL
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map qualified as Map
-import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Typeable
 import Data.Word (Word32)
 import GHC.TypeNats (KnownNat)
@@ -843,18 +840,18 @@ prop_validateSig
   -> Property
 prop_validateSig constr = ioProperty do
     sig <- runWithConstr constr
-    countersVar <- newTVarIO Map.empty
-    let validationCtx =
-          DMQPoolValidationCtx (posixSecondsToUTCTime 0) Nothing Map.empty countersVar
+    now <- getCurrentTime
+    let validationCtx = PoolValidationCtx Nothing Map.empty Map.empty
         dummyHash = KeyHash . castHash . hashWith (BS.toStrict . Binary.encode . const (0 :: Int))
-    result <- runExceptT $ validateSig nullTracer dummyHash [sig] validationCtx
-    return case result of
-      Left err -> counterexample ("KES seed: " ++ show (ctx constr))
-                . counterexample ("KES vk key: " ++ show (ocertVkHot . getSigOpCertificate . sigOpCertificate $ sig))
-                . counterexample (show sig)
-                . counterexample (show err)
-                $ False
-      Right {} -> property True
+    return case fst (validateSig dummyHash now [sig] validationCtx) of
+      Left (_, err) : _ ->
+          counterexample ("KES seed: " ++ show (ctx constr))
+        . counterexample ("KES vk key: " ++ show (ocertVkHot . getSigOpCertificate . sigOpCertificate $ sig))
+        . counterexample (show sig)
+        . counterexample (show err)
+        $ False
+      Right {} : _ -> property True
+      _ -> error "validateSig: invariant violation"
 
 prop_validateSig_mockcrypto
   :: Blind (WithConstrKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (Sig MockCrypto))
