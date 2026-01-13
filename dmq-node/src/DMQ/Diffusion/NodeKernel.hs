@@ -189,24 +189,24 @@ withNodeKernel tracer
                           sigSharedTxStateVar
                         }
     <- newNodeKernel rng
-  withAsync (mempoolWorker mempool)
-          $ \mempoolThread ->
-    withAsync (decisionLogicThreads
-                (if sigSubmissionLogicTracer
-                   then WithEventType "SigSubmission.Logic" >$< tracer
-                   else nullTracer)
-                nullTracer
-                defaultSigDecisionPolicy
-                sigChannelVar
-                sigSharedTxStateVar)
-            $ \sigLogicThread ->
+  -- withAsync (mempoolWorker mempool)
+  --         $ \mempoolThread ->
+  withAsync (decisionLogicThreads
+              (if sigSubmissionLogicTracer
+                 then WithEventType "SigSubmission.Logic" >$< tracer
+                 else nullTracer)
+              nullTracer
+              defaultSigDecisionPolicy
+              sigChannelVar
+              sigSharedTxStateVar)
+          $ \sigLogicThread ->
       withAsync (mkStakePoolMonitor networkMagic nodeKernel) \spmAid -> do
-        link mempoolThread
+        -- link mempoolThread
         link sigLogicThread
         link spmAid
         k nodeKernel
 
-
+{-
 mempoolWorker :: forall crypto m.
                  ( MonadDelay m
                  , MonadSTM   m
@@ -270,3 +270,4 @@ diffPOSIXTime = on diffTime (Time . posixTimeToDiffTime)
   where
     posixTimeToDiffTime :: POSIXTime -> DiffTime
     posixTimeToDiffTime = realToFrac
+-}
