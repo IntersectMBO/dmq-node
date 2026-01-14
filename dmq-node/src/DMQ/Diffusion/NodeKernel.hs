@@ -49,7 +49,7 @@ import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry,
            ps_POLICY_PEER_SHARE_MAX_PEERS, ps_POLICY_PEER_SHARE_STICKY_TIME)
 import Ouroboros.Network.TxSubmission.Inbound.V2
 import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool (..),
-           MempoolSeq (..))
+           MempoolSeq (..), WithIndex (..))
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 
 import DMQ.Configuration
@@ -228,12 +228,12 @@ mempoolWorker (Mempool v) = loop
     loop = do
       now <- getCurrentPOSIXTime
       rt <- atomically $ do
-        MempoolSeq { mempoolSeq, mempoolSet } <- readTVar v
-        let mempoolSeq' :: Seq (Sig crypto)
+        mempool@MempoolSeq { mempoolSeq, mempoolSet } <- readTVar v
+        let mempoolSeq' :: Seq (WithIndex (Sig crypto))
             mempoolSet', expiredSet' :: Set SigId
 
             (resumeTime, expiredSet', mempoolSeq') =
-              foldr (\sig (rt, expiredSet, sigs) ->
+              foldr (\a@WithIndex { getTx = sig } (rt, expiredSet, sigs) ->
                       if sigExpiresAt sig <= now
                       then ( rt
                            , sigId sig `Set.insert` expiredSet
@@ -241,7 +241,7 @@ mempoolWorker (Mempool v) = loop
                            )
                       else ( rt `min` sigExpiresAt sig
                            , expiredSet
-                           , sig Seq.<| sigs
+                           , a Seq.<| sigs
                            )
                     )
                     (now, Set.empty, Seq.empty)
@@ -249,8 +249,8 @@ mempoolWorker (Mempool v) = loop
 
             mempoolSet' = mempoolSet `Set.difference` expiredSet'
 
-        writeTVar v MempoolSeq { mempoolSet = mempoolSet',
-                                 mempoolSeq = mempoolSeq' }
+        writeTVar v mempool { mempoolSet = mempoolSet',
+                              mempoolSeq = mempoolSeq' }
         return resumeTime
 
       now' <- getCurrentPOSIXTime
