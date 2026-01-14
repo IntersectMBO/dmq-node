@@ -73,9 +73,9 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
-import Ouroboros.Network.TxSubmission.Inbound.V2 (TxDecisionPolicy (..))
 
 import DMQ.Configuration.Topology (NoExtraConfig (..), NoExtraFlags (..))
+import DMQ.SigSubmission.Inbound (SigDecisionPolicy (..))
 
 -- | Configuration comes in two flavours paramemtrised by `f` functor:
 -- `PartialConfig` is using `Last` and `Configuration` is using an identity
@@ -576,16 +576,16 @@ mkDiffusionConfiguration
 
 -- TODO: review this once we know what is the size of a `Sig`.
 -- TODO: parts of should be configurable
-defaultSigDecisionPolicy :: TxDecisionPolicy
-defaultSigDecisionPolicy = TxDecisionPolicy {
-    maxNumTxIdsToRequest   = 10,
-    maxUnacknowledgedTxIds = 40,
-    txsSizeInflightPerPeer = 100_000,
-    maxTxsSizeInflight     = 250_000,
-    txInflightMultiplicity = 1,
-    bufferedTxsMinLifetime = 0,
-    scoreRate              = 0.1,
-    scoreMax               = 15 * 60
+defaultSigDecisionPolicy :: SigDecisionPolicy
+defaultSigDecisionPolicy = SigDecisionPolicy {
+    maxNumSigIdsToRequest   = 10,
+    maxUnacknowledgedSigIds = 40,
+    sigsSizeInflightPerPeer = 100_000,
+    maxSigsSizeInflight     = 250_000,
+    sigInflightMultiplicity = 1,
+    bufferedSigsMinLifetime = 0,
+    scoreRate               = 0.1,
+    scoreMax                = 15 * 60
   }
 
 data ConfigurationError =

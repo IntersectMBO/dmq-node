@@ -57,8 +57,13 @@ import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import DMQ.Configuration (Configuration, Configuration' (..), I (..))
 import DMQ.Diffusion.NodeKernel (NodeKernel (..))
 import DMQ.NodeToNode.Version
-import DMQ.Protocol.SigSubmission.Codec
-import DMQ.Protocol.SigSubmission.Type
+import DMQ.Protocol.SigSubmission.Codec (codecSigSubmission)
+import DMQ.Protocol.SigSubmissionV2.Codec
+import DMQ.Protocol.SigSubmissionV2.Inbound (sigSubmissionV2InboundPeerPipelined)
+import DMQ.Protocol.SigSubmissionV2.Outbound (sigSubmissionV2OutboundPeer)
+import DMQ.Protocol.SigSubmissionV2.Type
+import DMQ.SigSubmission.Inbound as SigSubmission
+import DMQ.SigSubmission.Outbound
 import DMQ.Tracer
 
 import Ouroboros.Network.BlockFetch.ClientRegistry (bracketKeepAliveClient)
@@ -84,9 +89,8 @@ import Ouroboros.Network.PeerSelection (PeerSharing (..))
 import Ouroboros.Network.PeerSharing (bracketPeerSharingClient,
            peerSharingClient, peerSharingServer)
 import Ouroboros.Network.Snocket (RemoteAddress)
-import Ouroboros.Network.TxSubmission.Inbound.V2 as SigSubmission
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TxSubmissionMempoolWriter)
 import Ouroboros.Network.TxSubmission.Mempool.Reader
-import Ouroboros.Network.TxSubmission.Outbound
 
 import Ouroboros.Network.OrphanInstances ()
 
@@ -105,9 +109,7 @@ import Ouroboros.Network.Protocol.PeerSharing.Codec (byteLimitsPeerSharing,
            codecPeerSharing, timeLimitsPeerSharing)
 import Ouroboros.Network.Protocol.PeerSharing.Server (peerSharingServerPeer)
 import Ouroboros.Network.Protocol.PeerSharing.Type qualified as Protocol
-import Ouroboros.Network.Protocol.TxSubmission2.Client (txSubmissionClientPeer)
-import Ouroboros.Network.Protocol.TxSubmission2.Server
-           (txSubmissionServerPeerPipelined)
+
 
 -- TODO: if we add `versionNumber` to `ctx` we could use `RunMiniProtocolCb`.
 -- This makes sense, since `ctx` already contains `versionData`.
@@ -170,7 +172,7 @@ ntnApps
  -> NodeKernel crypto addr m
  -> Codecs crypto addr m
  -> LimitsAndTimeouts crypto addr
- -> TxDecisionPolicy
+ -> SigDecisionPolicy
  -> Apps addr m () ()
 ntnApps
     tracer
@@ -227,36 +229,11 @@ ntnApps
       -> ExpandedInitiatorContext addr m
       -> Channel m BL.ByteString
       -> m ((), Maybe BL.ByteString)
-    aSigSubmissionClient version
+    aSigSubmissionClient _version
                          ExpandedInitiatorContext {
                            eicConnectionId   = connId,
                            eicControlMessage = controlMessage
                          } channel =
-      runAnnotatedPeerWithLimits
-        (if sigSubmissionClientProtocolTracer
-          then WithEventType "SigSubmission.Protocol.Client" . Mx.WithBearer connId >$< tracer
-          else nullTracer)
-        sigSubmissionCodec
-        sigSubmissionSizeLimits
-        sigSubmissionTimeLimits
-        channel
-        $ txSubmissionClientPeer
-        $ txSubmissionOutbound
-            (if sigSubmissionOutboundTracer
-               then WithEventType "SigSubmission.Outbound" . Mx.WithBearer connId >$< tracer
-               else nullTracer)
-            _MAX_SIGS_TO_ACK
-            mempoolReader
-            version
-            controlMessage
-
-
-    aSigSubmissionServer
-      :: NodeToNodeVersion
-      -> ResponderContext addr
-      -> Channel m BL.ByteString
-      -> m ((), Maybe BL.ByteString)
-    aSigSubmissionServer _version ResponderContext { rcConnectionId = connId } channel =
         SigSubmission.withPeer
           (if sigSubmissionLogicTracer
              then WithEventType "SigSubmission.Logic" . Mx.WithBearer connId >$< tracer
@@ -269,7 +246,7 @@ ntnApps
           mempoolWriter
           sigSize
           (remoteAddress connId)
-          $ \(peerSigAPI :: PeerTxAPI m SigId (Sig crypto)) ->
+          $ \(peerSigAPI :: PeerSigAPI m SigId (Sig crypto)) ->
             runPipelinedAnnotatedPeerWithLimits
               (if sigSubmissionServerProtocolTracer
                  then WithEventType "SigSubmission.Protocol.Server" . Mx.WithBearer connId >$< tracer
@@ -278,14 +255,39 @@ ntnApps
               sigSubmissionSizeLimits
               sigSubmissionTimeLimits
               channel
-              $ txSubmissionServerPeerPipelined
-              $ txSubmissionInboundV2
+              $ sigSubmissionV2InboundPeerPipelined
+              $ sigSubmissionInboundV2
                   (if sigSubmissionInboundTracer
                      then WithEventType "SigSubmission.Inbound" . Mx.WithBearer connId >$< tracer
                      else nullTracer)
                   _SIG_SUBMISSION_INIT_DELAY
                   mempoolWriter
                   peerSigAPI
+                  controlMessage
+
+
+    aSigSubmissionServer
+      :: NodeToNodeVersion
+      -> ResponderContext addr
+      -> Channel m BL.ByteString
+      -> m ((), Maybe BL.ByteString)
+    aSigSubmissionServer version ResponderContext { rcConnectionId = connId } channel =
+       runAnnotatedPeerWithLimits
+         (if sigSubmissionClientProtocolTracer
+           then WithEventType "SigSubmission.Protocol.Client" . Mx.WithBearer connId >$< tracer
+           else nullTracer)
+         sigSubmissionCodec
+         sigSubmissionSizeLimits
+         sigSubmissionTimeLimits
+         channel
+         $ sigSubmissionV2OutboundPeer
+         $ sigSubmissionOutbound
+             (if sigSubmissionOutboundTracer
+                then WithEventType "SigSubmission.Outbound" . Mx.WithBearer connId >$< tracer
+                else nullTracer)
+             _MAX_SIGS_TO_ACK
+             mempoolReader
+             version
 
 
     aKeepAliveClient
@@ -532,7 +534,7 @@ initiatorAndResponderProtocols limitsAndTimeouts
 
 data Codecs crypto addr m =
   Codecs {
-    sigSubmissionCodec :: AnnotatedCodec (SigSubmission crypto)
+    sigSubmissionCodec :: AnnotatedCodec (SigSubmissionV2 SigId (Sig crypto))
                             CBOR.DeserialiseFailure m BL.ByteString
   , keepAliveCodec     :: Codec KeepAlive
                             CBOR.DeserialiseFailure m BL.ByteString
@@ -540,8 +542,8 @@ data Codecs crypto addr m =
                             CBOR.DeserialiseFailure m BL.ByteString
   }
 
-dmqCodecs :: ( Crypto crypto
-             , MonadST m
+dmqCodecs :: ( MonadST m
+             , Crypto crypto
              )
           => (addr -> CBOR.Encoding)
           -> (forall s. CBOR.Decoder s addr)
@@ -559,9 +561,9 @@ data LimitsAndTimeouts crypto addr =
     sigSubmissionLimits
       :: MiniProtocolLimits
   , sigSubmissionSizeLimits
-      :: ProtocolSizeLimits (SigSubmission crypto) BL.ByteString
+      :: ProtocolSizeLimits (SigSubmissionV2 SigId (Sig crypto)) BL.ByteString
   , sigSubmissionTimeLimits
-      :: ProtocolTimeLimits (SigSubmission crypto)
+      :: ProtocolTimeLimits (SigSubmissionV2 SigId (Sig crypto))
 
     -- keep-alive
   , keepAliveLimits
@@ -588,8 +590,8 @@ dmqLimitsAndTimeouts =
           -- TODO
           maximumIngressQueue = maxBound
         }
-    , sigSubmissionTimeLimits = timeLimitsSigSubmission
-    , sigSubmissionSizeLimits = byteLimitsSigSubmission size
+    , sigSubmissionTimeLimits = timeLimitsSigSubmissionV2
+    , sigSubmissionSizeLimits = byteLimitsSigSubmissionV2 size
 
     , keepAliveLimits     =
         MiniProtocolLimits {
@@ -652,11 +654,11 @@ stdVersionDataNTN networkMagic diffusionMode peerSharing =
     }
 
 -- TODO: choose wisely, is a protocol parameter.
-_MAX_SIGS_TO_ACK :: NumTxIdsToAck
+_MAX_SIGS_TO_ACK :: NumIdsAck
 _MAX_SIGS_TO_ACK = 20
 
-_SIG_SUBMISSION_INIT_DELAY :: TxSubmissionInitDelay
-_SIG_SUBMISSION_INIT_DELAY = NoTxSubmissionInitDelay
+_SIG_SUBMISSION_INIT_DELAY :: SigSubmissionInitDelay
+_SIG_SUBMISSION_INIT_DELAY = NoSigSubmissionInitDelay
 
 
 -- TODO: this is duplicated code, similar function is in

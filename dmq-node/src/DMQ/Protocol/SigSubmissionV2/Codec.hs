@@ -15,18 +15,22 @@ module DMQ.Protocol.SigSubmissionV2.Codec
   , encodeSigSubmissionV2
   ) where
 
-import Codec.CBOR.Decoding qualified as CBOR
-import Codec.CBOR.Encoding qualified as CBOR
-import Codec.CBOR.Read qualified as CBOR
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadTime.SI
 import Data.ByteString.Lazy (ByteString)
 import Data.Kind (Type)
 import Data.List.NonEmpty qualified as NonEmpty
-import DMQ.Protocol.SigSubmissionV2.Type
-import Network.TypedProtocol.Codec.CBOR
-import Ouroboros.Network.Protocol.Limits
 import Text.Printf
+
+import Codec.CBOR.Decoding qualified as CBOR
+import Codec.CBOR.Encoding qualified as CBOR
+import Codec.CBOR.Read qualified as CBOR
+  
+import Network.TypedProtocol.Codec.CBOR
+  
+import Ouroboros.Network.Protocol.Limits
+  
+import DMQ.Protocol.SigSubmissionV2.Type
 
 -- | Byte Limits.
 byteLimitsSigSubmissionV2
@@ -130,10 +134,13 @@ encodeSigSubmissionV2 encodeObjectId encodeObject = encode
 
     encode (MsgReplySigIds objIds) =
          CBOR.encodeListLen 2
-      <> CBOR.encodeWord 2
+      <> CBOR.encodeWord 1 -- TODO 1 or 2?
       <> CBOR.encodeListLenIndef
-      <> foldMap encodeObjectId objIds
-      <> CBOR.encodeBreak
+      <> foldr (\(sigid, SizeInBytes sz) r ->
+                       CBOR.encodeListLen 2
+                    <> encodeObjectId sigid
+                    <> CBOR.encodeWord32 sz
+                    <> r) CBOR.encodeBreak objIds
 
     encode MsgReplyNoSigIds =
          CBOR.encodeListLen 1
@@ -187,13 +194,17 @@ decodeSigSubmissionV2 decodeSigId decodeSig = decode
             then SomeMessage $ MsgRequestSigIds SingBlocking ackNo reqNo
             else SomeMessage $ MsgRequestSigIds SingNonBlocking ackNo reqNo
 
-        (SingSigIds b, 2, 2) -> do
+        -- (SingSigIds b, 2, 2) -> do TODO 1 or 2?
+        (SingSigIds b, 2, 1) -> do
           CBOR.decodeListLenIndef
           sigIds <- CBOR.decodeSequenceLenIndef
                       (flip (:))
                       []
                       reverse
-                      decodeSigId
+                      (do CBOR.decodeListLenOf 2
+                          sigid <- decodeSigId
+                          sz   <- CBOR.decodeWord32
+                          return (sigid, SizeInBytes sz))
           case (b, sigIds) of
             (SingBlocking, t : ts) ->
               return
