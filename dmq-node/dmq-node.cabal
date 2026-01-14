@@ -84,9 +84,16 @@ library
     DMQ.Protocol.SigSubmission.Type
     DMQ.Protocol.SigSubmission.Validate
     DMQ.Protocol.SigSubmissionV2.Codec
-    DMQ.Protocol.SigSubmissionV2.Type
     DMQ.Protocol.SigSubmissionV2.Inbound
     DMQ.Protocol.SigSubmissionV2.Outbound
+    DMQ.Protocol.SigSubmissionV2.Type
+    DMQ.SigSubmission.Inbound
+    DMQ.SigSubmission.Inbound.Decision
+    DMQ.SigSubmission.Inbound.Policy
+    DMQ.SigSubmission.Inbound.Registry
+    DMQ.SigSubmission.Inbound.State
+    DMQ.SigSubmission.Inbound.Types
+    DMQ.SigSubmission.Outbound
     DMQ.Tracer
 
   build-depends:
@@ -105,6 +112,7 @@ library
     cardano-ledger-core,
     cardano-ledger-shelley,
     cardano-slotting,
+    cardano-strict-containers,
     cborg >=0.2.1 && <0.3,
     containers >=0.5 && <0.8,
     contra-tracer >=0.1 && <0.3,
@@ -177,9 +185,9 @@ test-suite dmq-tests
     DMQ.Protocol.LocalMsgNotification.Test
     DMQ.Protocol.LocalMsgSubmission.Test
     DMQ.Protocol.SigSubmission.Test
-    DMQ.Protocol.SigSubmissionV2.Test
-    DMQ.Protocol.SigSubmissionV2.Direct
     DMQ.Protocol.SigSubmissionV2.Codec.CDDL
+    DMQ.Protocol.SigSubmissionV2.Direct
+    DMQ.Protocol.SigSubmissionV2.Test
     Test.DMQ.NodeToClient
     Test.DMQ.NodeToNode
 
@@ -228,11 +236,14 @@ test-suite dmq-cddl
     extensions
 
   type: exitcode-stdio-1.0
-  hs-source-dirs: cddl, test
+  hs-source-dirs:
+    cddl
+    test
+
   main-is: Main.hs
   other-modules:
-    DMQ.Protocol.SigSubmissionV2.Test
     DMQ.Protocol.SigSubmissionV2.Codec.CDDL
+    DMQ.Protocol.SigSubmissionV2.Test
 
   if flag(cddl)
     buildable: True
@@ -249,7 +260,7 @@ test-suite dmq-cddl
     directory,
     dmq-node,
     filepath,
-    io-classes:{io-classes},
+    io-classes,
     kes-agent-crypto,
     mtl,
     ouroboros-network:{api, protocols-tests-lib, tests-lib},
