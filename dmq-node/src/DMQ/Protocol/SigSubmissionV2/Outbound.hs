@@ -64,7 +64,7 @@ data OutboundStIdle sigId sig m a = OutboundStIdle {
 data OutboundStSigIds blocking sigId sig m a where
   SendMsgReplySigIds
     :: SingI blocking
-    => BlockingReplyList blocking sigId
+    => BlockingReplyList blocking (sigId, SizeInBytes)
     -> OutboundStIdle sigId sig m a
     -> OutboundStSigIds blocking sigId sig m a
 

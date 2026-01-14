@@ -21,6 +21,8 @@ module DMQ.Protocol.SigSubmissionV2.Inbound
   ) where
 
 import Data.List.NonEmpty qualified as NonEmpty
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
 import Network.TypedProtocol.Core
 import Network.TypedProtocol.Peer (Peer, PeerPipelined (..))
 import Network.TypedProtocol.Peer.Client
@@ -28,7 +30,7 @@ import DMQ.Protocol.SigSubmissionV2.Type
 
 data SigSubmissionInboundPipelined sigId sig m a where
   SigSubmissionInboundPipelined
-    :: InboundStIdle Z sigId sig m a
+    :: m (InboundStIdle Z sigId sig m a)
     -> SigSubmissionInboundPipelined sigId sig m a
 
 -- | This is the type of the pipelined results, collected by 'CollectPipelined'.
@@ -38,20 +40,20 @@ data SigSubmissionInboundPipelined sigId sig m a where
 data Collect sigId sig
   = -- | The result of 'SendMsgRequestSigIdsPipelined'. It also carries
     -- the number of sigIds originally requested.
-    CollectSigIds NumIdsReq [sigId]
+    CollectSigIds NumIdsReq [(sigId, SizeInBytes)]
 
   | -- | The result of 'SendMsgRequestSigsPipelined'. The actual reply only
     -- contains the signatures sent, but this pairs them up with the
     -- requested identifiers. This is for the peer to determine whether some
     -- signatures are no longer needed.
-    CollectSigs [sigId] [sig]
+    CollectSigs (Map sigId SizeInBytes) [sig]
 
 
 data InboundStIdle (n :: N) sigId sig m a where
   SendMsgRequestSigIdsBlocking
     :: NumIdsAck -- ^ number of sigIds to acknowledge
     -> NumIdsReq -- ^ number of sigIds to request
-    -> ([sigId] -> m (InboundStIdle Z sigId sig m a))
+    -> ([(sigId, SizeInBytes)] -> m (InboundStIdle Z sigId sig m a))
     -> InboundStIdle Z sigId sig m a
 
   SendMsgRequestSigIdsPipelined
@@ -61,7 +63,7 @@ data InboundStIdle (n :: N) sigId sig m a where
     -> InboundStIdle n sigId sig m a
 
   SendMsgRequestSigsPipelined
-    :: [sigId]
+    :: Map sigId SizeInBytes
     -> m (InboundStIdle (S n) sigId sig m a)
     -> InboundStIdle n sigId sig m a
 
@@ -83,7 +85,7 @@ sigSubmissionV2InboundPeerPipelined
   => SigSubmissionInboundPipelined sigId sig m a
   -> PeerPipelined (SigSubmissionV2 sigId sig) AsClient StIdle m a
 sigSubmissionV2InboundPeerPipelined (SigSubmissionInboundPipelined inboundSt) =
-  PeerPipelined $ run inboundSt
+  PeerPipelined $ Effect (run <$> inboundSt)
   where
     run :: InboundStIdle n sigId sig m a
         -> Peer (SigSubmissionV2 sigId sig) AsClient (Pipelined n (Collect sigId sig)) StIdle m a
@@ -108,7 +110,7 @@ sigSubmissionV2InboundPeerPipelined (SigSubmissionInboundPipelined inboundSt) =
 
     run (SendMsgRequestSigsPipelined sigIds k) =
       YieldPipelined
-        (MsgRequestSigs sigIds)
+        (MsgRequestSigs $ Map.keys sigIds)
         (ReceiverAwait
           $ \(MsgReplySigs sigs) ->
               ReceiverDone (CollectSigs sigIds sigs)

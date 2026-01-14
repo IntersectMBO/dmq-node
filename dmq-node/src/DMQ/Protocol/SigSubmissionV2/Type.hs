@@ -1,10 +1,10 @@
 {-# LANGUAGE DataKinds                  #-}
-{-# LANGUAGE DeriveFoldable             #-}
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GADTs                      #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE PolyKinds                  #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE StandaloneDeriving         #-}
@@ -36,17 +36,22 @@ module DMQ.Protocol.SigSubmissionV2.Type
   ) where
 
 import Control.DeepSeq (NFData (..))
+import Data.Aeson (ToJSON (toJSON), Value (String), KeyValue ((.=)), object)
 import Data.Kind (Type)
 import Data.Monoid (Sum (..))
 import Data.Singletons
+import Data.Text (pack)
 import Data.Word (Word16)
 import GHC.Generics (Generic)
 import NoThunks.Class (NoThunks (..))
 import Quiet (Quiet (..))
 
+import Network.TypedProtocol.Codec (AnyMessage(AnyMessageAndAgency))
 import Network.TypedProtocol.Core
 
-import DMQ.Protocol.SigSubmission.Type as SigSubmission (SigId (..), SigBody (..), SigKESSignature (..), SigOpCertificate (..), SigColdKey (..), SigRaw (..), SigRawWithSignedBytes (..), Sig (..)) 
+import DMQ.Protocol.SigSubmission.Type as SigSubmission (SigId (..),
+           SigBody (..), SigKESSignature (..), SigOpCertificate (..),
+           SigColdKey (..), SigRaw (..), SigRawWithSignedBytes (..), Sig (..)) 
 import Ouroboros.Network.Protocol.TxSubmission2.Type (BlockingReplyList (..),
            SingBlockingStyle (..), StBlockingStyle (..))
 import Ouroboros.Network.SizeInBytes (SizeInBytes (..))
@@ -93,6 +98,40 @@ instance ( ShowProxy sigId
 
 instance ShowProxy (StIdle :: SigSubmissionV2 sigId sig) where
   showProxy _ = "StIdle"
+instance (Show sigId, Show sig)
+      => ToJSON (AnyMessage (SigSubmissionV2 sigId sig)) where
+  toJSON (AnyMessageAndAgency stok MsgRequestSigIds{}) =
+    object
+      [ "kind" .= String "MsgRequestSigIds"
+      , "agency" .= String (pack $ show stok)
+      ]
+  toJSON (AnyMessageAndAgency stok (MsgReplySigIds ids)) =
+    object
+      [ "kind" .= String "MsgReplySigIds"
+      , "agency" .= String (pack $ show stok)
+      , "ids" .= String (pack $ show ids)
+      ]
+  toJSON (AnyMessageAndAgency stok MsgReplyNoSigIds) =
+    object
+      [ "kind" .= String "MsgReplyNoSigIds"
+      , "agency" .= String (pack $ show stok)
+      ]
+  toJSON (AnyMessageAndAgency stok (MsgRequestSigs{})) =
+    object
+      [ "kind" .= String "MsgRequestSigs"
+      , "agency" .= String (pack $ show stok)
+      ]
+  toJSON (AnyMessageAndAgency stok (MsgReplySigs sigs)) =
+    object
+      [ "kind" .= String "MsgReplySigs"
+      , "agency" .= String (pack $ show stok)
+      , "sigs" .= String (pack $ show sigs)
+      ]
+  toJSON (AnyMessageAndAgency stok MsgDone) =
+    object
+      [ "kind" .= String "MsgDone"
+      , "agency" .= String (pack $ show stok)
+      ]
 
 
 type SingSigSubmissionV2
@@ -174,7 +213,7 @@ instance Protocol (SigSubmissionV2 sigId sig) where
     -- number of outstanding identifiers.
     --
     -- With 'TokBlocking' this is a blocking operation but it's not guaranteed
-    -- taht the server will respond with signatures.  The server might block for
+    -- that the server will respond with signatures.  The server might block for
     -- only a limited time waiting for signaures, if it times out it will reply
     -- with `MsgReplyNoSigs` to let the client regain control of the protocol.
     --
@@ -205,13 +244,14 @@ instance Protocol (SigSubmissionV2 sigId sig) where
     --
     -- * The non-blocking case __MUST__ be used when there are non-zero
     --   remaining unacknowledged signatures.
-
+    --
     MsgRequestSigIds
       :: forall (blocking :: StBlockingStyle) sigId sig.
          SingBlockingStyle blocking
       -> NumIdsAck -- ^ Acknowledge this number of outstanding signatures
       -> NumIdsReq -- ^ Request up to this number of identifiers
       -> Message (SigSubmissionV2 sigId sig) StIdle (StSigIds blocking)
+
     -- | Reply with a list of object identifiers for available objects, along
     -- with the size of each object.
     --
@@ -226,9 +266,9 @@ instance Protocol (SigSubmissionV2 sigId sig) where
     -- The order in which these object identifiers are returned must be the
     -- order in which they are submitted to the mempool, to preserve dependent
     -- objects.
-
+    --
     MsgReplySigIds
-      :: BlockingReplyList blocking sigId
+      :: BlockingReplyList blocking (sigId, SizeInBytes)
       -> Message (SigSubmissionV2 sigId sig) (StSigIds blocking) StIdle
 
     -- | The blocking request `MsgRequestSigIds` can be replied with no
@@ -248,6 +288,7 @@ instance Protocol (SigSubmissionV2 sigId sig) where
     --
     -- It is an error to ask for identifiers that are not
     -- outstanding or that were already asked for.
+    --
     MsgRequestSigs
       :: [sigId]
       -> Message (SigSubmissionV2 sigId sig) StIdle StSigs
@@ -262,7 +303,7 @@ instance Protocol (SigSubmissionV2 sigId sig) where
     -- should be considered as if this peer had never announced them. (Note
     -- that this is no guarantee that the signature is invalid, it may still be
     -- valid and available from another peer).
-
+    --
     MsgReplySigs
       :: [sig]
       -> Message (SigSubmissionV2 sigId sig) StSigs StIdle
