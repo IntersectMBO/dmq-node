@@ -152,6 +152,7 @@ data Configuration' f =
     dmqcSigSubmissionOutboundTracer                :: f Bool,
     dmqcSigSubmissionInboundTracer                 :: f Bool,
     dmqcLocalMsgSubmissionServerTracer             :: f Bool,
+    dmqcLocalMsgNotificationServerTracer           :: f Bool,
 
     dmqcVersion                                    :: f Bool
   }
@@ -272,6 +273,7 @@ defaultConfiguration = Configuration {
       dmqcSigSubmissionInboundTracer                 = I True,
       dmqcSigSubmissionLogicTracer                   = I True,
       dmqcLocalMsgSubmissionServerTracer             = I True,
+      dmqcLocalMsgNotificationServerTracer           = I False,
 
       -- CLI only options
       dmqcVersion                                    = I False
@@ -366,6 +368,7 @@ instance FromJSON PartialConfig where
       dmqcSigSubmissionInboundTracer                 <- Last <$> v .:? "SigSubmissionInboundTracer"
       dmqcSigSubmissionLogicTracer                   <- Last <$> v .:? "SigSubmissionLogicTracer"
       dmqcLocalMsgSubmissionServerTracer             <- Last <$> v .:? "LocalMsgSubmissionServerTracer"
+      dmqcLocalMsgNotificationServerTracer           <- Last <$> v .:? "LocalMsgNotificationServerTracer"
 
       pure $
         Configuration

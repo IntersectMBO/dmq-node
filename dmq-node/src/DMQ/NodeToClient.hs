@@ -150,7 +150,8 @@ ntcApps
 ntcApps tracer
         Configuration { dmqcLocalMsgSubmissionServerProtocolTracer   = I localMsgSubmissionServerProtocolTracer,
                         dmqcLocalMsgNotificationServerProtocolTracer = I localMsgNotificationServerProtocolTracer,
-                        dmqcLocalMsgSubmissionServerTracer           = I localMsgSubmissionServerTracer
+                        dmqcLocalMsgSubmissionServerTracer           = I localMsgSubmissionServerTracer,
+                        dmqcLocalMsgNotificationServerTracer         = I localMsgNotificationServerTracer
                       }
         mempoolReader
         TxSubmissionMempoolWriter { mempoolAddTxs }
@@ -193,7 +194,11 @@ ntcApps tracer
         channel
         (localMsgNotificationServerPeer $
           localMsgNotificationServer
-            nullTracer
+            sigId
+            (if localMsgNotificationServerTracer
+                then WithEventType "LocalMsgNotification.Server" . Mx.WithBearer connId >$< tracer
+                else nullTracer
+            )
             (pure ()) _ntc_MAX_SIGS_TO_ACK mempoolReader)
 
 
