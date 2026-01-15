@@ -4,6 +4,7 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE RankNTypes          #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies        #-}
 
@@ -13,6 +14,7 @@ module DMQ.Protocol.SigSubmissionV2.Codec
   , byteLimitsSigSubmissionV2
   , timeLimitsSigSubmissionV2
   , encodeSigSubmissionV2
+  , anncodecSigSubmissionV2
   ) where
 
 import Control.Monad.Class.MonadST
@@ -25,9 +27,11 @@ import Text.Printf
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
-  
+
 import Network.TypedProtocol.Codec.CBOR
   
+import Ouroboros.Network.Protocol.Codec.Utils (WithByteSpan (..))
+import Ouroboros.Network.Protocol.Codec.Utils qualified as Utils
 import Ouroboros.Network.Protocol.Limits
   
 import DMQ.Protocol.SigSubmissionV2.Type
@@ -233,12 +237,12 @@ decodeSigSubmissionV2 decodeSigId decodeSig = decode
 
         (SingSigs, 2, 5) -> do
           CBOR.decodeListLenIndef
-          sigIds <- CBOR.decodeSequenceLenIndef
+          sigs <- CBOR.decodeSequenceLenIndef
                       (flip (:))
                       []
                       reverse
                       decodeSig
-          return $ SomeMessage $ MsgReplySigs sigIds
+          return $ SomeMessage $ MsgReplySigs sigs
 
         (SingIdle, 1, 6) ->
           return $ SomeMessage MsgDone
@@ -304,3 +308,130 @@ codecSigSubmissionV2Id = Codec {encode, decode}
           notActiveState stok
         (_, _) ->
           DecodeFail $ CodecFailure "codecSigSubmissionV2Id: no matching message"
+
+
+-- | An 'AnnotatedCodec' with a custom `sigWithBytes` wrapper of `sig`,
+-- e.g. `sigWithBytes ~ WithBytes sig`.
+--
+anncodecSigSubmissionV2
+  :: forall (sigId :: Type) (sig :: Type) (sigWithBytes :: Type) m.
+     MonadST m
+  => (ByteString -> sig -> sigWithBytes)
+  -- ^ `withBytes` constructor
+  -> (sigId -> CBOR.Encoding)
+  -- ^ encode 'sigid'
+  -> (forall s . CBOR.Decoder s sigId)
+  -- ^ decode 'sigid'
+  -> (sigWithBytes -> CBOR.Encoding)
+  -- ^ encode `sig`
+  -> (forall s . CBOR.Decoder s (ByteString -> sig))
+  -- ^ decode transaction
+  -> AnnotatedCodec (SigSubmissionV2 sigId sigWithBytes) CBOR.DeserialiseFailure m ByteString
+anncodecSigSubmissionV2 mkWithBytes encodeSigId decodeSigId
+                                    encodeSig   decodeSig =
+    mkCodecCborLazyBS
+      (encodeSigSubmissionV2 encodeSigId encodeSig)
+      decode
+  where
+    decode :: forall (st :: SigSubmissionV2 sigId sigWithBytes).
+              ActiveState st
+           => StateToken st
+           -> forall s. CBOR.Decoder s (Annotator ByteString st)
+    decode =
+      decodeSigSubmissionV2' @sig
+                             @sigWithBytes
+                             @WithByteSpan
+                             @ByteString
+                             mkWithBytes'
+                             decodeSigId
+                             (Utils.decodeWithByteSpan decodeSig)
+  
+    mkWithBytes' :: ByteString
+                 -> WithByteSpan (ByteString -> sig)
+                 -> sigWithBytes
+    mkWithBytes' bytes (WithByteSpan (fn, start, end)) =
+        mkWithBytes (Utils.bytesBetweenOffsets start end bytes) -- bytes of the transaction
+                    (fn bytes) -- note: fn expects full bytes
+
+
+decodeSigSubmissionV2'
+  :: forall (sig          :: Type)
+            (sigWithBytes :: Type)
+            (withByteSpan :: Type -> Type)
+            (bytes        :: Type)
+            (sigId        :: Type)
+            (st           :: SigSubmissionV2 sigId sigWithBytes)
+            s.
+     ActiveState st
+  => (bytes -> withByteSpan (bytes -> sig) -> sigWithBytes)
+  -> (forall s'. CBOR.Decoder s' sigId) -- ^ decode 'sigId'
+  -> (forall s'. CBOR.Decoder s' (withByteSpan (bytes -> sig)))
+  -> StateToken st
+  -> CBOR.Decoder s (Annotator bytes st)
+decodeSigSubmissionV2' mkWithBytes decodeSigId decodeSig sok = do
+  len <- CBOR.decodeListLen
+  key <- CBOR.decodeWord
+  decode sok len key
+  where
+    decode stok len key = do
+      case (stok, len, key) of
+        (SingIdle, 4, 1) -> do
+          blocking <- CBOR.decodeBool
+          ackNo <- NumIdsAck <$> CBOR.decodeWord16
+          reqNo <- NumIdsReq <$> CBOR.decodeWord16
+          return $! if blocking
+            then Annotator $ \_ -> SomeMessage $ MsgRequestSigIds SingBlocking ackNo reqNo
+            else Annotator $ \_ -> SomeMessage $ MsgRequestSigIds SingNonBlocking ackNo reqNo
+
+        -- (SingSigIds b, 2, 2) -> do TODO 1 or 2?
+        (SingSigIds b, 2, 1) -> do
+          CBOR.decodeListLenIndef
+          sigIds <- CBOR.decodeSequenceLenIndef
+                      (flip (:))
+                      []
+                      reverse
+                      (do CBOR.decodeListLenOf 2
+                          sigid <- decodeSigId
+                          sz   <- CBOR.decodeWord32
+                          return (sigid, SizeInBytes sz))
+          case (b, sigIds) of
+            (SingBlocking, t : ts) ->
+              return
+                $ Annotator $ \_ -> SomeMessage $ MsgReplySigIds (BlockingReply (t NonEmpty.:| ts))
+
+            (SingNonBlocking, ts) ->
+              return
+                $ Annotator $ \_ -> SomeMessage $ MsgReplySigIds (NonBlockingReply ts)
+
+            (SingBlocking, []) ->
+              fail "codecSigSubmissionV2: MsgReplySigIds: empty list not permitted"
+
+        (SingSigIds SingBlocking, 1, 3) ->
+          return (Annotator $ \_ -> SomeMessage MsgReplyNoSigIds)
+
+        (SingIdle, 2, 4) -> do
+          CBOR.decodeListLenIndef
+          sigIds <- CBOR.decodeSequenceLenIndef
+                      (flip (:))
+                      []
+                      reverse
+                      decodeSigId
+          return $ Annotator $ \_ -> SomeMessage $ MsgRequestSigs sigIds
+
+        (SingSigs, 2, 5) -> do
+          CBOR.decodeListLenIndef
+          sigs <- CBOR.decodeSequenceLenIndef
+                      (flip (:))
+                      []
+                      reverse
+                      decodeSig
+          return (Annotator $ \bytes -> SomeMessage (MsgReplySigs $ mkWithBytes bytes <$> sigs))
+
+        (SingIdle, 1, 6) ->
+          return $ Annotator $ \_ -> SomeMessage MsgDone
+
+        (SingDone, _, _) -> notActiveState stok
+
+        -- failures
+        (_, _, _) ->
+          fail $ printf "codecSigSubmissionV2 (%s) unexpected key %d, length %d" (show stok) key len

@@ -40,11 +40,11 @@ import Cardano.KESAgent.KES.OCert (OCert (..))
 
 import Ouroboros.Network.Protocol.Codec.Utils qualified as Utils
 import Ouroboros.Network.Protocol.Limits
-import Ouroboros.Network.Protocol.TxSubmission2.Codec qualified as TX
 
 import DMQ.Protocol.SigSubmission.Type
 import DMQ.Protocol.SigSubmissionV2.Type (SigSubmissionV2)
-import DMQ.Protocol.SigSubmissionV2.Codec (codecSigSubmissionV2Id)
+import DMQ.Protocol.SigSubmissionV2.Codec (codecSigSubmissionV2Id,
+           anncodecSigSubmissionV2)
 
 
 
@@ -136,9 +136,9 @@ codecSigSubmission
      ( Crypto crypto
      , MonadST m
      )
-  => AnnotatedCodec (SigSubmission crypto) CBOR.DeserialiseFailure m ByteString
+  => AnnotatedCodec (SigSubmissionV2 SigId (Sig crypto)) CBOR.DeserialiseFailure m ByteString
 codecSigSubmission =
-  TX.anncodecTxSubmission2'
+  anncodecSigSubmissionV2
     SigWithBytes
     encodeSigId decodeSigId
     encodeSig   decodeSig
