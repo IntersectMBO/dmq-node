@@ -138,7 +138,7 @@ encodeSigSubmissionV2 encodeObjectId encodeObject = encode
 
     encode (MsgReplySigIds objIds) =
          CBOR.encodeListLen 2
-      <> CBOR.encodeWord 1 -- TODO 1 or 2?
+      <> CBOR.encodeWord 2
       <> CBOR.encodeListLenIndef
       <> foldr (\(sigid, SizeInBytes sz) r ->
                        CBOR.encodeListLen 2
@@ -198,8 +198,7 @@ decodeSigSubmissionV2 decodeSigId decodeSig = decode
             then SomeMessage $ MsgRequestSigIds SingBlocking ackNo reqNo
             else SomeMessage $ MsgRequestSigIds SingNonBlocking ackNo reqNo
 
-        -- (SingSigIds b, 2, 2) -> do TODO 1 or 2?
-        (SingSigIds b, 2, 1) -> do
+        (SingSigIds b, 2, 2) -> do
           CBOR.decodeListLenIndef
           sigIds <- CBOR.decodeSequenceLenIndef
                       (flip (:))
@@ -383,8 +382,7 @@ decodeSigSubmissionV2' mkWithBytes decodeSigId decodeSig sok = do
             then Annotator $ \_ -> SomeMessage $ MsgRequestSigIds SingBlocking ackNo reqNo
             else Annotator $ \_ -> SomeMessage $ MsgRequestSigIds SingNonBlocking ackNo reqNo
 
-        -- (SingSigIds b, 2, 2) -> do TODO 1 or 2?
-        (SingSigIds b, 2, 1) -> do
+        (SingSigIds b, 2, 2) -> do
           CBOR.decodeListLenIndef
           sigIds <- CBOR.decodeSequenceLenIndef
                       (flip (:))
