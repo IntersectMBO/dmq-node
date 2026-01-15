@@ -325,7 +325,7 @@ anncodecSigSubmissionV2
   -> (sigWithBytes -> CBOR.Encoding)
   -- ^ encode `sig`
   -> (forall s . CBOR.Decoder s (ByteString -> sig))
-  -- ^ decode transaction
+  -- ^ decode signature
   -> AnnotatedCodec (SigSubmissionV2 sigId sigWithBytes) CBOR.DeserialiseFailure m ByteString
 anncodecSigSubmissionV2 mkWithBytes encodeSigId decodeSigId
                                     encodeSig   decodeSig =

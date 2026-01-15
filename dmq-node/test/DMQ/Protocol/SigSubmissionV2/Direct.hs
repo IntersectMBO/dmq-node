@@ -6,6 +6,7 @@
 
 module DMQ.Protocol.SigSubmissionV2.Direct (directPipelined) where
 
+import Data.Map.Strict qualified as Map
 import Data.List.NonEmpty qualified as NonEmpty
 
 import Network.TypedProtocol.Core
@@ -24,8 +25,9 @@ directPipelined
   -> SigSubmissionInboundPipelined sigId sig m a
   -> m a
 directPipelined (SigSubmissionOutbound mOutbound)
-                (SigSubmissionInboundPipelined inbound) = do
+                (SigSubmissionInboundPipelined mInbound) = do
     outbound <- mOutbound
+    inbound <- mInbound
     directSender EmptyQ inbound outbound
   where
     directSender :: forall (n :: N).
@@ -55,7 +57,7 @@ directPipelined (SigSubmissionOutbound mOutbound)
 
     directSender q (SendMsgRequestSigsPipelined sigIds inboundNext)
                    OutboundStIdle{recvMsgRequestSigs} = do
-      SendMsgReplySigs sigs outbound' <- recvMsgRequestSigs sigIds
+      SendMsgReplySigs sigs outbound' <- recvMsgRequestSigs $ Map.keys sigIds
       inbound' <- inboundNext
       directSender (enqueue (CollectSigs sigIds sigs) q) inbound' outbound'
 

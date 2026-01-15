@@ -57,8 +57,8 @@ import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import DMQ.Configuration (Configuration, Configuration' (..), I (..))
 import DMQ.Diffusion.NodeKernel (NodeKernel (..))
 import DMQ.NodeToNode.Version
-import DMQ.Protocol.SigSubmission.Codec (codecSigSubmission)
-import DMQ.Protocol.SigSubmissionV2.Codec
+import DMQ.Protocol.SigSubmission.Codec (codecSigSubmissionV2)
+import DMQ.Protocol.SigSubmissionV2.Codec hiding (codecSigSubmissionV2)
 import DMQ.Protocol.SigSubmissionV2.Inbound (sigSubmissionV2InboundPeerPipelined)
 import DMQ.Protocol.SigSubmissionV2.Outbound (sigSubmissionV2OutboundPeer)
 import DMQ.Protocol.SigSubmissionV2.Type
@@ -550,7 +550,7 @@ dmqCodecs :: ( MonadST m
           -> Codecs crypto addr m
 dmqCodecs encodeAddr decodeAddr =
   Codecs {
-    sigSubmissionCodec = codecSigSubmission
+    sigSubmissionCodec = codecSigSubmissionV2
   , keepAliveCodec     = codecKeepAlive_v2
   , peerSharingCodec   = codecPeerSharing encodeAddr decodeAddr
   }
