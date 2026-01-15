@@ -90,17 +90,20 @@ codecLocalMsgNotification' mkWithBytes encodeMsg decodeMsgWithBytes =
                     HasMore         -> True
                     DoesNotHaveMore -> False
 
-    encode (MsgReply msgs@BlockingReply{} hasMore) =
-        CBOR.encodeListLen 3
+    encode (MsgReply msgs@BlockingReply{} _hasMore) =
+        -- Issue #15
+        -- CBOR.encodeListLen 3
+        CBOR.encodeListLen 2
      <> CBOR.encodeWord 2
      <> CBOR.encodeListLenIndef
      <> foldMap encodeMsg msgs
      <> CBOR.encodeBreak
-     <> CBOR.encodeBool hasMore'
-     where
-       hasMore' = case hasMore of
-                    HasMore         -> True
-                    DoesNotHaveMore -> False
+     -- Issue #15
+     -- <> CBOR.encodeBool hasMore'
+     -- where
+     --   hasMore' = case hasMore of
+     --                HasMore         -> True
+     --                DoesNotHaveMore -> False
 
     encode MsgClientDone =
         CBOR.encodeListLen 1
@@ -130,14 +133,18 @@ codecLocalMsgNotification' mkWithBytes encodeMsg decodeMsgWithBytes =
           more <- bool DoesNotHaveMore HasMore <$> CBOR.decodeBool
           return (Annotator \bytes -> SomeMessage $ MsgReply (NonBlockingReply $ mkWithBytes bytes <$> msgs) more)
 
-        (SingBusy SingBlocking, 3, 2) -> do
+        -- (SingBusy SingBlocking, 3, 2) -> do
+        (SingBusy SingBlocking, 2, 2) -> do
           CBOR.decodeListLenIndef
           msgs <- CBOR.decodeSequenceLenIndef
                     (flip (:)) [] reverse
                     (Utils.decodeWithByteSpan decodeMsgWithBytes)
-          more <- bool DoesNotHaveMore HasMore <$> CBOR.decodeBool
+          -- Issue #15
+          -- more <- bool DoesNotHaveMore HasMore <$> CBOR.decodeBool
+          -- return (Annotator \bytes ->
+          --          SomeMessage $ MsgReply (BlockingReply (mkWithBytes bytes <$> NonEmpty.fromList msgs)) more)
           return (Annotator \bytes ->
-                   SomeMessage $ MsgReply (BlockingReply (mkWithBytes bytes <$> NonEmpty.fromList msgs)) more)
+                   SomeMessage $ MsgReply (BlockingReply (mkWithBytes bytes <$> NonEmpty.fromList msgs)) DoesNotHaveMore)
 
         (SingIdle, 1, 3) -> return (Annotator \_ -> SomeMessage MsgClientDone)
 

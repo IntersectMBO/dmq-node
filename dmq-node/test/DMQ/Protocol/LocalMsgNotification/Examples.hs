@@ -40,16 +40,19 @@ msgNotificationClient tracer maxMsgs =
   where
     clientReceiveBlocking :: [msg] -> NonEmpty msg -> HasMore
                           -> m (LocalMsgNotificationClientStIdle m msg [msg])
-    clientReceiveBlocking msgs0 msgs hasMore =
+    clientReceiveBlocking msgs0 msgs _hasMore =
       let acc = msgs0 <> NonEmpty.toList msgs
-       in assert (NonEmpty.length msgs <= fromIntegral maxMsgs)
-          case hasMore of
-            DoesNotHaveMore -> do
-              traceWith tracer $ TraceClientDone acc
-              return . SendMsgDone $ pure acc
-            HasMore -> do
-              traceWith tracer $ TraceClientRequestNonBlocking acc
-              return . SendMsgRequestNonBlocking $ clientReceiveNonBlocking acc
+       in assert (NonEmpty.length msgs <= fromIntegral maxMsgs) $ do
+          -- Issue #15
+          -- case hasMore of
+          --   DoesNotHaveMore -> do
+          --     traceWith tracer $ TraceClientDone acc
+          --     return . SendMsgDone $ pure acc
+          --   HasMore -> do
+          --     traceWith tracer $ TraceClientRequestNonBlocking acc
+          --     return . SendMsgRequestNonBlocking $ clientReceiveNonBlocking acc
+          traceWith tracer $ TraceClientRequestNonBlocking acc
+          return . SendMsgRequestNonBlocking $ clientReceiveNonBlocking acc
 
     clientReceiveNonBlocking :: [msg] -> [msg] -> HasMore
                              -> m (LocalMsgNotificationClientStIdle m msg [msg])
@@ -58,8 +61,11 @@ msgNotificationClient tracer maxMsgs =
        in assert (length msgs <= fromIntegral maxMsgs)
           case hasMore of
             DoesNotHaveMore -> do
-              traceWith tracer $ TraceClientRequestBlocking acc
-              return $ SendMsgRequestBlocking (clientReceiveBlocking acc)
+              -- Issue #15
+              -- traceWith tracer $ TraceClientRequestBlocking acc
+              -- return $ SendMsgRequestBlocking (clientReceiveBlocking acc)
+              traceWith tracer $ TraceClientDone acc
+              return . SendMsgDone $ pure acc
             HasMore -> do
               traceWith tracer $ TraceClientRequestNonBlocking acc
               return . SendMsgRequestNonBlocking $ clientReceiveNonBlocking acc
@@ -98,18 +104,25 @@ msgNotificationServer tracer maxMsgs neMsgs0 =
                       -> [msg]
                       -> SingBlockingStyle blocking
                       -> m (ServerResponse m blocking msg ())
-    msgRequestHandler DoesNotHaveMore [] block =
-      error $ "LocalMsgNotificationServer:msgRequestHandler: client violation DoesNotHaveMore []" <> show block
-    msgRequestHandler HasMore [] _blocking =
-      error "LocalMsgNotificationServer:msgRequestHandler: server error HasMore []"
-    msgRequestHandler DoesNotHaveMore _msgs SingNonBlocking =
-      error "LocalMsgNotificationServer:msgRequestHandler: client violation DoesNotHaveMore _msgs SingNonBlocking"
-    msgRequestHandler _ msgs@(_:_) SingNonBlocking = do
-      let leading = init msgs
-          prefix  = take (fromIntegral maxMsgs) leading
-          msgs'   = drop (length prefix) leading <> [last msgs]
-          hasMore' | not (null prefix || null msgs') = HasMore
-                   | otherwise = DoesNotHaveMore
+    -- Issue #15
+    -- msgRequestHandler DoesNotHaveMore [] block =
+    --   error $ "LocalMsgNotificationServer:msgRequestHandler: client violation DoesNotHaveMore []" <> show block
+    -- msgRequestHandler HasMore [] _blocking =
+    --   error "LocalMsgNotificationServer:msgRequestHandler: server error HasMore []"
+    -- msgRequestHandler DoesNotHaveMore _msgs SingNonBlocking =
+    --   error "LocalMsgNotificationServer:msgRequestHandler: client violation DoesNotHaveMore _msgs SingNonBlocking"
+    -- msgRequestHandler _ msgs@(_:_) SingNonBlocking = do
+    msgRequestHandler _ msgs SingNonBlocking = do
+      -- Issue #15
+      -- let leading = init msgs
+      --     prefix  = take (fromIntegral maxMsgs) leading
+      --     msgs'   = drop (length prefix) leading <> [last msgs]
+      --     hasMore' | not (null prefix || null msgs') = HasMore
+      --              | otherwise = DoesNotHaveMore
+      let prefix = take (fromIntegral maxMsgs) msgs
+          msgs'  = drop (length prefix) msgs
+          hasMore' | null msgs' = DoesNotHaveMore
+                   | otherwise  = HasMore
       traceWith tracer $ TraceServerReply prefix hasMore'
       return $
         ServerReply (NonBlockingReply prefix) hasMore'
