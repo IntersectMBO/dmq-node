@@ -56,14 +56,16 @@ newtype SigHash = SigHash { getSigHash :: ByteString }
   deriving stock (Eq, Ord)
 
 instance Show SigHash where
-  show (SigHash bs) = take 10 . Text.unpack . Text.decodeUtf8Lenient . BS.Base16.encode $ bs
+  -- show first 10 bytes in hex
+  show (SigHash bs) = take 20 . Text.unpack . Text.decodeUtf8Lenient . BS.Base16.encode $ bs
 
 newtype SigId = SigId { getSigId :: SigHash }
   deriving stock (Show, Eq, Ord)
 
 instance ToJSON SigId where
   toJSON (SigId (SigHash bs)) =
-    String (Text.decodeUtf8Lenient . BS.Base16.encode $ bs)
+    -- show first 10 bytes in hex
+    String (Text.take 20 . Text.decodeUtf8Lenient . BS.Base16.encode $ bs)
 
 instance ShowProxy SigId where
 
