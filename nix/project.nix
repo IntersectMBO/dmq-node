@@ -3,6 +3,15 @@
 let
   defaultCompiler = "ghc967";
 
+  forAllProjectPackages = cfg: args@{ config, lib, ... }: {
+    options.packages = lib.genAttrs config.package-keys (_:
+      lib.mkOption {
+        type = lib.types.submodule ({ config, lib, ... }:
+          lib.mkIf config.package.isProject (cfg args)
+        );
+      });
+  };
+
   cabalProject = pkgs.haskell-nix.cabalProject' (
 
     { config, pkgs, ... }:
@@ -27,6 +36,9 @@ let
           [ p.musl64 ];
 
       modules = [
+        (forAllProjectPackages ({ ... }: {
+          ghcOptions = [ "-Werror" ];
+        }))
         {
           packages.dmq-node.components.tests.dmq-cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag pkgs.cddlc ];
           packages.dmq-node.components.tests.dmq-cddl.preCheck = "export HOME=`pwd`";
