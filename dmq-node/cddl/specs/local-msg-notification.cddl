@@ -13,7 +13,9 @@ msgRequestMessages          = [0, isBlocking]
 ; the codec only accepts indefinite lists of messages
 msgReplyMessagesNonBlocking = [1, [*sig.message], hasMore]
 ; the codec only accepts indefinite lists of messages
-msgReplyMessagesBlocking    = [2, [+sig.message], hasMore]
+; Issue #15
+; msgReplyMessagesBlocking    = [2, [+sig.message], hasMore]
+msgReplyMessagesBlocking    = [2, [+sig.message]]
 msgClientDone               = [3]
 
 ;# import sig as sig

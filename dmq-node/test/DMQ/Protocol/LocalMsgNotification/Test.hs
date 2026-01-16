@@ -230,7 +230,9 @@ instance Arbitrary msg => Arbitrary (AnyMessage (LocalMsgNotification msg)) wher
     [ pure . AnyMessage . MsgRequest $ SingBlocking
     , pure . AnyMessage . MsgRequest $ SingNonBlocking
     , AnyMessage <$>
-        (MsgReply . BlockingReply . NE.fromList . QC.getNonEmpty <$> arbitrary <*> arbitrary)
+        -- Issue #15
+        -- (MsgReply . BlockingReply . NE.fromList . QC.getNonEmpty <$> arbitrary <*> arbitrary)
+        (MsgReply . BlockingReply . NE.fromList . QC.getNonEmpty <$> arbitrary <*> pure DoesNotHaveMore)
     , AnyMessage <$>
         (MsgReply . NonBlockingReply <$> arbitrary <*> arbitrary)
     , pure $ AnyMessage MsgClientDone
