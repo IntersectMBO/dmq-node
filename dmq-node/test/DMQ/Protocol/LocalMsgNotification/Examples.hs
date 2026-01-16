@@ -92,7 +92,9 @@ msgNotificationServer tracer maxMsgs neMsgs0 =
     server :: HasMore -> [msg] -> ServerIdle m msg ()
     server hasMore msgs =
       assert invariant
-      ServerIdle { msgRequestHandler = msgRequestHandler hasMore msgs, msgDoneHandler = pure () }
+      ServerIdle { msgRequestHandler = msgRequestHandler hasMore msgs,
+                   msgDoneHandler    = pure ()
+                 }
       where
         invariant =
           case (hasMore, msgs) of
