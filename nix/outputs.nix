@@ -62,7 +62,6 @@ let
     inherit packages;
     inherit devShells;
     required = utils.makeHydraRequiredJob hydraJobs;
-    preCommitCheck = devShells.default.preCommitCheck;
   };
 
   hydraJobsPerSystem = {

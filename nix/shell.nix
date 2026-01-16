@@ -16,54 +16,6 @@ let
 
   tools = allTools.${ghc};
 
-  preCommitCheck = inputs.pre-commit-hooks.lib.${pkgs.stdenv.system}.run {
-
-    src = lib.cleanSource ../.;
-
-    hooks = {
-      hlint = {
-        enable = false;
-        package = tools.hlint;
-        args = [ "--hint" ".hlint.yaml" ];
-      };
-      shellcheck = {
-        enable = false;
-        package = pkgs.shellcheck;
-      };
-      stylish-haskell = {
-        enable = false;
-        package = tools.stylish-haskell;
-        args = [ "--hint" ".stylish-haskell.yaml" ];
-      };
-      nixpkgs-fmt = {
-        enable = true;
-      };
-      cabal-gild = {
-        enable = true;
-        entry = "${tools.cabal-gild}/bin/cabal-gild";
-        files = ".*\\.cabal$";
-        args = [ "--io" ];
-        stages = [ "pre-commit" ];
-        pass_filenames = true;
-      };
-      cabal-check = {
-        enable = true;
-        entry =
-          let
-            script = pkgs.writeShellScript "cabal-check" ''
-              pushd $(dirname $1)
-              ${tools.cabal}/bin/cabal check || exit 1
-              popd
-            '';
-          in
-          "${script}";
-        files = ".*\\.cabal$";
-        stages = [ "pre-commit" ];
-        pass_filenames = true;
-      };
-    };
-  };
-
   linuxPkgs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [
   ];
 
@@ -102,13 +54,10 @@ let
     withHoogle = true;
 
     shellHook = ''
-      ${preCommitCheck.shellHook}
       export PS1="\n\[\033[1;32m\][nix-shell:\w]\$\[\033[0m\] "
     '';
   };
 
 in
 
-shell // {
-  inherit preCommitCheck;
-}
+shell
