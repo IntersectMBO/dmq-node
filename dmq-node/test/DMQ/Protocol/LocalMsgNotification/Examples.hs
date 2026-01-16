@@ -137,3 +137,5 @@ msgNotificationServer tracer maxMsgs neMsgs0 =
       return $
         ServerReply (BlockingReply . NonEmpty.fromList $ prefix) hasMore'
                     (server hasMore' msgs')
+    -- TODO: use `BlockingReplyList` to eliminate this case.
+    msgRequestHandler _ [] SingBlocking = error "invariant violation"
