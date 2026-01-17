@@ -162,18 +162,12 @@ validateSig verKeyHashingFn now sigs ctx0 =
                 | otherwise
                   -> left UnrecognizedPool
         Just ss@NotZeroSetSnapshot ->
-          if | now < nextEpoch -> return ()
+          if | now <= addUTCTime c_MAX_CLOCK_SKEW_SEC nextEpoch
+             -> return ()
 
                -- local-state-query is late, but the pool is about to expire
              | isZero (ssMarkPool ss)
-             , now > addUTCTime c_MAX_CLOCK_SKEW_SEC nextEpoch
              -> left SigExpired
-
-               -- we bound the time we're willing to approve a message in case
-               -- something happened to local-state-query and it's taking too
-               -- long to update our state
-             | now <= addUTCTime c_MAX_CLOCK_SKEW_SEC nextEpoch
-             -> return ()
 
              | otherwise
              -> left ClockSkew
