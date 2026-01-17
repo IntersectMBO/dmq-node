@@ -30,12 +30,11 @@ import Control.Monad (zipWithM, (>=>))
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.ST (runST)
 import Data.Bifunctor (second)
-import Data.Binary qualified as Binary
 import Data.ByteString (ByteString)
-import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BL
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map qualified as Map
+import Data.Time.Clock (nominalDiffTimeToSeconds, secondsToNominalDiffTime)
 import Data.Typeable
 import Data.Word (Word32)
 import GHC.TypeNats (KnownNat)
@@ -50,9 +49,10 @@ import Cardano.Crypto.DSIGN.Class qualified as DSIGN
 import Cardano.Crypto.KES.Class (KESAlgorithm (..), VerKeyKES, encodeSigKES)
 import Cardano.Crypto.KES.Class qualified as KES
 import Cardano.Crypto.PinnedSizedBytes (PinnedSizedBytes, psbToByteString)
-import Cardano.Crypto.Hash (castHash, hashWith)
 import Cardano.Crypto.Seed (mkSeedFromBytes)
-import Cardano.Ledger.Hashes (KeyHash (..))
+import Cardano.Ledger.Keys (VKey (..))
+import Cardano.Ledger.Keys qualified as Ledger.Keys
+import Cardano.Ledger.Hashes (hashKey)
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Cardano.KESAgent.KES.Evolution qualified as KES
 import Cardano.KESAgent.KES.OCert (OCert (..))
@@ -65,6 +65,7 @@ import DMQ.Protocol.SigSubmission.Codec
 import DMQ.Protocol.SigSubmission.Type
 import DMQ.Protocol.SigSubmission.Validate
 
+import Ouroboros.Consensus.Shelley.Ledger.Query (StakeSnapshot (..))
 import Ouroboros.Network.Protocol.TxSubmission2.Test (labelMsg)
 
 import Test.Ouroboros.Network.Protocol.Utils (prop_codec_cborM,
@@ -73,6 +74,7 @@ import Test.Ouroboros.Network.Protocol.Utils (prop_codec_cborM,
 import Test.QuickCheck.Instances.ByteString ()
 import Test.Tasty
 import Test.Tasty.QuickCheck as QC
+-- import qualified Debug.Trace as Debug
 
 
 tests :: TestTree
@@ -826,41 +828,208 @@ prop_codec_valid_cbor_standardcrypto
   -> Property
 prop_codec_valid_cbor_standardcrypto = prop_codec_valid_cbor . getBlind
 
+data SnapshotType = NotZeroSetSnapshotType
+                  | NotZeroMarkSnapshotType
+                  | ZeroSetAndMarkSnapshotType
+  deriving (Eq, Show)
+
+instance Arbitrary SnapshotType where
+  arbitrary = elements [ NotZeroSetSnapshotType
+                       , NotZeroMarkSnapshotType
+                       , ZeroSetAndMarkSnapshotType
+                       ]
+
+
+data Validity = Valid NominalDiffTime
+              | InvalidViaNotInitialized
+              | InvalidViaUnrecognizedPool
+              | InvalidViaSigExpired SnapshotType NominalDiffTime
+              | InvalidViaClockSkew SnapshotType NominalDiffTime
+              | InvalidViaPoolNotEligible NominalDiffTime
+              | InvalidViaExpiredViaZeroSetSnapshot
+              | InvalidViaOCertCounter
+  deriving (Eq, Show)
+
+instance Arbitrary Validity where
+    arbitrary = oneof
+      [ -- the `NominalDiffTime` generator has hard time to generate small values
+        Valid . secondsToNominalDiffTime
+          <$> arbitrary `suchThat` (< nominalDiffTimeToSeconds c_MAX_CLOCK_SKEW_SEC)
+      , pure InvalidViaNotInitialized
+      , pure InvalidViaUnrecognizedPool
+      , InvalidViaSigExpired
+          <$> arbitrary
+          <*> arbitrary `suchThat` (> c_MAX_CLOCK_SKEW_SEC)
+      , InvalidViaClockSkew
+          <$> arbitrary `suchThat` (/= ZeroSetAndMarkSnapshotType)
+          <*> arbitrary `suchThat` (> c_MAX_CLOCK_SKEW_SEC)
+      , InvalidViaPoolNotEligible
+          <$> arbitrary `suchThat` (> c_MAX_CLOCK_SKEW_SEC)
+      , pure InvalidViaOCertCounter
+      ]
+
+    shrink (Valid t)
+      = [ Valid t' | t' <- shrink t, t' >= 0 ]
+    shrink InvalidViaNotInitialized = [ Valid c_MAX_CLOCK_SKEW_SEC ]
+    shrink InvalidViaUnrecognizedPool = [ Valid c_MAX_CLOCK_SKEW_SEC ]
+    shrink (InvalidViaSigExpired a t)
+      = [ InvalidViaSigExpired a' t
+        | a' <- shrink a
+        ]
+      ++
+        [ InvalidViaSigExpired a t'
+        | t' <- shrink t
+        , t' > c_MAX_CLOCK_SKEW_SEC
+        ]
+      ++
+        [Valid c_MAX_CLOCK_SKEW_SEC]
+    shrink (InvalidViaClockSkew a t)
+      = [ InvalidViaClockSkew a t'
+        | t' <- shrink t
+        , t' > c_MAX_CLOCK_SKEW_SEC
+        ]
+      ++
+        [ Valid c_MAX_CLOCK_SKEW_SEC ]
+    shrink (InvalidViaPoolNotEligible t)
+      = [ InvalidViaPoolNotEligible t'
+        | t' <- shrink t
+        , t' > c_MAX_CLOCK_SKEW_SEC
+        ]
+      ++
+        [Valid c_MAX_CLOCK_SKEW_SEC]
+    shrink InvalidViaExpiredViaZeroSetSnapshot = [ Valid c_MAX_CLOCK_SKEW_SEC ]
+    shrink InvalidViaOCertCounter = [ Valid c_MAX_CLOCK_SKEW_SEC ]
+
 
 -- | Check that the KES signature is valid.
 --
+-- TODO: shrinker of `Sig` has a bug which produces invalid `OCert`s
+-- (`validateOCert` with "Validation failed", indicating a wrong signature).
+--
+-- TODO: generate invalid crypto
+--
 prop_validateSig
   :: ( Crypto crypto
-     , DSIGN.ContextDSIGN (DSIGN crypto) ~ ()
+     , DSIGN crypto ~ Ledger.Keys.DSIGN
      , DSIGN.Signable (DSIGN crypto) (KES.OCertSignable crypto)
      , KES.ContextKES (KES crypto) ~ ()
      , KES.Signable (KES crypto) ByteString
      )
   => WithConstrKES size kesCrypt (Sig crypto)
+  -> Validity
   -> Property
-prop_validateSig constr = ioProperty do
-    sig <- runWithConstr constr
+prop_validateSig constr validity = ioProperty do
+    sig@Sig { sigColdKey = SigColdKey coldKey,
+              sigOpCertificate = SigOpCertificate OCert { ocertN }
+            } <- runWithConstr constr
     now <- getCurrentTime
-    let validationCtx = PoolValidationCtx Nothing Map.empty Map.empty
-        dummyHash = KeyHash . castHash . hashWith (BS.toStrict . Binary.encode . const (0 :: Int))
-    return case fst (validateSig dummyHash now [sig] validationCtx) of
-      Left (_, err) : _ ->
-          counterexample ("KES seed: " ++ show (ctx constr))
-        . counterexample ("KES vk key: " ++ show (ocertVkHot . getSigOpCertificate . sigOpCertificate $ sig))
-        . counterexample (show sig)
-        . counterexample (show err)
-        $ False
-      Right {} : _ -> property True
-      _ -> error "validateSig: invariant violation"
+    let poolId = hashKey (VKey coldKey)
+
+        stakeSnapshot =
+          case validity of
+            InvalidViaSigExpired ZeroSetAndMarkSnapshotType _
+              -> StakeSnapshot { ssMarkPool = mempty,
+                                 ssSetPool  = mempty,
+                                 ssGoPool   = mempty
+                               }
+            InvalidViaPoolNotEligible {}
+              -> StakeSnapshot { ssMarkPool = succ mempty,
+                                 ssSetPool  = mempty,
+                                 ssGoPool   = mempty
+                               }
+            InvalidViaClockSkew NotZeroSetSnapshotType _
+              -> StakeSnapshot { ssMarkPool = succ mempty,
+                                 ssSetPool  = succ mempty,
+                                 ssGoPool   = mempty
+                               }
+            InvalidViaClockSkew NotZeroMarkSnapshotType _
+              -> StakeSnapshot { ssMarkPool = succ mempty,
+                                 ssSetPool  = mempty,
+                                 ssGoPool   = mempty
+                               }
+            _ -> StakeSnapshot { ssMarkPool = succ mempty,
+                                 ssSetPool  = succ mempty,
+                                 ssGoPool   = mempty
+                               }
+        vctxEpoch =
+          case validity of
+              Valid delta
+                -> Just $ (-delta) `addUTCTime` now
+              InvalidViaSigExpired _ delta
+                -> Just $ (-delta) `addUTCTime` now
+              InvalidViaNotInitialized
+                -> Nothing
+              InvalidViaUnrecognizedPool
+                -> Just now
+              InvalidViaPoolNotEligible delta
+                -> Just $ delta `addUTCTime` now
+              InvalidViaClockSkew NotZeroSetSnapshotType delta
+                -> Just $ (-delta) `addUTCTime` now
+              InvalidViaClockSkew NotZeroMarkSnapshotType delta
+                -> Just $ (-delta) `addUTCTime` now
+              InvalidViaClockSkew ZeroSetAndMarkSnapshotType _
+                -> error "invariant violation"
+              _ -> Just now
+
+        vctxStakeMap =
+          case validity of
+            InvalidViaNotInitialized   -> Map.empty
+            InvalidViaUnrecognizedPool -> Map.empty
+            _ -> Map.fromList [(poolId, stakeSnapshot)]
+
+        vctxOcertMap =
+          case validity of
+            InvalidViaOCertCounter
+              -> Map.fromList [(poolId, succ ocertN)]
+            _ -> Map.fromList [(poolId, ocertN)]
+
+        validationCtx = PoolValidationCtx { vctxEpoch, vctxStakeMap, vctxOcertMap }
+
+    return
+      . counterexample ("KES seed: " ++ show (ctx constr))
+      . counterexample ("KES vk key: " ++ show (ocertVkHot . getSigOpCertificate . sigOpCertificate $ sig))
+      . counterexample (show sig)
+      $ case (validity, fst $ validateSig (hashKey . VKey) now [sig] validationCtx) of
+          (Valid {}, Left (_, err) : _) -> counterexample (show err) False
+          (Valid {}, Right _ : _)       -> property True
+
+          (InvalidViaNotInitialized, Left (_, NotInitialized) : _) -> property True
+          (InvalidViaNotInitialized, Left (_, err) : _)            -> counterexample (show err) False
+          (InvalidViaNotInitialized, Right _ : _)                  -> counterexample "unexpectedly valid signature" False
+
+          (InvalidViaUnrecognizedPool, Left (_, UnrecognizedPool) : _) -> property True
+          (InvalidViaUnrecognizedPool, Left (_, err) : _)              -> counterexample (show err) False
+          (InvalidViaUnrecognizedPool, Right _ : _)                    -> counterexample "unexpectedly valid signature" False
+
+          (InvalidViaSigExpired {}, Left (_, SigExpired) : _) -> property True
+          (InvalidViaSigExpired {}, Left (_, ClockSkew) : _)  -> property True
+          (InvalidViaSigExpired {}, Left (_, err) : _)        -> counterexample (show err) False
+          (InvalidViaSigExpired {}, Right _ : _)              -> counterexample "unexpectedly valid signature" False
+
+          (InvalidViaPoolNotEligible {}, Left (_, PoolNotEligible) : _) -> property True
+          (InvalidViaPoolNotEligible {}, Left (_, err) : _)             -> counterexample (show err) False
+          (InvalidViaPoolNotEligible {}, Right _ : _)                   -> counterexample "unexpectedly valid signature" False
+
+          (InvalidViaClockSkew {}, Left (_, ClockSkew) : _) -> property True
+          (InvalidViaClockSkew {}, Left (_, err) : _)       -> counterexample (show err) False
+          (InvalidViaClockSkew {}, Right _ : _)             -> counterexample "unexpectedly valid signature" False
+
+          (InvalidViaOCertCounter {}, Left (_, InvalidOCertCounter {}) : _) -> property True
+          (InvalidViaOCertCounter {}, Left (_, err) : _)                    -> counterexample (show err) False
+          (InvalidViaOCertCounter {}, Right _ : _)                          -> counterexample "unexpectedly valid signature" False
+
+          a -> error ("validateSig: invariant violation " ++ show a)
 
 prop_validateSig_mockcrypto
   :: Blind (WithConstrKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (Sig MockCrypto))
+  -> Validity
   -> Property
 prop_validateSig_mockcrypto = prop_validateSig . getBlind
 
 -- TODO: FAILS, why?
 prop_validateSig_standardcrypto
   :: Blind (WithConstrKES (SeedSizeKES (KES StandardCrypto)) (KES StandardCrypto) (Sig StandardCrypto))
+  -> Validity
   -> Property
 prop_validateSig_standardcrypto = prop_validateSig . getBlind
 

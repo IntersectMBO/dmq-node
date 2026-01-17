@@ -181,7 +181,6 @@ test-suite dmq-tests
   build-depends:
     QuickCheck,
     base >=4.14 && <4.23,
-    binary,
     bytestring,
     cardano-crypto-class,
     cardano-crypto-tests,
@@ -193,11 +192,13 @@ test-suite dmq-tests
     io-classes:{io-classes, si-timers},
     io-sim,
     kes-agent-crypto,
+    ouroboros-consensus-cardano,
     ouroboros-network:{api, framework, protocols, protocols-tests-lib, tests-lib},
     quickcheck-instances,
     serialise,
     tasty,
     tasty-quickcheck,
+    time,
     typed-protocols:{typed-protocols, codec-properties},
     with-utf8,
 
