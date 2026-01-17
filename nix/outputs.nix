@@ -58,7 +58,7 @@ let
   flake = project.flake { };
 
   defaultHydraJobs = {
-    ghc967 = flake.hydraJobs.ghc967;
+    ciJobs = flake.hydraJobs;
     inherit packages;
     inherit devShells;
     required = utils.makeHydraRequiredJob hydraJobs;

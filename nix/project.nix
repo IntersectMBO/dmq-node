@@ -32,7 +32,8 @@ let
         # otherCompilers
         (lib.genAttrs otherCompilers
           (compiler-nix-name: { inherit compiler-nix-name; }))
-        // { ${defaultCompiler} = { }; };
+        // { ${defaultCompiler} = { }; }; # placeholder to access
+                                          # defaultCompiler in `nix/shell.nix`
 
       inputMap = { "https://chap.intersectmbo.org/" = inputs.CHaP; };
 
