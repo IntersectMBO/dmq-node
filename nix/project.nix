@@ -1,7 +1,12 @@
 { inputs, pkgs, lib }:
 
 let
+  buildSystem = pkgs.stdenv.buildPlatform.system;
+  onLinux = buildSystem == "x86_64-linux";
+
   defaultCompiler = "ghc967";
+  otherCompilers =
+    if onLinux then [ "ghc9122" ] else [ ];
 
   forAllProjectPackages = cfg: args@{ config, lib, ... }: {
     options.packages = lib.genAttrs config.package-keys (_:
@@ -23,10 +28,11 @@ let
 
       src = lib.cleanSource ../.;
 
-      flake.variants = {
-        ghc967 = { }; # Alias for the default variant
-        # ghc9122.compiler-nix-name = "ghc9122";
-      };
+      flake.variants =
+        # otherCompilers
+        (lib.genAttrs otherCompilers
+          (compiler-nix-name: { inherit compiler-nix-name; }))
+        // { ${defaultCompiler} = { }; };
 
       inputMap = { "https://chap.intersectmbo.org/" = inputs.CHaP; };
 

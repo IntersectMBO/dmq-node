@@ -1,20 +1,13 @@
 { inputs, pkgs, lib, project, utils, ghc }:
 
 let
-
-  allTools = {
-    "ghc967".cabal = project.projectVariants.ghc967.tool "cabal" "latest";
-    "ghc967".cabal-gild = project.projectVariants.ghc967.tool "cabal-gild" "latest";
-    "ghc967".haskell-language-server = project.projectVariants.ghc967.tool "haskell-language-server" "latest";
-    "ghc967".hlint = project.projectVariants.ghc967.tool "hlint" "latest";
-
-    "ghc9122".cabal = project.projectVariants.ghc9122.tool "cabal" "latest";
-    "ghc9122".cabal-gild = project.projectVariants.ghc9122.tool "cabal-gild" "latest";
-    "ghc9122".haskell-language-server = project.projectVariants.ghc9122.tool "haskell-language-server" "latest";
-    "ghc9122".hlint = project.projectVariants.ghc9122.tool "hlint" "latest";
+  tool = project.projectVariants.${ghc}.tool;
+  tools = {
+    cabal = tool "cabal" "latest";
+    cabal-gild = tool "cabal-gild" "latest";
+    haskell-language-server = tool "haskell-language-server" "latest";
+    hlint = tool "hlint" "latest";
   };
-
-  tools = allTools.${ghc};
 
   linuxPkgs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [
   ];

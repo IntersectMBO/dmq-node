@@ -18,7 +18,7 @@ index-state:
   , hackage.haskell.org 2025-11-10T01:36:00Z
 
   -- Bump this if you need newer packages from CHaP
-  , cardano-haskell-packages 2025-11-07T15:42:47Z
+  , cardano-haskell-packages 2026-01-09T12:04:47Z
 
 packages:
   ./dmq-node
@@ -66,4 +66,6 @@ source-repository-package
     ouroboros-network
     network-mux
 
-allow-newer: ral:QuickCheck, fin:QuickCheck, bin:QuickCheck
+if impl(ghc >= 9.12.0)
+  allow-newer: *:time,
+               *:nothunks,

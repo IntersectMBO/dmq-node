@@ -122,7 +122,7 @@ library
     random ^>=1.2,
     singletons,
     text >=1.2.4 && <2.2,
-    time ^>=1.12,
+    time >=1.12 && <1.15,
     transformers,
     typed-protocols:{typed-protocols, cborg} ^>=1.1,
 
