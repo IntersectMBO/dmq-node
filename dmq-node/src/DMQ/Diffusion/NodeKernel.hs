@@ -97,13 +97,14 @@ data StakePools m = StakePools {
 
 data PoolValidationCtx =
   PoolValidationCtx {
-      vctxEpoch :: !(Maybe UTCTime)
+      vctxEpoch    :: !(Maybe UTCTime)
       -- ^ UTC time of next epoch boundary for handling clock skew
     , vctxStakeMap :: !(Map PoolId StakeSnapshot)
       -- ^ for signature validation
     , vctxOcertMap :: !(Map PoolId Word64)
       -- ^ ocert counters to check monotonicity
     }
+  deriving Show
 
 newNodeKernel :: forall crypto ntnAddr m.
                  ( MonadLabelledSTM m

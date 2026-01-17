@@ -193,10 +193,10 @@ data Sig crypto = SigWithBytes {
 --
 instance Show (Sig crypto) where
   show Sig { sigId, sigKESPeriod, sigExpiresAt } =
-    "Sig { sigId = \"" ++ show (getSigId sigId)
+    "Sig { sigId = \"" ++ show (getSigId sigId) ++ "\""
     ++ " , sigKESPeriod = " ++ show (unKESPeriod sigKESPeriod)
     ++ " , sigExpiresAt = " ++ show sigExpiresAt
-    ++ "\" }"
+    ++ " }"
 
 -- deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
 --                   , Show (VerKeyKES (KES crypto))
