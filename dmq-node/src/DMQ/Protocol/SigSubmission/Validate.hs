@@ -148,54 +148,52 @@ validateSig verKeyHashingFn now sigs ctx0 =
                        sigColdKey = SigColdKey coldKey,
                        sigKESSignature = SigKESSignature kesSig
                      } = do
-      ctx@(PoolValidationCtx mNextEpoch pools ocertCounters) <- State.get
+      ctx@PoolValidationCtx { vctxEpoch, vctxStakeMap, vctxOcertMap } <- State.get
 
       sigKESPeriod < endKESPeriod    ?! KESAfterEndOCERT endKESPeriod sigKESPeriod
       sigKESPeriod >= startKESPeriod ?! KESBeforeStartOCERT startKESPeriod sigKESPeriod
 
-      case Map.lookup (verKeyHashingFn coldKey) pools of
-        Nothing | isNothing mNextEpoch
+      let -- `vctxEpoch` and `vctxStakeMap` are initialized in one STM
+          -- transaction, which guarantees that fromJust will not fail
+          nextEpoch = fromJust vctxEpoch
+      case Map.lookup (verKeyHashingFn coldKey) vctxStakeMap of
+        Nothing | isNothing vctxEpoch
                   -> left NotInitialized
                 | otherwise
                   -> left UnrecognizedPool
-        Just ss | NotZeroSetSnapshot <- ss ->
-                    if | now < nextEpoch -> return ()
+        Just ss@NotZeroSetSnapshot ->
+          if | now < nextEpoch -> return ()
 
-                         -- localstatequery is late, but the pool is about to expire
-                       | isZero (ssMarkPool ss)
-                       , now > addUTCTime c_MAX_CLOCK_SKEW_SEC nextEpoch
-                       -> left SigExpired
+               -- local-state-query is late, but the pool is about to expire
+             | isZero (ssMarkPool ss)
+             , now > addUTCTime c_MAX_CLOCK_SKEW_SEC nextEpoch
+             -> left SigExpired
 
-                         -- we bound the time we're willing to approve a message
-                         -- in case smth happened to localstatequery and it's taking
-                         -- too long to update our state
-                       | now <= addUTCTime c_MAX_CLOCK_SKEW_SEC nextEpoch
-                       -> return ()
+               -- we bound the time we're willing to approve a message in case
+               -- something happened to local-state-query and it's taking too
+               -- long to update our state
+             | now <= addUTCTime c_MAX_CLOCK_SKEW_SEC nextEpoch
+             -> return ()
 
-                       | otherwise
-                       -> left ClockSkew
+             | otherwise
+             -> left ClockSkew
 
-                | NotZeroMarkSnapshot <- ss ->
-                    -- we take abs time in case we're late with our own
-                    -- localstatequery update, and/or the other side's clock
-                    -- is ahead, and we're just about or have just crossed the epoch
-                    -- and the pool is expected to move into the set mark
-                    if | abs (diffUTCTime nextEpoch now) <= c_MAX_CLOCK_SKEW_SEC
-                       -> return ()
+        Just NotZeroMarkSnapshot ->
+          -- we take abs time in case we're late with our own local-state-query
+          -- update, and/or the other side's clock is ahead, and we're just
+          -- about or have just crossed the epoch and the pool is expected to
+          -- move into the set mark
+          if | abs (diffUTCTime nextEpoch now) <= c_MAX_CLOCK_SKEW_SEC
+             -> return ()
 
-                       | diffUTCTime nextEpoch now > c_MAX_CLOCK_SKEW_SEC
-                       -> left $ PoolNotEligible
+             | diffUTCTime nextEpoch now > c_MAX_CLOCK_SKEW_SEC
+             -> left PoolNotEligible
 
-                       | otherwise
-                       -> left ClockSkew
+             | otherwise
+             -> left ClockSkew
 
-                  -- pool is deregistered and ineligible to mint blocks
-                | ZeroSetSnapshot <- ss ->
-                    left SigExpired
-          where
-            -- mNextEpoch and pools are initialized in one STM transaction
-            -- and fromJust will not fail here
-            nextEpoch = fromJust mNextEpoch
+        -- pool unregistered and is ineligible to mint blocks
+        Just ZeroSetSnapshot -> left SigExpired
 
       -- validate OCert, which includes verifying its signature
       validateOCert coldKey ocertVkHot ocert
@@ -210,12 +208,13 @@ validateSig verKeyHashingFn now sigs ctx0 =
 
       case Map.alterF (\a -> (a, Just ocertN))
                       (verKeyHashingFn coldKey)
-                      ocertCounters of
+                      vctxOcertMap of
         (Nothing, ocertCounters')
-          -- there no ocert in the map, e.g. we're validating a signature
+          -- there is no ocert in the map, e.g. we're validating a signature
           -- produced by that SPO for the first time
           -> State.put ctx { vctxOcertMap = ocertCounters' }
         (Just prevOcertN, ocertCounters')
+          -- QUESTION: should we be more strict with `<`!
           | prevOcertN <= ocertN -- `ocertN` is valid
           -> State.put ctx { vctxOcertMap = ocertCounters' }
 
