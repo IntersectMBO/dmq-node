@@ -82,13 +82,14 @@ runDMQ commandLineConfig = do
     -- combine default configuration, configuration file and command line
     -- options
     let dmqConfig@Configuration {
-          dmqcPrettyLog            = I prettyLog,
-          dmqcTopologyFile         = I topologyFile,
-          dmqcHandshakeTracer      = I handshakeTracer,
-          dmqcValidationTracer     = I validationTracer,
-          dmqcLocalHandshakeTracer = I localHandshakeTracer,
-          dmqcCardanoNodeSocket    = I snocketPath,
-          dmqcVersion              = I version
+          dmqcPrettyLog             = I prettyLog,
+          dmqcTopologyFile          = I topologyFile,
+          dmqcHandshakeTracer       = I handshakeTracer,
+          dmqcValidationTracer      = I validationTracer,
+          dmqcLocalHandshakeTracer  = I localHandshakeTracer,
+          dmqcCardanoNodeSocket     = I snocketPath,
+          dmqcVersion               = I version,
+          dmqcLocalStateQueryTracer = I localStateQueryTracer
         } = config' <> commandLineConfig
             `act`
             defaultConfiguration
@@ -122,7 +123,12 @@ runDMQ commandLineConfig = do
     -- TODO: this might not work, since `ouroboros-network` creates its own IO Completion Port.
     withIOManager \iocp -> do
       let localSnocket'      = localSnocket iocp
-          mkStakePoolMonitor = connectToCardanoNode tracer localSnocket' snocketPath
+          mkStakePoolMonitor = connectToCardanoNode
+                                 (if localStateQueryTracer
+                                    then WithEventType "LocalStateQuery" >$< tracer
+                                    else nullTracer)
+                                 localSnocket'
+                                 snocketPath
 
       withNodeKernel @StandardCrypto
                      tracer

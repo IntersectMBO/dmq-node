@@ -153,6 +153,7 @@ data Configuration' f =
     dmqcSigSubmissionInboundTracer                 :: f Bool,
     dmqcLocalMsgSubmissionServerTracer             :: f Bool,
     dmqcLocalMsgNotificationServerTracer           :: f Bool,
+    dmqcLocalStateQueryTracer                      :: f Bool,
 
     dmqcVersion                                    :: f Bool
   }
@@ -274,6 +275,7 @@ defaultConfiguration = Configuration {
       dmqcSigSubmissionLogicTracer                   = I True,
       dmqcLocalMsgSubmissionServerTracer             = I True,
       dmqcLocalMsgNotificationServerTracer           = I False,
+      dmqcLocalStateQueryTracer                      = I False,
 
       -- CLI only options
       dmqcVersion                                    = I False
@@ -369,6 +371,7 @@ instance FromJSON PartialConfig where
       dmqcSigSubmissionLogicTracer                   <- Last <$> v .:? "SigSubmissionLogicTracer"
       dmqcLocalMsgSubmissionServerTracer             <- Last <$> v .:? "LocalMsgSubmissionServerTracer"
       dmqcLocalMsgNotificationServerTracer           <- Last <$> v .:? "LocalMsgNotificationServerTracer"
+      dmqcLocalStateQueryTracer                      <- Last <$> v .:? "LocalStateQueryTracer"
 
       pure $
         Configuration
@@ -445,6 +448,7 @@ instance ToJSON Configuration where
            , "SigSubmissionOutboundTracer"                .= unI dmqcSigSubmissionOutboundTracer
            , "SigSubmissionInboundTracer"                 .= unI dmqcSigSubmissionInboundTracer
            , "SigSubmissionLogicTracer"                   .= unI dmqcSigSubmissionLogicTracer
+           , "LocalStateQueryTracer"                      .= unI dmqcLocalStateQueryTracer
            ]
 
 -- | Read the `DMQConfiguration` from the specified file.
