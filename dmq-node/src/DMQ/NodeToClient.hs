@@ -172,8 +172,6 @@ ntcApps tracer
         (localMsgSubmissionServerPeer $
           localMsgSubmissionServer
             sigId
-            -- TODO: use a separate option for this tracer rather than reusing
-            -- `dmqLocalMsgSubmissionServerTracer`.
             (if localMsgSubmissionServerTracer
                then WithEventType "LocalMsgSubmission.Server" . Mx.WithBearer connId >$< tracer
                else nullTracer)
