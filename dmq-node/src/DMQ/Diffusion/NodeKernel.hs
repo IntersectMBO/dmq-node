@@ -34,7 +34,6 @@ import System.Random (StdGen)
 import System.Random qualified as Random
 
 import Cardano.Ledger.Shelley.API hiding (I)
-import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Ouroboros.Consensus.Shelley.Ledger.Query
 
 import Ouroboros.Network.BlockFetch (FetchClientRegistry,
@@ -50,7 +49,7 @@ import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry,
            ps_POLICY_PEER_SHARE_MAX_PEERS, ps_POLICY_PEER_SHARE_STICKY_TIME)
 import Ouroboros.Network.TxSubmission.Inbound.V2
 import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool (..),
-           MempoolSeq (..))
+           MempoolSeq (..), WithIndex (..))
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 
 import DMQ.Configuration
@@ -82,9 +81,11 @@ type PoolId = KeyHash StakePool
 data StakePools m = StakePools {
     -- | contains map of cardano pool stake snapshot obtained
     -- via local state query client
-    stakePoolsVar     :: !(StrictTVar m (Map PoolId StakeSnapshot))
-    -- | acquires validation context for signature validation
-  , poolValidationCtx :: !(m (PoolValidationCtx m))
+    stakePoolsVar
+      :: !(StrictTVar m (Map PoolId StakeSnapshot))
+    -- | Acquire and update validation context for signature validation
+  , withPoolValidationCtx 
+      :: forall a. (PoolValidationCtx -> (a, PoolValidationCtx)) ->  STM m a
      -- | provides only those big peers which provide SRV endpoints
      -- as otherwise those are cardano-nodes
   , ledgerBigPeersVar
@@ -94,19 +95,20 @@ data StakePools m = StakePools {
       :: !(StrictTMVar m (LedgerPeerSnapshot AllLedgerPeers))
   }
 
-data PoolValidationCtx m =
-  DMQPoolValidationCtx !UTCTime
-                       -- ^ time of context acquisition
-                       !(Maybe UTCTime)
-                       -- ^ UTC time of next epoch boundary for handling clock skey
-                       !(Map PoolId StakeSnapshot)
-                       -- ^ for signature validation
-                       !(StrictTVar m (Map PoolId Word64))
-                       -- ^ ocert counter to validate only monotonically increasing values
+data PoolValidationCtx =
+  PoolValidationCtx {
+      vctxEpoch    :: !(Maybe UTCTime)
+      -- ^ UTC time of next epoch boundary for handling clock skew
+    , vctxStakeMap :: !(Map PoolId StakeSnapshot)
+      -- ^ for signature validation
+    , vctxOcertMap :: !(Map PoolId Word64)
+      -- ^ ocert counters to check monotonicity
+    }
+  deriving Show
 
-newNodeKernel :: ( MonadLabelledSTM m
+newNodeKernel :: forall crypto ntnAddr m.
+                 ( MonadLabelledSTM m
                  , MonadMVar m
-                 , MonadTime m
                  , Ord ntnAddr
                  )
               => StdGen
@@ -128,14 +130,23 @@ newNodeKernel rng = do
            <*> newTVar Map.empty
            <*> newTVar Nothing
            <*> newEmptyTMVar
-  let poolValidationCtx = do
-        (nextEpochBoundary, stakePools') <-
-          atomically $
-            (,) <$> readTVar nextEpochVar <*> readTVar stakePoolsVar
-        now <- getCurrentTime
-        return $ DMQPoolValidationCtx now nextEpochBoundary stakePools' ocertCountersVar
 
-      stakePools = StakePools { stakePoolsVar, poolValidationCtx, ledgerBigPeersVar, ledgerPeersVar }
+  let withPoolValidationCtx
+        :: forall a. (PoolValidationCtx -> (a, PoolValidationCtx)) -> STM m a
+      withPoolValidationCtx f = do
+        ctx <- PoolValidationCtx <$> readTVar nextEpochVar
+                                 <*> readTVar stakePoolsVar
+                                 <*> readTVar ocertCountersVar
+        let (a, PoolValidationCtx {vctxOcertMap}) = f ctx
+        writeTVar ocertCountersVar vctxOcertMap
+        return a
+
+      stakePools = StakePools {
+          stakePoolsVar,
+          withPoolValidationCtx,
+          ledgerBigPeersVar,
+          ledgerPeersVar
+        }
 
   peerSharingAPI <-
     newPeerSharingAPI
@@ -157,8 +168,7 @@ newNodeKernel rng = do
 
 
 withNodeKernel :: forall crypto ntnAddr m a.
-                  ( Crypto crypto
-                  , MonadAsync       m
+                  ( MonadAsync       m
                   , MonadFork        m
                   , MonadDelay       m
                   , MonadLabelledSTM m
@@ -219,12 +229,12 @@ mempoolWorker (Mempool v) = loop
     loop = do
       now <- getCurrentPOSIXTime
       rt <- atomically $ do
-        MempoolSeq { mempoolSeq, mempoolSet } <- readTVar v
-        let mempoolSeq' :: Seq (Sig crypto)
+        mempool@MempoolSeq { mempoolSeq, mempoolSet } <- readTVar v
+        let mempoolSeq' :: Seq (WithIndex (Sig crypto))
             mempoolSet', expiredSet' :: Set SigId
 
             (resumeTime, expiredSet', mempoolSeq') =
-              foldr (\sig (rt, expiredSet, sigs) ->
+              foldr (\a@WithIndex { getTx = sig } (rt, expiredSet, sigs) ->
                       if sigExpiresAt sig <= now
                       then ( rt
                            , sigId sig `Set.insert` expiredSet
@@ -232,7 +242,7 @@ mempoolWorker (Mempool v) = loop
                            )
                       else ( rt `min` sigExpiresAt sig
                            , expiredSet
-                           , sig Seq.<| sigs
+                           , a Seq.<| sigs
                            )
                     )
                     (now, Set.empty, Seq.empty)
@@ -240,8 +250,8 @@ mempoolWorker (Mempool v) = loop
 
             mempoolSet' = mempoolSet `Set.difference` expiredSet'
 
-        writeTVar v MempoolSeq { mempoolSet = mempoolSet',
-                                 mempoolSeq = mempoolSeq' }
+        writeTVar v mempool { mempoolSet = mempoolSet',
+                              mempoolSeq = mempoolSeq' }
         return resumeTime
 
       now' <- getCurrentPOSIXTime

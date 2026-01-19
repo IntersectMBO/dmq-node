@@ -7,15 +7,12 @@ module DMQ.NodeToClient.LocalStateQueryClient
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.DeepSeq
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Trans.Except
 import Control.Tracer (Tracer (..), nullTracer)
-import Data.Functor ((<&>))
 import Data.Functor.Contravariant ((>$<))
-import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict qualified as Map
 import Data.Proxy
 import Data.Void
@@ -39,9 +36,6 @@ import Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import Ouroboros.Network.Block
 import Ouroboros.Network.Magic
 import Ouroboros.Network.Mux qualified as Mx
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
-import Ouroboros.Network.Point
 import Ouroboros.Network.Protocol.LocalStateQuery.Client
 import Ouroboros.Network.Protocol.LocalStateQuery.Type
 
@@ -56,7 +50,7 @@ cardanoClient
   -> StakePools m
   -> StrictTVar m (Maybe UTCTime) -- ^ from node kernel
   -> LocalStateQueryClient (CardanoBlock crypto) (Point block) (Query block) m Void
-cardanoClient _tracer StakePools { stakePoolsVar, ledgerPeersVar, ledgerBigPeersVar } nextEpochVar =
+cardanoClient _tracer StakePools { stakePoolsVar } nextEpochVar =
   LocalStateQueryClient (idle Nothing)
   where
     idle mSystemStart = pure $ SendMsgAcquire ImmutableTip acquire

@@ -4,7 +4,6 @@
 {-# LANGUAGE OverloadedStrings  #-}
 {-# LANGUAGE PatternSynonyms    #-}
 {-# LANGUAGE RankNTypes         #-}
-{-# LANGUAGE TupleSections      #-}
 {-# LANGUAGE TypeFamilies       #-}
 {-# LANGUAGE TypeOperators      #-}
 {-# LANGUAGE ViewPatterns       #-}
@@ -15,21 +14,19 @@
 --
 module DMQ.Protocol.SigSubmission.Validate where
 
-import Control.Monad
-import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Exception (Exception)
+import Control.Exception (Exception (..))
 import Control.Monad.Class.MonadTime.SI
-import Control.Monad.Trans.Class
-import Control.Monad.Trans.Except
-import Control.Monad.Trans.Except.Extra
-import Control.Tracer (Tracer, traceWith)
+import Control.Monad.State.Strict (State, StateT (..))
+import Control.Monad.State.Strict qualified as State
+import Control.Monad.Except (Except)
+import Control.Monad.Except qualified as Except
+
 import Data.Aeson
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromJust, isNothing)
 import Data.Text (Text)
-import Data.Text qualified as Text
 import Data.Typeable
 import Data.Word
 
@@ -44,35 +41,7 @@ import Cardano.Ledger.Hashes
 import DMQ.Diffusion.NodeKernel (PoolValidationCtx (..))
 import DMQ.Protocol.SigSubmission.Type
 import Ouroboros.Consensus.Shelley.Ledger.Query
-import Ouroboros.Network.TxSubmission.Mempool.Simple
 import Ouroboros.Network.Util.ShowProxy
-
-
--- | The type of non-fatal failures reported by the mempool writer
--- for invalid messages
---
-data instance TxValidationFail (Sig crypto) =
-    SigInvalid SigValidationError
-  | SigDuplicate
-  | SigExpired
-  | SigResultOther Text
-  deriving (Eq, Show)
-
-instance (Typeable crypto) => ShowProxy (TxValidationFail (Sig crypto))
-
-instance (Typeable crypto) => Exception (TxValidationFail (Sig crypto))
-
-instance ToJSON (TxValidationFail (Sig crypto)) where
-  toJSON SigDuplicate = String "duplicate"
-  toJSON SigExpired   = String "expired"
-  toJSON (SigInvalid e) = object
-    [ "type" .= String "invalid"
-    , "reason" .= show e
-    ]
-  toJSON (SigResultOther txt) = object
-    [ "type" .= String "other"
-    , "reason" .= txt
-    ]
 
 
 data SigValidationError =
@@ -86,10 +55,45 @@ data SigValidationError =
       !Word64 -- received
   | KESBeforeStartOCERT KESPeriod KESPeriod
   | KESAfterEndOCERT KESPeriod KESPeriod
+  | PoolNotEligible
   | UnrecognizedPool
   | NotInitialized
   | ClockSkew
+  | SigDuplicate
+  | SigExpired
+  | SigResultOther Text
   deriving (Eq, Show)
+
+instance ShowProxy SigValidationError where
+
+instance ToJSON SigValidationError where
+  toJSON SigDuplicate = String "duplicate"
+  toJSON SigExpired   = String "expired"
+  toJSON (SigResultOther txt) = object
+    [ "type" .= String "other"
+    , "reason" .= txt
+    ]
+  toJSON e = object
+    [ "type" .= String "invalid"
+    , "reason" .= show e
+    ]
+
+
+data SigValidationException = SigValidationException SigId SigValidationError
+  deriving Show
+
+instance Exception SigValidationException
+
+
+data SigValidationTrace = InvalidSignature SigId SigValidationError
+  deriving Show
+
+instance ToJSON SigValidationTrace where
+  toJSON (InvalidSignature sigid reason) = object 
+    [ "type"   .= String "InvalidSignature"
+    , "sigid"  .= sigid
+    , "reason" .= reason
+    ]
 
 
 c_MAX_CLOCK_SKEW_SEC :: NominalDiffTime
@@ -107,104 +111,112 @@ pattern ZeroSetSnapshot <- (isZero . ssSetPool -> True)
 {-# COMPLETE NotZeroSetSnapshot, NotZeroMarkSnapshot, ZeroSetSnapshot #-}
 
 
--- TODO:
---  We don't validate ocert numbers, since we might not have necessary
---  information to do so, but we can validate that they are growing.
-validateSig :: forall crypto m.
+validateSig :: forall crypto.
                ( Crypto crypto
                , ContextDSIGN (KES.DSIGN crypto) ~ ()
                , DSIGN.Signable (DSIGN crypto) (OCertSignable crypto)
                , ContextKES (KES crypto) ~ ()
                , Signable (KES crypto) ByteString
-               , MonadSTM m
                )
-            => Tracer m (SigId, TxValidationFail (Sig crypto))
-            -> (DSIGN.VerKeyDSIGN (DSIGN crypto) -> KeyHash StakePool)
+            => (DSIGN.VerKeyDSIGN (DSIGN crypto) -> KeyHash StakePool)
+            -> UTCTime
             -> [Sig crypto]
-            -> PoolValidationCtx m
-            -- ^ cardano pool id verification
-            -> ExceptT (Sig crypto, TxValidationFail (Sig crypto)) m
-                       [(Sig crypto, Either (TxValidationFail (Sig crypto)) ())]
-validateSig tracer verKeyHashingFn sigs ctx = traverse process' sigs
+            -> PoolValidationCtx
+            -> ([Either (SigId, SigValidationError) (Sig crypto)], PoolValidationCtx)
+validateSig verKeyHashingFn now sigs ctx0 =
+    State.runState (traverse (exceptions . validate) sigs) ctx0
   where
-    DMQPoolValidationCtx now mNextEpoch pools ocertCountersVar = ctx
+    exceptions :: StateT s (Except e) a
+               -> State  s (Either e a)
+    exceptions (StateT k) = StateT $ \s ->
+      case Except.runExcept (k s) of
+        -- in case of a validation error, we continue with un-modified
+        -- `PoolValidationCtx`
+        Left x        -> return (Left x, s)
+        Right (a, s') -> return (Right a, s')
 
-    process' sig =
-      let result = process sig
-      in bimapExceptT (sig,) (sig,) $
-           result `catchLeftT` \e -> result <* lift (traceWith tracer (sigId sig, e))
+    validate :: Sig crypto
+             -> StateT PoolValidationCtx (Except (SigId, SigValidationError)) (Sig crypto)
+    validate sig@Sig { sigId,
+                       sigSignedBytes = signedBytes,
+                       sigKESPeriod,
+                       sigOpCertificate = SigOpCertificate ocert@OCert {
+                         ocertKESPeriod,
+                         ocertVkHot,
+                         ocertN
+                         },
+                       sigColdKey = SigColdKey coldKey,
+                       sigKESSignature = SigKESSignature kesSig
+                     } = do
+      ctx@PoolValidationCtx { vctxEpoch, vctxStakeMap, vctxOcertMap } <- State.get
 
-    process sig@Sig { sigSignedBytes = signedBytes,
-                      sigKESPeriod,
-                      sigOpCertificate = SigOpCertificate ocert@OCert {
-                        ocertKESPeriod,
-                        ocertVkHot,
-                        ocertN
-                        },
-                      sigColdKey = SigColdKey coldKey,
-                      sigKESSignature = SigKESSignature kesSig
-                } = do
-      sigKESPeriod < endKESPeriod
-         ?! KESAfterEndOCERT endKESPeriod sigKESPeriod
-      sigKESPeriod >= startKESPeriod
-         ?! KESBeforeStartOCERT startKESPeriod sigKESPeriod
-      e <- case Map.lookup (verKeyHashingFn coldKey) pools of
-        Nothing | isNothing mNextEpoch
-                  -> right . Left . SigResultOther $ Text.pack "not initialized yet"
+      sigKESPeriod < endKESPeriod    ?! KESAfterEndOCERT endKESPeriod sigKESPeriod
+      sigKESPeriod >= startKESPeriod ?! KESBeforeStartOCERT startKESPeriod sigKESPeriod
+
+      let -- `vctxEpoch` and `vctxStakeMap` are initialized in one STM
+          -- transaction, which guarantees that fromJust will not fail
+          nextEpoch = fromJust vctxEpoch
+      case Map.lookup (verKeyHashingFn coldKey) vctxStakeMap of
+        Nothing | isNothing vctxEpoch
+                  -> left NotInitialized
                 | otherwise
-                  -> left $ SigInvalid UnrecognizedPool
-        Just ss | NotZeroSetSnapshot <- ss ->
-                    if | now < nextEpoch -> success
-                         -- localstatequery is late, but the pool is about to expire
-                       | isZero (ssMarkPool ss)
-                       , now > addUTCTime c_MAX_CLOCK_SKEW_SEC nextEpoch -> left SigExpired
-                         -- we bound the time we're willing to approve a message
-                         -- in case smth happened to localstatequery and it's taking
-                         -- too long to update our state
-                       | now <= addUTCTime c_MAX_CLOCK_SKEW_SEC nextEpoch -> success
-                       | otherwise -> right . Left $ SigInvalid ClockSkew
-                | NotZeroMarkSnapshot <- ss ->
-                    -- we take abs time in case we're late with our own
-                    -- localstatequery update, and/or the other side's clock
-                    -- is ahead, and we're just about or have just crossed the epoch
-                    -- and the pool is expected to move into the set mark
-                    if | abs (diffUTCTime nextEpoch now) <= c_MAX_CLOCK_SKEW_SEC -> success
-                       | diffUTCTime nextEpoch now > c_MAX_CLOCK_SKEW_SEC ->
-                           left . SigResultOther $ Text.pack "pool not eligible yet"
-                       | otherwise -> right . Left $ SigInvalid ClockSkew
-                  -- pool is deregistered and ineligible to mint blocks
-                | ZeroSetSnapshot <- ss ->
-                    left SigExpired
-          where
-            -- mNextEpoch and pools are initialized in one STM transaction
-            -- and fromJust will not fail here
-            nextEpoch = fromJust mNextEpoch
+                  -> left UnrecognizedPool
+        Just ss@NotZeroSetSnapshot ->
+          if | now <= addUTCTime c_MAX_CLOCK_SKEW_SEC nextEpoch
+             -> return ()
+
+               -- local-state-query is late, but the pool is about to expire
+             | isZero (ssMarkPool ss)
+             -> left SigExpired
+
+             | otherwise
+             -> left ClockSkew
+
+        Just NotZeroMarkSnapshot ->
+          -- we take abs time in case we're late with our own local-state-query
+          -- update, and/or the other side's clock is ahead, and we're just
+          -- about or have just crossed the epoch and the pool is expected to
+          -- move into the set mark
+          if | abs (diffUTCTime nextEpoch now) <= c_MAX_CLOCK_SKEW_SEC
+             -> return ()
+
+             | diffUTCTime nextEpoch now > c_MAX_CLOCK_SKEW_SEC
+             -> left PoolNotEligible
+
+             | otherwise
+             -> left ClockSkew
+
+        -- pool unregistered and is ineligible to mint blocks
+        Just ZeroSetSnapshot -> left SigExpired
+
       -- validate OCert, which includes verifying its signature
       validateOCert coldKey ocertVkHot ocert
          ?!: InvalidSignatureOCERT ocertN sigKESPeriod
+
       -- validate KES signature of the payload
       verifyKES () ocertVkHot
                 (unKESPeriod sigKESPeriod - unKESPeriod startKESPeriod)
                 (LBS.toStrict signedBytes)
                 kesSig
          ?!: InvalidKESSignature ocertKESPeriod sigKESPeriod
-      join . lift . atomically $ stateTVar ocertCountersVar \ocertCounters ->
-        let f = \case
-              Nothing -> Right $ Just ocertN
-              Just n | n <= ocertN -> Right $ Just ocertN
-                     | otherwise   -> Left $ InvalidOCertCounter n ocertN
-        in case Map.alterF f (verKeyHashingFn coldKey) ocertCounters of
-          Right ocertCounters' -> (void success, ocertCounters')
-          Left  err            -> (throwE (SigInvalid err), ocertCounters)
-      -- for eg. remember to run all results with possibly non-fatal errors
-      let result = e
-      case result of
-        Left e' -> lift $ traceWith tracer (sigId sig, e')
-        Right _ -> pure ()
-      right result
-      where
-        success = right $ Right ()
 
+      case Map.alterF (\a -> (a, Just ocertN))
+                      (verKeyHashingFn coldKey)
+                      vctxOcertMap of
+        (Nothing, ocertCounters')
+          -- there is no ocert in the map, e.g. we're validating a signature
+          -- produced by that SPO for the first time
+          -> State.put ctx { vctxOcertMap = ocertCounters' }
+        (Just prevOcertN, ocertCounters')
+          -- QUESTION: should we be more strict with `<`!
+          | prevOcertN <= ocertN -- `ocertN` is valid
+          -> State.put ctx { vctxOcertMap = ocertCounters' }
+
+          | otherwise
+          -> left (InvalidOCertCounter prevOcertN ocertN)
+
+      return sig
+      where
         startKESPeriod, endKESPeriod :: KESPeriod
 
         startKESPeriod = ocertKESPeriod
@@ -213,15 +225,20 @@ validateSig tracer verKeyHashingFn sigs ctx = traverse process' sigs
         endKESPeriod   = KESPeriod $ unKESPeriod startKESPeriod
                                    + totalPeriodsKES (Proxy :: Proxy (KES crypto))
 
-        (?!:) :: Either e1 ()
-              -> (e1 -> SigValidationError)
-              -> ExceptT (TxValidationFail (Sig crypto)) m ()
-        (?!:) result f = firstExceptT (SigInvalid . f) . hoistEither $ result
+        (?!:) :: Either err ()
+              -> (err -> SigValidationError)
+              -> StateT s (Except (SigId, SigValidationError)) ()
+        (?!:) Right {} _ = return ()
+        (?!:) (Left e) f = Except.throwError (sigId, f e)
 
         (?!) :: Bool
              -> SigValidationError
-             -> ExceptT (TxValidationFail (Sig crypto)) m ()
-        (?!) flag sve = if flag then void success else left (SigInvalid sve)
+             -> StateT s (Except (SigId, SigValidationError)) ()
+        (?!) True  _   = return ()
+        (?!) False err = Except.throwError (sigId, err)
 
         infix 1 ?!
         infix 1 ?!:
+
+        left :: SigValidationError -> StateT s (Except (SigId, SigValidationError)) ()
+        left err = Except.throwError (sigId, err)

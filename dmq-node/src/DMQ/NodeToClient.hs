@@ -15,8 +15,8 @@ module DMQ.NodeToClient
 
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy (ByteString)
+import Data.Functor ((<&>))
 import Data.Functor.Contravariant ((>$<))
-import Data.Typeable
 import Data.Void
 import Data.Word
 
@@ -26,8 +26,6 @@ import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow
 import Control.Tracer (Tracer, nullTracer)
 
-import Codec.CBOR.Decoding qualified as CBOR
-import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Term qualified as CBOR
 
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
@@ -47,7 +45,6 @@ import DMQ.Protocol.LocalMsgSubmission.Codec
 import DMQ.Protocol.LocalMsgSubmission.Server
 import DMQ.Protocol.LocalMsgSubmission.Type
 import DMQ.Protocol.SigSubmission.Type (Sig, SigId, sigId)
-import DMQ.Protocol.SigSubmission.Validate
 import DMQ.Tracer
 
 import Ouroboros.Network.Context
@@ -101,12 +98,10 @@ data Codecs crypto m =
 dmqCodecs :: ( MonadST m
              , Crypto crypto
              )
-          => (TxValidationFail (Sig crypto)  -> CBOR.Encoding)
-          -> (forall s. CBOR.Decoder s  (TxValidationFail (Sig crypto)))
-          -> Codecs crypto m
-dmqCodecs encodeReject' decodeReject' =
+          => Codecs crypto m
+dmqCodecs =
   Codecs {
-    msgSubmissionCodec   = codecLocalMsgSubmission encodeReject' decodeReject'
+    msgSubmissionCodec   = codecLocalMsgSubmission
   , msgNotificationCodec = codecLocalMsgNotification
   }
 
@@ -144,24 +139,22 @@ ntcApps
      , MonadSTM m
      , Crypto crypto
      , Aeson.ToJSON ntcAddr
-     , Aeson.ToJSON (TxValidationFail (Sig crypto))
-     , ShowProxy (TxValidationFail (Sig crypto))
      , ShowProxy (Sig crypto)
-     , Typeable crypto
      )
   => (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
   -> Configuration
   -> TxSubmissionMempoolReader SigId (Sig crypto) idx m
-  -> MempoolWriter SigId (Sig crypto) idx m
+  -> TxSubmissionMempoolWriter SigId (Sig crypto) idx m SigValidationError
   -> Codecs crypto m
   -> Apps ntcAddr m ()
 ntcApps tracer
         Configuration { dmqcLocalMsgSubmissionServerProtocolTracer   = I localMsgSubmissionServerProtocolTracer,
                         dmqcLocalMsgNotificationServerProtocolTracer = I localMsgNotificationServerProtocolTracer,
-                        dmqcLocalMsgSubmissionServerTracer           = I localMsgSubmissionServerTracer
+                        dmqcLocalMsgSubmissionServerTracer           = I localMsgSubmissionServerTracer,
+                        dmqcLocalMsgNotificationServerTracer         = I localMsgNotificationServerTracer
                       }
         mempoolReader
-        mempoolWriter
+        TxSubmissionMempoolWriter { mempoolAddTxs }
         Codecs { msgSubmissionCodec, msgNotificationCodec } =
   Apps {
     aLocalMsgSubmission
@@ -184,7 +177,12 @@ ntcApps tracer
             (if localMsgSubmissionServerTracer
                then WithEventType "LocalMsgSubmission.Server" . Mx.WithBearer connId >$< tracer
                else nullTracer)
-            mempoolWriter)
+            (\sig -> mempoolAddTxs [sig] <&> \case
+                      (sigId:_, _) -> Right sigId
+                      (_, (sigId, err):_) -> Left (sigId, err)
+                      ([], []) -> error "mempoolAddTx: invariant violation"
+            )
+        )
 
     aLocalMsgNotification _version ResponderContext { rcConnectionId = connId } channel = do
       labelThisThread "LocalMsgNotification.Server"
@@ -196,7 +194,11 @@ ntcApps tracer
         channel
         (localMsgNotificationServerPeer $
           localMsgNotificationServer
-            nullTracer
+            sigId
+            (if localMsgNotificationServerTracer
+                then WithEventType "LocalMsgNotification.Server" . Mx.WithBearer connId >$< tracer
+                else nullTracer
+            )
             (pure ()) _ntc_MAX_SIGS_TO_ACK mempoolReader)
 
 

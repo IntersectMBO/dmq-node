@@ -1,7 +1,21 @@
 { inputs, pkgs, lib }:
 
 let
+  buildSystem = pkgs.stdenv.buildPlatform.system;
+  onLinux = buildSystem == "x86_64-linux";
+
   defaultCompiler = "ghc967";
+  otherCompilers =
+    if onLinux then [ "ghc9122" ] else [ ];
+
+  forAllProjectPackages = cfg: args@{ config, lib, ... }: {
+    options.packages = lib.genAttrs config.package-keys (_:
+      lib.mkOption {
+        type = lib.types.submodule ({ config, lib, ... }:
+          lib.mkIf config.package.isProject (cfg args)
+        );
+      });
+  };
 
   cabalProject = pkgs.haskell-nix.cabalProject' (
 
@@ -14,10 +28,12 @@ let
 
       src = lib.cleanSource ../.;
 
-      flake.variants = {
-        ghc967 = { }; # Alias for the default variant
-        # ghc9122.compiler-nix-name = "ghc9122";
-      };
+      flake.variants =
+        # otherCompilers
+        (lib.genAttrs otherCompilers
+          (compiler-nix-name: { inherit compiler-nix-name; }))
+        // { ${defaultCompiler} = { }; }; # placeholder to access
+                                          # defaultCompiler in `nix/shell.nix`
 
       inputMap = { "https://chap.intersectmbo.org/" = inputs.CHaP; };
 
@@ -27,6 +43,9 @@ let
           [ p.musl64 ];
 
       modules = [
+        (forAllProjectPackages ({ ... }: {
+          ghcOptions = [ "-Werror" ];
+        }))
         {
           packages.dmq-node.components.tests.dmq-cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag pkgs.cddlc ];
           packages.dmq-node.components.tests.dmq-cddl.preCheck = "export HOME=`pwd`";

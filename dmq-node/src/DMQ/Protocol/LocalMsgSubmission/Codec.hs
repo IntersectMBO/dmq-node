@@ -18,7 +18,6 @@ import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import DMQ.Protocol.LocalMsgSubmission.Type
 import DMQ.Protocol.SigSubmission.Codec qualified as SigSubmission
 import DMQ.Protocol.SigSubmission.Type (Sig (..))
-import DMQ.Protocol.SigSubmission.Validate
 
 import Network.TypedProtocol.Codec.CBOR
 import Ouroboros.Network.Protocol.LocalTxSubmission.Codec qualified as LTX
@@ -28,21 +27,20 @@ codecLocalMsgSubmission
      ( MonadST m
      , Crypto crypto
      )
-  => (TxValidationFail (Sig crypto) -> CBOR.Encoding)
-  -> (forall s. CBOR.Decoder s (TxValidationFail (Sig crypto)))
-  -> AnnotatedCodec (LocalMsgSubmission (Sig crypto)) CBOR.DeserialiseFailure m ByteString
+  => AnnotatedCodec (LocalMsgSubmission (Sig crypto)) CBOR.DeserialiseFailure m ByteString
 codecLocalMsgSubmission =
   LTX.anncodecLocalTxSubmission' SigWithBytes SigSubmission.encodeSig SigSubmission.decodeSig
+                                              encodeReject decodeReject
 
-encodeReject :: TxValidationFail (Sig crypto) -> CBOR.Encoding
+encodeReject :: SigValidationError -> CBOR.Encoding
 encodeReject = \case
-  SigInvalid reason -> CBOR.encodeListLen 2 <> CBOR.encodeWord 0 <> CBOR.encodeString (T.pack . show $ reason)
   SigDuplicate      -> CBOR.encodeListLen 1 <> CBOR.encodeWord 1
   SigExpired        -> CBOR.encodeListLen 1 <> CBOR.encodeWord 2
   SigResultOther reason
                     -> CBOR.encodeListLen 2 <> CBOR.encodeWord 3 <> CBOR.encodeString (T.pack . show $ reason)
+  reason            -> CBOR.encodeListLen 2 <> CBOR.encodeWord 0 <> CBOR.encodeString (T.pack . show $ reason)
 
-decodeReject :: CBOR.Decoder s (TxValidationFail (Sig crypto))
+decodeReject :: CBOR.Decoder s SigValidationError
 decodeReject = do
   len <- CBOR.decodeListLen
   tag <- CBOR.decodeWord
