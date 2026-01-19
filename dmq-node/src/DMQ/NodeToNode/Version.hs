@@ -31,20 +31,24 @@ import Ouroboros.Network.Protocol.Handshake (Accept (..))
 import Ouroboros.Network.OrphanInstances ()
 
 
-data NodeToNodeVersion =
-  NodeToNodeV_1
+data NodeToNodeVersion
+  = NodeToNodeV_1
+  | NodeToNodeV_2
   deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData)
 
 instance Aeson.ToJSON NodeToNodeVersion where
   toJSON NodeToNodeV_1 = Aeson.toJSON (1 :: Int)
+  toJSON NodeToNodeV_2 = Aeson.toJSON (2 :: Int)
 instance Aeson.ToJSONKey NodeToNodeVersion where
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
 nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
   where
     encodeTerm NodeToNodeV_1 = CBOR.TInt 1
+    encodeTerm NodeToNodeV_2 = CBOR.TInt 2
 
     decodeTerm (CBOR.TInt 1) = Right NodeToNodeV_1
+    decodeTerm (CBOR.TInt 2) = Right NodeToNodeV_2
     decodeTerm (CBOR.TInt n) = Left ( T.pack "decode NodeToNodeVersion: unknown tag: "
                                         <> T.pack (show n)
                                     , Just n
@@ -113,6 +117,7 @@ nodeToNodeCodecCBORTerm :: NodeToNodeVersion
 nodeToNodeCodecCBORTerm =
   \case
     NodeToNodeV_1 -> v1
+    NodeToNodeV_2 -> v1
 
   where
     v1 = CodecCBORTerm { encodeTerm = encodeTerm1, decodeTerm = decodeTerm1 }
