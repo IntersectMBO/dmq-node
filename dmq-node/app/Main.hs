@@ -119,6 +119,7 @@ runDMQ commandLineConfig = do
 
     stdGen <- newStdGen
     let (psRng, policyRng) = split stdGen
+    policyRngVar <- newTVarIO policyRng
 
     -- TODO: this might not work, since `ouroboros-network` creates its own IO Completion Port.
     withIOManager \iocp -> do
@@ -212,7 +213,7 @@ runDMQ commandLineConfig = do
                                     dmqLimitsAndTimeouts
                                     dmqNtNApps
                                     dmqNtCApps
-                                    (policy policyRng)
+                                    (policy policyRngVar)
 
         Diffusion.run dmqDiffusionArguments
                       (dmqDiffusionTracers dmqConfig tracer)
