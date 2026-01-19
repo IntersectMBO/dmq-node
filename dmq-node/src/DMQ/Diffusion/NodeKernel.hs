@@ -84,7 +84,7 @@ data StakePools m = StakePools {
     stakePoolsVar
       :: !(StrictTVar m (Map PoolId StakeSnapshot))
     -- | Acquire and update validation context for signature validation
-  , withPoolValidationCtx 
+  , withPoolValidationCtx
       :: forall a. (PoolValidationCtx -> (a, PoolValidationCtx)) ->  STM m a
      -- | provides only those big peers which provide SRV endpoints
      -- as otherwise those are cardano-nodes
