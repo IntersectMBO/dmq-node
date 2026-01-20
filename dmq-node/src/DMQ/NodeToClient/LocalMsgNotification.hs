@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module DMQ.NodeToClient.LocalMsgNotification
   ( localMsgNotificationServer
   , LocalMsgNotificationProtocolError (..)
@@ -6,6 +8,8 @@ module DMQ.NodeToClient.LocalMsgNotification
 import Control.Concurrent.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
 import Control.Tracer
+import Data.Aeson ((.=))
+import Data.Aeson qualified as Aeson
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Maybe (fromJust)
 import Data.Traversable (mapAccumR)
@@ -30,12 +34,13 @@ instance Exception LocalMsgNotificationProtocolError where
 --
 localMsgNotificationServer
   :: forall m msg msgid idx a. (MonadSTM m {-, MonadThrow m -})
-  => Tracer m (TraceMessageNotificationServer msg)
+  => (msg -> msgid)
+  -> Tracer m (TraceMessageNotificationServer msgid)
   -> m a
   -> Word16
   -> TxSubmissionMempoolReader msgid msg idx m
   -> LocalMsgNotificationServer m msg a
-localMsgNotificationServer tracer mdone maxMsgs0
+localMsgNotificationServer getMsgId tracer mdone maxMsgs0
                            TxSubmissionMempoolReader {
                              mempoolZeroIdx
                            , mempoolGetSnapshot
@@ -70,7 +75,7 @@ localMsgNotificationServer tracer mdone maxMsgs0
                     check . not . null $ msgs
                     return (lastIdx', hasMore', msgs)
 
-                  traceWith tracer (TraceMsgNotificationServerReply hasMore' msgs)
+                  traceWith tracer (TraceMsgNotificationServerReply hasMore' (getMsgId <$> msgs))
                   return $ ServerReply (BlockingReply (NonEmpty.fromList msgs))
                                        hasMore'
                                        (serverIdle lastIdx' hasMore')
@@ -80,16 +85,29 @@ localMsgNotificationServer tracer mdone maxMsgs0
               | otherwise -> do
                   snapshot <- atomically mempoolGetSnapshot
                   let (lastIdx', hasMore', msgs) = process snapshot
-                  traceWith tracer (TraceMsgNotificationServerReply hasMore' msgs)
+                  traceWith tracer (TraceMsgNotificationServerReply hasMore' (getMsgId <$> msgs))
                   return $ ServerReply (NonBlockingReply msgs) hasMore' (serverIdle lastIdx' hasMore')
 
         msgDoneHandler =
           traceWith tracer TraceMsgNotificationServerHandleDone >> mdone
 
 
-data TraceMessageNotificationServer msg =
-    TraceMsgNotificationServerReply HasMore [msg]
+data TraceMessageNotificationServer msgid =
+    TraceMsgNotificationServerReply HasMore [msgid]
     -- ^ The transactions to be sent in the response.
   | TraceMsgNotificationServerHandleDone
     -- ^ client terminates
   deriving Show
+
+instance (Aeson.ToJSON msgid) => Aeson.ToJSON (TraceMessageNotificationServer msgid) where
+  toJSON (TraceMsgNotificationServerReply hasMore msgids) =
+    Aeson.object
+      [ "type" .= Aeson.String "Reply"
+      , "hasMore" .= case hasMore of
+           HasMore         -> True
+           DoesNotHaveMore -> False
+      , "msgids" .= msgids
+      ]
+  toJSON TraceMsgNotificationServerHandleDone =
+    Aeson.object
+      [ "type" .= Aeson.String "Done" ]

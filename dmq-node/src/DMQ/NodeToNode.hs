@@ -58,6 +58,7 @@ import DMQ.Configuration (Configuration, Configuration' (..), I (..))
 import DMQ.Diffusion.NodeKernel (NodeKernel (..))
 import DMQ.NodeToNode.Version
 import DMQ.Protocol.SigSubmission.Codec (codecSigSubmissionV2)
+import DMQ.Protocol.SigSubmission.Validate (SigValidationError)
 import DMQ.Protocol.SigSubmissionV2.Codec hiding (codecSigSubmissionV2)
 import DMQ.Protocol.SigSubmissionV2.Inbound (sigSubmissionV2InboundPeerPipelined)
 import DMQ.Protocol.SigSubmissionV2.Outbound (sigSubmissionV2OutboundPeer)
@@ -167,7 +168,7 @@ ntnApps
  => (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
  -> Configuration
  -> TxSubmissionMempoolReader SigId (Sig crypto) idx m
- -> TxSubmissionMempoolWriter SigId (Sig crypto) idx m
+ -> TxSubmissionMempoolWriter SigId (Sig crypto) idx m SigValidationError
  -> (Sig crypto -> SizeInBytes)
  -> NodeKernel crypto addr m
  -> Codecs crypto addr m
@@ -395,6 +396,8 @@ ntnApps
 
 data Protocols appType initiatorCtx responderCtx bytes m a b =
   Protocols {
+    -- | sig-submission mini-protocol
+    --
     sigSubmissionProtocol :: RunMiniProtocol appType initiatorCtx responderCtx bytes m a b
 
     -- | keep-alive mini-protocol

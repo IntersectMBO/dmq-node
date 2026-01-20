@@ -1,36 +1,37 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE LambdaCase               #-}
+{-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE TypeOperators            #-}
 
 module DMQ.NodeToClient.LocalStateQueryClient
-  ( cardanoClient
+  ( TraceLocalStateQueryClient (..)
+  , cardanoClient
   , connectToCardanoNode
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.DeepSeq
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Trans.Except
-import Control.Tracer (Tracer (..), nullTracer)
-import Data.Functor ((<&>))
-import Data.Functor.Contravariant ((>$<))
-import Data.List.NonEmpty qualified as NonEmpty
+import Control.Tracer (Tracer (..), nullTracer, traceWith)
+import Data.Aeson (ToJSON (..), object, (.=))
+import Data.Aeson qualified as Aeson
 import Data.Map.Strict qualified as Map
 import Data.Proxy
 import Data.Void
 
-import Cardano.Chain.Slotting
+import Cardano.Chain.Slotting (EpochSlots(..))
 import Cardano.Network.NodeToClient
 import Cardano.Slotting.EpochInfo.API
 import Cardano.Slotting.Time
 import DMQ.Diffusion.NodeKernel
-import DMQ.Tracer
 import Ouroboros.Consensus.Cardano.Block
 import Ouroboros.Consensus.Cardano.Node
 import Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
-import Ouroboros.Consensus.HardFork.History.EpochInfo
-import Ouroboros.Consensus.Ledger.Query
+import Ouroboros.Consensus.HardFork.History.EpochInfo (interpreterToEpochInfo)
+import Ouroboros.Consensus.HardFork.History.Qry (PastHorizonException)
+import Ouroboros.Consensus.Ledger.Query (Query (..))
 import Ouroboros.Consensus.Network.NodeToClient
 import Ouroboros.Consensus.Node.NetworkProtocolVersion
 import Ouroboros.Consensus.Node.ProtocolInfo
@@ -39,27 +40,49 @@ import Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import Ouroboros.Network.Block
 import Ouroboros.Network.Magic
 import Ouroboros.Network.Mux qualified as Mx
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-import Ouroboros.Network.PeerSelection.LedgerPeers.Utils
-import Ouroboros.Network.Point
 import Ouroboros.Network.Protocol.LocalStateQuery.Client
 import Ouroboros.Network.Protocol.LocalStateQuery.Type
+
+-- | Trace type
+--
+data TraceLocalStateQueryClient =
+    Acquiring (Maybe SystemStart)
+  | NextEpoch UTCTime NominalDiffTime
+  | PastHorizon PastHorizonException
+
+instance ToJSON TraceLocalStateQueryClient where
+  toJSON = \case
+    Acquiring mSystemStart ->
+      object [ "kind" .= Aeson.String "Acquiring"
+             , "systemStart" .= show mSystemStart
+             ]
+    NextEpoch ne timer ->
+      object [ "kind" .= Aeson.String "NextEpoch"
+             , "time" .= show ne
+             , "countdown" .= show timer ]
+    PastHorizon e ->
+      object [ "kind" .= Aeson.String "PastHorizon"
+             , "error" .= show e
+             ]
 
 -- TODO generalize to handle ledger eras other than Conway
 -- | connects the dmq node to cardano node via local state query
 -- and updates the node kernel with stake pool data necessary to perform message
 -- validation
+--
 cardanoClient
   :: forall block query point crypto m. (MonadDelay m, MonadSTM m, MonadThrow m, MonadTime m)
   => (block ~ CardanoBlock crypto, query ~ Query block, point ~ Point block)
-  => Tracer m String -- TODO: replace string with a proper type
+  => Tracer m TraceLocalStateQueryClient
   -> StakePools m
   -> StrictTVar m (Maybe UTCTime) -- ^ from node kernel
   -> LocalStateQueryClient (CardanoBlock crypto) (Point block) (Query block) m Void
-cardanoClient _tracer StakePools { stakePoolsVar, ledgerPeersVar, ledgerBigPeersVar } nextEpochVar =
+cardanoClient tracer StakePools { stakePoolsVar } nextEpochVar =
   LocalStateQueryClient (idle Nothing)
   where
-    idle mSystemStart = pure $ SendMsgAcquire ImmutableTip acquire
+    idle mSystemStart = do
+      traceWith tracer $ Acquiring mSystemStart
+      pure $ SendMsgAcquire ImmutableTip acquire
       where
         acquire :: ClientStAcquiring block point query m Void
         acquire = ClientStAcquiring {
@@ -93,22 +116,24 @@ cardanoClient _tracer StakePools { stakePoolsVar, ledgerPeersVar, ledgerBigPeers
               pure $ addRelativeTime (getSlotLength lastSlotLength) lastSlotTime
 
       case res of
-        Left _err -> pure $ SendMsgRelease do
-          threadDelay 86400 -- TODO fuzz this?
-          idle $ Just systemStart
+        Left err ->
+          pure $ SendMsgRelease do
+            traceWith tracer $ PastHorizon err
+            threadDelay 86400
+            idle $ Just systemStart
         Right relativeTime -> do
-          now <- getCurrentTime
-          let nextEpoch   = fromRelativeTime systemStart relativeTime
-              toNextEpoch = diffUTCTime nextEpoch now
+          let nextEpoch = fromRelativeTime systemStart relativeTime
           pure $
             SendMsgQuery (BlockQuery . QueryIfCurrentConway $ GetStakeSnapshots Nothing)
-            $ wrappingMismatch (handleStakeSnapshots systemStart nextEpoch toNextEpoch)
+            $ wrappingMismatch (handleStakeSnapshots systemStart nextEpoch)
 
-    handleStakeSnapshots systemStart nextEpoch toNextEpoch StakeSnapshots { ssStakeSnapshots } = do
-      atomically do
-        writeTVar stakePoolsVar ssStakeSnapshots
-        writeTVar nextEpochVar $ Just nextEpoch
+    handleStakeSnapshots systemStart nextEpoch StakeSnapshots { ssStakeSnapshots } =
       pure $ SendMsgRelease do
+        atomically do
+          writeTVar stakePoolsVar ssStakeSnapshots
+          writeTVar nextEpochVar $ Just nextEpoch
+        toNextEpoch <- diffUTCTime nextEpoch <$> getCurrentTime
+        traceWith tracer $ NextEpoch nextEpoch toNextEpoch
         threadDelay $ min (realToFrac toNextEpoch) 86400 -- TODO fuzz this?
         idle $ Just systemStart
 
@@ -152,7 +177,7 @@ cardanoClient _tracer StakePools { stakePoolsVar, ledgerPeersVar, ledgerBigPeers
       -- handleLedgerPeers _ = error "handleLedgerPeers: impossible!"
 
 
-connectToCardanoNode :: Tracer IO (WithEventType String)
+connectToCardanoNode :: Tracer IO TraceLocalStateQueryClient
                      -> LocalSnocket
                      -> FilePath
                      -> NetworkMagic
@@ -186,7 +211,7 @@ connectToCardanoNode tracer localSnocket' snocketPath networkMagic nodeKernel =
                          , cStateQueryCodec
                          , StateIdle
                          , localStateQueryClientPeer
-                           $ cardanoClient (WithEventType "LocalStateQuery" >$< tracer)
+                           $ cardanoClient tracer
                                            (stakePools nodeKernel)
                                            (nextEpochVar nodeKernel)
                          )

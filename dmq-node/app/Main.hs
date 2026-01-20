@@ -12,12 +12,14 @@ module Main where
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad (void, when)
+import Control.Monad.Class.MonadThrow
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
 
 import Data.Act
 import Data.Aeson (ToJSON)
 import Data.ByteString.Lazy qualified as BSL
 import Data.Functor.Contravariant ((>$<))
+import Data.Foldable (traverse_)
 import Data.List.NonEmpty (NonEmpty)
 import Data.Maybe (maybeToList)
 import Data.Text qualified as Text
@@ -27,6 +29,7 @@ import Data.Void (Void)
 import Options.Applicative
 import System.Exit (exitSuccess)
 import System.Random (newStdGen, split)
+import System.IOManager (withIOManager)
 
 import Cardano.Git.Rev (gitRev)
 import Cardano.KESAgent.Protocols.StandardCrypto (StandardCrypto)
@@ -43,7 +46,6 @@ import DMQ.Handlers.TopLevel (toplevelExceptionHandler)
 import DMQ.NodeToClient qualified as NtC
 import DMQ.NodeToNode (NodeToNodeVersion, dmqCodecs, dmqLimitsAndTimeouts,
            ntnApps)
-import DMQ.Protocol.LocalMsgSubmission.Codec
 import DMQ.Protocol.SigSubmission.Type (Sig (..))
 import DMQ.Tracer
 
@@ -80,13 +82,14 @@ runDMQ commandLineConfig = do
     -- combine default configuration, configuration file and command line
     -- options
     let dmqConfig@Configuration {
-          dmqcPrettyLog            = I prettyLog,
-          dmqcTopologyFile         = I topologyFile,
-          dmqcHandshakeTracer      = I handshakeTracer,
-          dmqcValidationTracer     = I validationTracer,
-          dmqcLocalHandshakeTracer = I localHandshakeTracer,
-          dmqcCardanoNodeSocket    = I snocketPath,
-          dmqcVersion              = I version
+          dmqcPrettyLog             = I prettyLog,
+          dmqcTopologyFile          = I topologyFile,
+          dmqcHandshakeTracer       = I handshakeTracer,
+          dmqcValidationTracer      = I validationTracer,
+          dmqcLocalHandshakeTracer  = I localHandshakeTracer,
+          dmqcCardanoNodeSocket     = I snocketPath,
+          dmqcVersion               = I version,
+          dmqcLocalStateQueryTracer = I localStateQueryTracer
         } = config' <> commandLineConfig
             `act`
             defaultConfiguration
@@ -118,9 +121,14 @@ runDMQ commandLineConfig = do
     let (psRng, policyRng) = split stdGen
 
     -- TODO: this might not work, since `ouroboros-network` creates its own IO Completion Port.
-    Diffusion.withIOManager \iocp -> do
+    withIOManager \iocp -> do
       let localSnocket'      = localSnocket iocp
-          mkStakePoolMonitor = connectToCardanoNode tracer localSnocket' snocketPath
+          mkStakePoolMonitor = connectToCardanoNode
+                                 (if localStateQueryTracer
+                                    then WithEventType "LocalStateQuery" >$< tracer
+                                    else nullTracer)
+                                 localSnocket'
+                                 snocketPath
 
       withNodeKernel @StandardCrypto
                      tracer
@@ -137,11 +145,22 @@ runDMQ commandLineConfig = do
                                     then WithEventType "NtN Validation" >$< tracer
                                     else nullTracer
             dmqNtNApps =
-              let ntnMempoolWriter = Mempool.writerAdapter $
-                    Mempool.getWriter sigId
-                                      (poolValidationCtx $ stakePools nodeKernel)
-                                      (validateSig ntnValidationTracer (hashKey . VKey))
-                                      SigDuplicate
+              let ntnMempoolWriter =
+                    Mempool.getWriter SigDuplicate
+                                      sigId
+                                      (\now sigs ->
+                                        withPoolValidationCtx (stakePools nodeKernel) (validateSig (hashKey . VKey) now sigs)
+                                      )
+                                      (traverse_ $ \(sigid, reason) -> do
+                                        traceWith ntnValidationTracer $ InvalidSignature sigid reason
+                                        case reason of
+                                          SigDuplicate      -> return ()
+                                          SigExpired        -> return ()
+                                          NotInitialized    -> return ()
+                                          PoolNotEligible   -> return ()
+                                          UnrecognizedPool  -> return ()
+                                          err               -> throwIO (SigValidationException sigid err)
+                                      )
                                       (mempool nodeKernel)
                in ntnApps tracer
                           dmqConfig
@@ -161,14 +180,18 @@ runDMQ commandLineConfig = do
                                     else nullTracer
             dmqNtCApps =
               let ntcMempoolWriter =
-                    Mempool.getWriter sigId
-                                      (poolValidationCtx $ stakePools nodeKernel)
-                                      (validateSig ntcValidationTracer (hashKey . VKey))
-                                      SigDuplicate
+                    Mempool.getWriter SigDuplicate
+                                      sigId
+                                      (\now sigs ->
+                                        withPoolValidationCtx (stakePools nodeKernel) (validateSig (hashKey . VKey) now sigs)
+                                      )
+                                      (traverse_ $ \(sigid, reason) ->
+                                         traceWith ntcValidationTracer $ InvalidSignature sigid reason
+                                      )
                                       (mempool nodeKernel)
                in NtC.ntcApps tracer dmqConfig
                               mempoolReader ntcMempoolWriter
-                              (NtC.dmqCodecs encodeReject decodeReject)
+                              NtC.dmqCodecs
             dmqDiffusionArguments =
               diffusionArguments (if handshakeTracer
                                     then WithEventType "Handshake" >$< tracer

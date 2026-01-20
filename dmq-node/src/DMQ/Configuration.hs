@@ -152,6 +152,8 @@ data Configuration' f =
     dmqcSigSubmissionOutboundTracer                :: f Bool,
     dmqcSigSubmissionInboundTracer                 :: f Bool,
     dmqcLocalMsgSubmissionServerTracer             :: f Bool,
+    dmqcLocalMsgNotificationServerTracer           :: f Bool,
+    dmqcLocalStateQueryTracer                      :: f Bool,
 
     dmqcVersion                                    :: f Bool
   }
@@ -230,7 +232,7 @@ defaultConfiguration = Configuration {
       dmqcChurnInterval                              = I defaultDeadlineChurnInterval,
       dmqcPeerSharing                                = I PeerSharingEnabled,
       dmqcPrettyLog                                  = I False,
-      dmqcMuxTracer                                  = I False,
+      dmqcMuxTracer                                  = I True,
       dmqcChannelTracer                              = I False,
       dmqcBearerTracer                               = I False,
       dmqcHandshakeTracer                            = I True,
@@ -243,7 +245,7 @@ defaultConfiguration = Configuration {
       dmqcTracePublicRootPeersTracer                 = I False,
       dmqcTraceLedgerPeersTracer                     = I False,
       dmqcTracePeerSelectionTracer                   = I True,
-      dmqcTraceChurnCounters                         = I False,
+      dmqcTraceChurnCounters                         = I True,
       dmqcDebugPeerSelectionInitiatorTracer          = I False,
       dmqcDebugPeerSelectionInitiatorResponderTracer = I False,
       dmqcTracePeerSelectionCounters                 = I True,
@@ -253,7 +255,7 @@ defaultConfiguration = Configuration {
       dmqcServerTracer                               = I True,
       dmqcInboundGovernorTracer                      = I True,
       dmqcInboundGovernorTransitionTracer            = I False,
-      dmqcLocalConnectionManagerTracer               = I False,
+      dmqcLocalConnectionManagerTracer               = I True,
       dmqcLocalServerTracer                          = I False,
       dmqcLocalInboundGovernorTracer                 = I False,
       dmqcDnsTracer                                  = I False,
@@ -270,8 +272,10 @@ defaultConfiguration = Configuration {
 
       dmqcSigSubmissionOutboundTracer                = I False,
       dmqcSigSubmissionInboundTracer                 = I True,
-      dmqcSigSubmissionLogicTracer                   = I False,
+      dmqcSigSubmissionLogicTracer                   = I True,
       dmqcLocalMsgSubmissionServerTracer             = I True,
+      dmqcLocalMsgNotificationServerTracer           = I False,
+      dmqcLocalStateQueryTracer                      = I False,
 
       -- CLI only options
       dmqcVersion                                    = I False
@@ -366,6 +370,8 @@ instance FromJSON PartialConfig where
       dmqcSigSubmissionInboundTracer                 <- Last <$> v .:? "SigSubmissionInboundTracer"
       dmqcSigSubmissionLogicTracer                   <- Last <$> v .:? "SigSubmissionLogicTracer"
       dmqcLocalMsgSubmissionServerTracer             <- Last <$> v .:? "LocalMsgSubmissionServerTracer"
+      dmqcLocalMsgNotificationServerTracer           <- Last <$> v .:? "LocalMsgNotificationServerTracer"
+      dmqcLocalStateQueryTracer                      <- Last <$> v .:? "LocalStateQueryTracer"
 
       pure $
         Configuration
@@ -442,6 +448,7 @@ instance ToJSON Configuration where
            , "SigSubmissionOutboundTracer"                .= unI dmqcSigSubmissionOutboundTracer
            , "SigSubmissionInboundTracer"                 .= unI dmqcSigSubmissionInboundTracer
            , "SigSubmissionLogicTracer"                   .= unI dmqcSigSubmissionLogicTracer
+           , "LocalStateQueryTracer"                      .= unI dmqcLocalStateQueryTracer
            ]
 
 -- | Read the `DMQConfiguration` from the specified file.

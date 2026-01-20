@@ -56,14 +56,16 @@ newtype SigHash = SigHash { getSigHash :: ByteString }
   deriving stock (Eq, Ord)
 
 instance Show SigHash where
-  show (SigHash bs) = take 10 . Text.unpack . Text.decodeUtf8Lenient . BS.Base16.encode $ bs
+  -- show first 10 bytes in hex
+  show (SigHash bs) = take 20 . Text.unpack . Text.decodeUtf8Lenient . BS.Base16.encode $ bs
 
 newtype SigId = SigId { getSigId :: SigHash }
   deriving stock (Show, Eq, Ord)
 
 instance ToJSON SigId where
   toJSON (SigId (SigHash bs)) =
-    String (Text.decodeUtf8Lenient . BS.Base16.encode $ bs)
+    -- show first 10 bytes in hex
+    String (Text.take 20 . Text.decodeUtf8Lenient . BS.Base16.encode $ bs)
 
 instance ShowProxy SigId where
 
@@ -132,18 +134,18 @@ instance Crypto crypto
       => ToJSON (SigRaw crypto) where
   -- TODO: it is too verbose, we need verbosity levels for these JSON fields
   toJSON SigRaw { sigRawId
-             {- , sigRawBody
+             {- , sigRawBody -}
                 , sigRawKESPeriod
                 , sigRawExpiresAt
-                , sigRawKESSignature
+             {- , sigRawKESSignature
                 , sigRawOpCertificate
                 , sigRawColdKey -}
                 } =
     object [ "id"            .= sigRawId
-        {- , "body"          .= show (getSigBody sigRawBody)
-           , "kesPeriod"     .= sigRawKESPeriod
+        {- , "body"          .= show (getSigBody sigRawBody) -}
+           , "kesPeriod"     .= unKESPeriod sigRawKESPeriod
            , "expiresAt"     .= show sigRawExpiresAt
-           , "kesSignature"  .= show (getSigKESSignature sigRawKESSignature)
+        {- , "kesSignature"  .= show (getSigKESSignature sigRawKESSignature)
 
            , "opCertificate" .= show (getSignableRepresentation signable)
            , "coldKey"       .= show (getSigColdKey sigRawColdKey) -}
@@ -190,7 +192,11 @@ data Sig crypto = SigWithBytes {
 -- useful in `TraceTxLogic` tracer..
 --
 instance Show (Sig crypto) where
-  show Sig { sigId } = "Sig { sigId = \"" ++ show (getSigId sigId) ++ "\" }"
+  show Sig { sigId, sigKESPeriod, sigExpiresAt } =
+    "Sig { sigId = \"" ++ show (getSigId sigId) ++ "\""
+    ++ " , sigKESPeriod = " ++ show (unKESPeriod sigKESPeriod)
+    ++ " , sigExpiresAt = " ++ show sigExpiresAt
+    ++ " }"
 
 -- deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
 --                   , Show (VerKeyKES (KES crypto))

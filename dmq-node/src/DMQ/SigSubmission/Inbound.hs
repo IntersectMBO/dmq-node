@@ -48,7 +48,7 @@ import DMQ.SigSubmission.Inbound.Types as Submission
 -- non-blocking request for sigid's.
 --
 sigSubmissionInboundV2
-  :: forall sigid sig idx m.
+  :: forall sigid sig idx m failure.
      ( MonadDelay m
      , MonadThrow m
      , MonadAsync m
@@ -56,7 +56,7 @@ sigSubmissionInboundV2
      )
   => Tracer m (TraceSigSubmissionInbound sigid sig)
   -> SigSubmissionInitDelay
-  -> TxSubmissionMempoolWriter sigid sig idx m
+  -> TxSubmissionMempoolWriter sigid sig idx m failure
   -> PeerSigAPI m sigid sig
   -> ControlMessageSTM m
   -> SigSubmissionInboundPipelined sigid sig m ()

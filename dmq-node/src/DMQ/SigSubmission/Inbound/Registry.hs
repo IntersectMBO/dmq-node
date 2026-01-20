@@ -99,7 +99,7 @@ data SigMempoolResult = SigAccepted | SigRejected
 -- `PeerSigStateAPI` is only safe inside the  `withPeer` scope.
 --
 withPeer
-    :: forall sig peeraddr sigid idx m a.
+    :: forall sig peeraddr sigid idx m a failure.
        ( MonadMask m
        , MonadMVar m
        , MonadSTM  m
@@ -116,7 +116,7 @@ withPeer
     -> SigDecisionPolicy
     -> SharedSigStateVar m peeraddr sigid sig
     -> TxSubmissionMempoolReader sigid sig idx m
-    -> TxSubmissionMempoolWriter sigid sig idx m
+    -> TxSubmissionMempoolWriter sigid sig idx m failure
     -> (sig -> SizeInBytes)
     -> peeraddr
     --  ^ new peer
