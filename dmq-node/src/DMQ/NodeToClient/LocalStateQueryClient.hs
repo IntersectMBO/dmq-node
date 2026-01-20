@@ -24,6 +24,7 @@ import Data.Void
 import Cardano.Chain.Slotting (EpochSlots(..))
 import Cardano.Network.NodeToClient
 import Cardano.Slotting.EpochInfo.API
+import Cardano.Slotting.Slot (EpochNo)
 import Cardano.Slotting.Time
 import DMQ.Diffusion.NodeKernel
 import Ouroboros.Consensus.Cardano.Block
@@ -47,6 +48,7 @@ import Ouroboros.Network.Protocol.LocalStateQuery.Type
 --
 data TraceLocalStateQueryClient =
     Acquiring (Maybe SystemStart)
+  | CurrentEpoch EpochNo
   | NextEpoch UTCTime NominalDiffTime
   | PastHorizon PastHorizonException
 
@@ -56,9 +58,13 @@ instance ToJSON TraceLocalStateQueryClient where
       object [ "kind" .= Aeson.String "Acquiring"
              , "systemStart" .= show mSystemStart
              ]
+    CurrentEpoch epoch ->
+      object [ "kind" .= Aeson.String "CurrentEpoch"
+             , "remoteEpoch" .= show epoch
+             ]
     NextEpoch ne timer ->
       object [ "kind" .= Aeson.String "NextEpoch"
-             , "time" .= show ne
+             , "remoteTime" .= show ne
              , "countdown" .= show timer ]
     PastHorizon e ->
       object [ "kind" .= Aeson.String "PastHorizon"
@@ -115,6 +121,7 @@ cardanoClient tracer StakePools { stakePoolsVar } nextEpochVar =
               lastSlotLength <- epochInfoSlotLength ei lastSlot
               pure $ addRelativeTime (getSlotLength lastSlotLength) lastSlotTime
 
+      traceWith tracer $ CurrentEpoch epoch
       case res of
         Left err ->
           pure $ SendMsgRelease do
@@ -134,7 +141,7 @@ cardanoClient tracer StakePools { stakePoolsVar } nextEpochVar =
           writeTVar nextEpochVar $ Just nextEpoch
         toNextEpoch <- diffUTCTime nextEpoch <$> getCurrentTime
         traceWith tracer $ NextEpoch nextEpoch toNextEpoch
-        threadDelay $ min (realToFrac toNextEpoch) 86400 -- TODO fuzz this?
+        threadDelay $ min (max 1 $ realToFrac toNextEpoch) 86400 -- TODO fuzz this?
         idle $ Just systemStart
 
       -- TODO uncomment once this functionality is integrated into cardano-node
