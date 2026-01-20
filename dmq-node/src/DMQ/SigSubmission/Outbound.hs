@@ -101,12 +101,8 @@ sigSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version =
   where
     client :: StrictSeq (sigId, idx) -> idx -> OutboundStIdle sigId sig m ()
     client !unackedSeq !lastIdx =
-        OutboundStIdle { recvMsgRequestSigIds, recvMsgRequestSigs, recvMsgDone }
+        OutboundStIdle { recvMsgRequestSigIds, recvMsgRequestSigs }
       where
-        -- TODO Do I need to do something here?
-        recvMsgDone :: m ()
-        recvMsgDone = pure ()
-        
         recvMsgRequestSigIds :: forall blocking.
                                SingBlockingStyle blocking
                             -> NumIdsAck

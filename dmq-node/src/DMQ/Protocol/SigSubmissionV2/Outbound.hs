@@ -56,9 +56,7 @@ data OutboundStIdle sigId sig m a = OutboundStIdle {
                            -> m (OutboundStSigIds blocking sigId sig m a),
 
       recvMsgRequestSigs   :: [sigId]
-                           -> m (OutboundStSigs sigId sig m a),
-
-      recvMsgDone          :: m a
+                           -> m (OutboundStSigs sigId sig m a)
     }
 
 data OutboundStSigIds blocking sigId sig m a where
@@ -90,7 +88,7 @@ sigSubmissionV2OutboundPeer (SigSubmissionOutbound outboundSt) =
   where
     run :: OutboundStIdle sigId sig m a
         -> Peer (SigSubmissionV2 sigId sig) AsServer NonPipelined StIdle m a
-    run OutboundStIdle {recvMsgRequestSigIds, recvMsgRequestSigs, recvMsgDone} =
+    run OutboundStIdle {recvMsgRequestSigIds, recvMsgRequestSigs} =
       Await $ \case
         MsgRequestSigIds blocking ackNo reqNo -> Effect $ do
           recvMsgRequestSigIds blocking ackNo reqNo <&> \case
@@ -111,5 +109,3 @@ sigSubmissionV2OutboundPeer (SigSubmissionOutbound outboundSt) =
               Yield
                 (MsgReplySigs sigs)
                 (run k)
-
-        MsgDone -> Effect $ Done <$> recvMsgDone
