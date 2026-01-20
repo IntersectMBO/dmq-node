@@ -275,7 +275,7 @@ defaultConfiguration = Configuration {
       dmqcSigSubmissionLogicTracer                   = I True,
       dmqcLocalMsgSubmissionServerTracer             = I True,
       dmqcLocalMsgNotificationServerTracer           = I False,
-      dmqcLocalStateQueryTracer                      = I False,
+      dmqcLocalStateQueryTracer                      = I True,
 
       -- CLI only options
       dmqcVersion                                    = I False
