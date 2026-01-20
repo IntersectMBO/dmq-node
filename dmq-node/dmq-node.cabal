@@ -191,6 +191,9 @@ test-suite dmq-tests
     DMQ.Protocol.SigSubmissionV2.Test
     Test.DMQ.NodeToClient
     Test.DMQ.NodeToNode
+    Test.DMQ.SigSubmission.App
+    Test.DMQ.SigSubmission.SigLogic
+    Test.DMQ.SigSubmission.Types
 
   type: exitcode-stdio-1.0
   hs-source-dirs: test
@@ -205,13 +208,17 @@ test-suite dmq-tests
     cborg,
     containers,
     contra-tracer,
+    deepseq,
     dmq-node,
-    io-classes:{io-classes, si-timers},
+    hashable,
+    io-classes:{io-classes, si-timers, strict-mvar, strict-stm},
     io-sim,
     kes-agent-crypto,
+    nothunks,
     ouroboros-consensus-cardano,
-    ouroboros-network:{api, framework, protocols, protocols-tests-lib, tests-lib},
+    ouroboros-network:{ouroboros-network, api, framework, protocols, protocols-tests-lib, tests-lib},
     quickcheck-instances,
+    random,
     serialise,
     tasty,
     tasty-quickcheck,

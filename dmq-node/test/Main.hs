@@ -6,6 +6,7 @@ import Cardano.Crypto.Libsodium
 
 import Test.DMQ.NodeToClient qualified
 import Test.DMQ.NodeToNode qualified
+import Test.DMQ.SigSubmission.App qualified
 
 import DMQ.Protocol.LocalMsgNotification.Test qualified
 import DMQ.Protocol.LocalMsgSubmission.Test qualified
@@ -26,6 +27,7 @@ tests =
   testGroup "decentralised-message-queue:tests"
   [ Test.DMQ.NodeToClient.tests
   , Test.DMQ.NodeToNode.tests
+  , Test.DMQ.SigSubmission.App.tests
 
     -- protocols
   , DMQ.Protocol.SigSubmission.Test.tests
