@@ -57,14 +57,13 @@ import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import DMQ.Configuration (Configuration, Configuration' (..), I (..))
 import DMQ.Diffusion.NodeKernel (NodeKernel (..))
 import DMQ.NodeToNode.Version
-import DMQ.Protocol.SigSubmission.Codec (codecSigSubmissionV2)
 import DMQ.Protocol.SigSubmission.Validate (SigValidationError)
-import DMQ.Protocol.SigSubmissionV2.Codec hiding (codecSigSubmissionV2)
+import DMQ.Protocol.SigSubmissionV2.Codec
 import DMQ.Protocol.SigSubmissionV2.Inbound (sigSubmissionV2InboundPeerPipelined)
 import DMQ.Protocol.SigSubmissionV2.Outbound (sigSubmissionV2OutboundPeer)
 import DMQ.Protocol.SigSubmissionV2.Type
-import DMQ.SigSubmission.Inbound (sigSubmissionInboundV2)
-import DMQ.SigSubmission.Outbound (sigSubmissionOutbound)
+import DMQ.SigSubmissionV2.Inbound (sigSubmissionInbound)
+import DMQ.SigSubmissionV2.Outbound (sigSubmissionOutbound)
 import DMQ.Tracer
 
 import Ouroboros.Network.BlockFetch.ClientRegistry (bracketKeepAliveClient)
@@ -257,7 +256,7 @@ ntnApps
               sigSubmissionTimeLimits
               channel
               $ sigSubmissionV2InboundPeerPipelined
-              $ sigSubmissionInboundV2
+              $ sigSubmissionInbound
                   (if sigSubmissionInboundTracer
                      then WithEventType "SigSubmission.Inbound" . Mx.WithBearer connId >$< tracer
                      else nullTracer)
@@ -553,7 +552,7 @@ dmqCodecs :: ( MonadST m
           -> Codecs crypto addr m
 dmqCodecs encodeAddr decodeAddr =
   Codecs {
-    sigSubmissionCodec = codecSigSubmissionV2
+    sigSubmissionCodec = anncodecSigSubmissionV2'
   , keepAliveCodec     = codecKeepAlive_v2
   , peerSharingCodec   = codecPeerSharing encodeAddr decodeAddr
   }

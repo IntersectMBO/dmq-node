@@ -46,8 +46,8 @@ import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToReq(..))
 import Ouroboros.Network.TxSubmission.Inbound.V2
 import Ouroboros.Network.Util.ShowProxy
 
-import DMQ.SigSubmission.Outbound (sigSubmissionOutbound)
-import DMQ.SigSubmission.Inbound (sigSubmissionInboundV2)
+import DMQ.SigSubmissionV2.Outbound (sigSubmissionOutbound)
+import DMQ.SigSubmissionV2.Inbound (sigSubmissionInbound)
 import DMQ.Protocol.SigSubmissionV2.Type (NumIdsAck(..), SigSubmissionV2)
 import DMQ.Protocol.SigSubmissionV2.Codec (byteLimitsSigSubmissionV2,
            timeLimitsSigSubmissionV2)
@@ -315,7 +315,7 @@ runSigSubmission tracer tracerSigLogic st0 sigDecisionPolicy = do
                                 (getMempoolWriter inboundMempool)
                                 getSigSize
                                 addr $ \(api :: PeerTxAPI m SigId (Sig SigId))-> do
-                                  let client = sigSubmissionInboundV2
+                                  let client = sigSubmissionInbound
                                                  verboseTracer
                                                  NoTxSubmissionInitDelay
                                                  (getMempoolWriter inboundMempool)

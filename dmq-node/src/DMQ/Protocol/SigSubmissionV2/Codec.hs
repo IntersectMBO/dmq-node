@@ -15,6 +15,7 @@ module DMQ.Protocol.SigSubmissionV2.Codec
   , timeLimitsSigSubmissionV2
   , encodeSigSubmissionV2
   , anncodecSigSubmissionV2
+  , anncodecSigSubmissionV2'
   ) where
 
 import Control.Monad.Class.MonadST
@@ -33,8 +34,11 @@ import Network.TypedProtocol.Codec.CBOR
 import Ouroboros.Network.Protocol.Codec.Utils (WithByteSpan (..))
 import Ouroboros.Network.Protocol.Codec.Utils qualified as Utils
 import Ouroboros.Network.Protocol.Limits
+
+import Cardano.KESAgent.KES.Crypto (Crypto (..))
   
 import DMQ.Protocol.SigSubmissionV2.Type
+import DMQ.Protocol.SigSubmission.Codec qualified as V1
 
 -- | Byte Limits.
 byteLimitsSigSubmissionV2
@@ -433,3 +437,16 @@ decodeSigSubmissionV2' mkWithBytes decodeSigId decodeSig sok = do
         -- failures
         (_, _, _) ->
           fail $ printf "codecSigSubmissionV2 (%s) unexpected key %d, length %d" (show stok) key len
+
+
+anncodecSigSubmissionV2'
+  :: forall crypto m.
+     ( Crypto crypto
+     , MonadST m
+     )
+  => AnnotatedCodec (SigSubmissionV2 SigId (Sig crypto)) CBOR.DeserialiseFailure m ByteString
+anncodecSigSubmissionV2' =
+  anncodecSigSubmissionV2
+    SigWithBytes
+    V1.encodeSigId V1.decodeSigId
+    V1.encodeSig   V1.decodeSig

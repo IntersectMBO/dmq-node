@@ -7,7 +7,6 @@
 
 module DMQ.Protocol.SigSubmission.Codec
   ( codecSigSubmission
-  , codecSigSubmissionV2
   , byteLimitsSigSubmission
   , timeLimitsSigSubmission
   , codecSigSubmissionId
@@ -44,9 +43,6 @@ import Ouroboros.Network.Protocol.Limits
 import Ouroboros.Network.Protocol.TxSubmission2.Codec qualified as TX
 
 import DMQ.Protocol.SigSubmission.Type
-import DMQ.Protocol.SigSubmissionV2.Type (SigSubmissionV2)
-import DMQ.Protocol.SigSubmissionV2.Codec (anncodecSigSubmissionV2)
-
 
 
 -- | 'SigSubmission' time limits.
@@ -143,19 +139,6 @@ codecSigSubmission =
     SigWithBytes
     encodeSigId decodeSigId
     encodeSig   decodeSig
-
-codecSigSubmissionV2
-  :: forall crypto m.
-     ( Crypto crypto
-     , MonadST m
-     )
-  => AnnotatedCodec (SigSubmissionV2 SigId (Sig crypto)) CBOR.DeserialiseFailure m ByteString
-codecSigSubmissionV2 =
-  anncodecSigSubmissionV2
-    SigWithBytes
-    encodeSigId decodeSigId
-    encodeSig   decodeSig
-
 
 encodeSig :: Sig crypto -> CBOR.Encoding
 encodeSig = Utils.encodeBytes . sigRawBytes

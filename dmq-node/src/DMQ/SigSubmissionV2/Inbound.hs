@@ -6,9 +6,9 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module DMQ.SigSubmission.Inbound
+module DMQ.SigSubmissionV2.Inbound
   ( -- * SigSubmision Inbound client
-    sigSubmissionInboundV2
+    sigSubmissionInbound
   ) where
 
 import Data.Map.Strict qualified as Map
@@ -45,7 +45,7 @@ import DMQ.Protocol.SigSubmissionV2.Type (NumIdsReq(..), NumIdsAck (NumIdsAck))
 -- for sigid's. If there are no sig's to download, it either sends a blocking or
 -- non-blocking request for sigid's.
 --
-sigSubmissionInboundV2
+sigSubmissionInbound
   :: forall sigid sig idx m failure.
      ( MonadDelay m
      , MonadThrow m
@@ -58,7 +58,7 @@ sigSubmissionInboundV2
   -> PeerTxAPI m sigid sig
   -> ControlMessageSTM m
   -> SigSubmissionInboundPipelined sigid sig m ()
-sigSubmissionInboundV2
+sigSubmissionInbound
     tracer
     initDelay
     TxSubmissionMempoolWriter { txId }

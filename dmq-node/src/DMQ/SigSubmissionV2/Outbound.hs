@@ -5,7 +5,7 @@
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-module DMQ.SigSubmission.Outbound
+module DMQ.SigSubmissionV2.Outbound
   ( sigSubmissionOutbound
   , TraceSigSubmissionOutbound (..)
   , SigSubmissionProtocolError (..)
