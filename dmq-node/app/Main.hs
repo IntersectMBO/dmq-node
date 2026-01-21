@@ -11,6 +11,7 @@
 module Main where
 
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Concurrent.Class.MonadMVar
 import Control.Monad (void, when)
 import Control.Monad.Class.MonadThrow
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
@@ -93,8 +94,13 @@ runDMQ commandLineConfig = do
         } = config' <> commandLineConfig
             `act`
             defaultConfiguration
-    let tracer :: ToJSON ev => Tracer IO (WithEventType ev)
-        tracer = dmqTracer prettyLog
+
+    lock <- newMVar ()
+    let tracer', tracer  :: ToJSON ev => Tracer IO (WithEventType ev)
+        tracer' = dmqTracer prettyLog
+        -- use a lock to prevent writing two lines at the same time
+        -- TODO: this won't be needed with `cardano-tracer` integration
+        tracer = Tracer $ \a -> withMVar lock $ \_ -> traceWith tracer' a
 
     when version $ do
       let gitrev = $(gitRev)
