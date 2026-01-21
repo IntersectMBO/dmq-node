@@ -88,11 +88,6 @@ library
     DMQ.Protocol.SigSubmissionV2.Outbound
     DMQ.Protocol.SigSubmissionV2.Type
     DMQ.SigSubmission.Inbound
-    DMQ.SigSubmission.Inbound.Decision
-    DMQ.SigSubmission.Inbound.Policy
-    DMQ.SigSubmission.Inbound.Registry
-    DMQ.SigSubmission.Inbound.State
-    DMQ.SigSubmission.Inbound.Types
     DMQ.SigSubmission.Outbound
     DMQ.Tracer
 
@@ -192,7 +187,6 @@ test-suite dmq-tests
     Test.DMQ.NodeToClient
     Test.DMQ.NodeToNode
     Test.DMQ.SigSubmission.App
-    Test.DMQ.SigSubmission.SigLogic
     Test.DMQ.SigSubmission.Types
 
   type: exitcode-stdio-1.0
@@ -216,7 +210,7 @@ test-suite dmq-tests
     kes-agent-crypto,
     nothunks,
     ouroboros-consensus-cardano,
-    ouroboros-network:{ouroboros-network, api, framework, protocols, protocols-tests-lib, tests-lib},
+    ouroboros-network:{ouroboros-network, api, framework, ouroboros-network-tests-lib, protocols, protocols-tests-lib, tests-lib},
     quickcheck-instances,
     random,
     serialise,

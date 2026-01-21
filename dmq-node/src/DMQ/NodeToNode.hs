@@ -63,8 +63,8 @@ import DMQ.Protocol.SigSubmissionV2.Codec hiding (codecSigSubmissionV2)
 import DMQ.Protocol.SigSubmissionV2.Inbound (sigSubmissionV2InboundPeerPipelined)
 import DMQ.Protocol.SigSubmissionV2.Outbound (sigSubmissionV2OutboundPeer)
 import DMQ.Protocol.SigSubmissionV2.Type
-import DMQ.SigSubmission.Inbound as SigSubmission
-import DMQ.SigSubmission.Outbound
+import DMQ.SigSubmission.Inbound (sigSubmissionInboundV2)
+import DMQ.SigSubmission.Outbound (sigSubmissionOutbound)
 import DMQ.Tracer
 
 import Ouroboros.Network.BlockFetch.ClientRegistry (bracketKeepAliveClient)
@@ -90,7 +90,7 @@ import Ouroboros.Network.PeerSelection (PeerSharing (..))
 import Ouroboros.Network.PeerSharing (bracketPeerSharingClient,
            peerSharingClient, peerSharingServer)
 import Ouroboros.Network.Snocket (RemoteAddress)
-import Ouroboros.Network.TxSubmission.Inbound.V2.Types (TxSubmissionMempoolWriter)
+import Ouroboros.Network.TxSubmission.Inbound.V2
 import Ouroboros.Network.TxSubmission.Mempool.Reader
 
 import Ouroboros.Network.OrphanInstances ()
@@ -173,7 +173,7 @@ ntnApps
  -> NodeKernel crypto addr m
  -> Codecs crypto addr m
  -> LimitsAndTimeouts crypto addr
- -> SigDecisionPolicy
+ -> TxDecisionPolicy
  -> Apps addr m () ()
 ntnApps
     tracer
@@ -235,7 +235,7 @@ ntnApps
                            eicConnectionId   = connId,
                            eicControlMessage = controlMessage
                          } channel =
-        SigSubmission.withPeer
+        withPeer
           (if sigSubmissionLogicTracer
              then WithEventType "SigSubmission.Logic" . Mx.WithBearer connId >$< tracer
              else nullTracer)
@@ -247,7 +247,7 @@ ntnApps
           mempoolWriter
           sigSize
           (remoteAddress connId)
-          $ \(peerSigAPI :: PeerSigAPI m SigId (Sig crypto)) ->
+          $ \(peerSigAPI :: PeerTxAPI m SigId (Sig crypto)) ->
             runPipelinedAnnotatedPeerWithLimits
               (if sigSubmissionServerProtocolTracer
                  then WithEventType "SigSubmission.Protocol.Server" . Mx.WithBearer connId >$< tracer
@@ -660,8 +660,8 @@ stdVersionDataNTN networkMagic diffusionMode peerSharing =
 _MAX_SIGS_TO_ACK :: NumIdsAck
 _MAX_SIGS_TO_ACK = 20
 
-_SIG_SUBMISSION_INIT_DELAY :: SigSubmissionInitDelay
-_SIG_SUBMISSION_INIT_DELAY = NoSigSubmissionInitDelay
+_SIG_SUBMISSION_INIT_DELAY :: TxSubmissionInitDelay
+_SIG_SUBMISSION_INIT_DELAY = NoTxSubmissionInitDelay
 
 
 -- TODO: this is duplicated code, similar function is in

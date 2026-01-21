@@ -9,10 +9,6 @@
 module DMQ.SigSubmission.Inbound
   ( -- * SigSubmision Inbound client
     sigSubmissionInboundV2
-    -- * Supporting types and APIs
-  , module Submission
-  , SigDecisionPolicy (..)
-  , defaultSigDecisionPolicy
   ) where
 
 import Data.Map.Strict qualified as Map
@@ -35,10 +31,12 @@ import Ouroboros.Network.TxSubmission.Inbound.V2.Types (
 
 import DMQ.Protocol.SigSubmissionV2.Inbound
 
-import DMQ.SigSubmission.Inbound.Policy
-import DMQ.SigSubmission.Inbound.Registry as Submission
-import DMQ.SigSubmission.Inbound.State
-import DMQ.SigSubmission.Inbound.Types as Submission
+import Ouroboros.Network.TxSubmission.Inbound.V2 (TraceTxSubmissionInbound (..),
+           PeerTxAPI (..), TxDecision (..), TxsToMempool (..),
+           TxSubmissionProtocolError (..), TxSubmissionInitDelay (..))
+import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToReq(..),
+           NumTxIdsToAck (..))
+import DMQ.Protocol.SigSubmissionV2.Type (NumIdsReq(..), NumIdsAck (NumIdsAck))
 
 -- | A sig-submission inbound side (client, sic!).
 --
@@ -54,28 +52,28 @@ sigSubmissionInboundV2
      , MonadAsync m
      , Ord sigid
      )
-  => Tracer m (TraceSigSubmissionInbound sigid sig)
-  -> SigSubmissionInitDelay
+  => Tracer m (TraceTxSubmissionInbound sigid sig)
+  -> TxSubmissionInitDelay
   -> TxSubmissionMempoolWriter sigid sig idx m failure
-  -> PeerSigAPI m sigid sig
+  -> PeerTxAPI m sigid sig
   -> ControlMessageSTM m
   -> SigSubmissionInboundPipelined sigid sig m ()
 sigSubmissionInboundV2
     tracer
     initDelay
     TxSubmissionMempoolWriter { txId }
-    PeerSigAPI {
-      readSigDecision,
-      handleReceivedSigIds,
-      handleReceivedSigs,
-      submitSigToMempool
+    PeerTxAPI {
+      readTxDecision,
+      handleReceivedTxIds,
+      handleReceivedTxs,
+      submitTxToMempool
     }
     controlMessageSTM
     =
       SigSubmissionInboundPipelined $ do
         case initDelay of
-          SigSubmissionInitDelay delay -> threadDelay delay
-          NoSigSubmissionInitDelay     -> return ()
+          TxSubmissionInitDelay delay -> threadDelay delay
+          NoTxSubmissionInitDelay     -> return ()
         inboundIdle
   where
     inboundIdle
@@ -83,15 +81,15 @@ sigSubmissionInboundV2
     inboundIdle = do
       -- TODO
       -- readSigDecision is blocking on next decision because takeMVar and ControlMessageSTM is blocking
-      sigDecision <- async readSigDecision
+      sigDecision <- async readTxDecision
       msigd <- timeoutWithControlMessage controlMessageSTM (waitSTM sigDecision)
       case msigd of
         Nothing -> pure (SendMsgDone $ return ())
-        Just sigd@SigDecision
-              { sigdSigsToRequest = sigsToRequest
-              , sigdSigsToMempool = TxsToMempool { listOfTxsToMempool }
+        Just sigd@TxDecision
+              { txdTxsToRequest = sigsToRequest
+              , txdTxsToMempool = TxsToMempool { listOfTxsToMempool }
               } -> do
-                     traceWith tracer (TraceSigInboundDecision sigd)
+                     traceWith tracer (TraceTxInboundDecision sigd)
 
                      let !collected = length listOfTxsToMempool
 
@@ -102,7 +100,7 @@ sigSubmissionInboundV2
                        -- * `TraceTxInboundAddedToMempool`, and
                        -- * `TraceTxInboundRejectedFromMempool`
                        -- events.
-                       mapM_ (uncurry $ submitSigToMempool tracer) listOfTxsToMempool
+                       mapM_ (uncurry $ submitTxToMempool tracer) listOfTxsToMempool
 
                      -- TODO:
                      -- We can update the state so that other `sig-submission` servers will
@@ -113,18 +111,18 @@ sigSubmissionInboundV2
 
 
     -- Pipelined request of sigs
-    serverReqSigs :: SigDecision sigid sig
+    serverReqSigs :: TxDecision sigid sig
                  -> m (InboundStIdle Z sigid sig m ())
-    serverReqSigs sigd@SigDecision { sigdSigsToRequest = sigdSigsToRequest } =
+    serverReqSigs sigd@TxDecision { txdTxsToRequest = sigdSigsToRequest } =
       pure $ SendMsgRequestSigsPipelined sigdSigsToRequest
                                          (serverReqSigIds (Succ Zero) sigd)
 
     serverReqSigIds :: forall (n :: N).
                       Nat n
-                   -> SigDecision sigid sig
+                   -> TxDecision sigid sig
                    -> m (InboundStIdle n sigid sig m ())
     serverReqSigIds
-      n SigDecision { sigdSigIdsToRequest = 0 }
+      n TxDecision { txdTxIdsToRequest = 0 }
       =
       case n of
         Zero   -> inboundIdle
@@ -135,43 +133,46 @@ sigSubmissionInboundV2
       -- a blocking `MsgRequestSigIds` request.  This is important, as otherwise
       -- the client side wouldn't have a chance to terminate the
       -- mini-protocol.
-      Zero SigDecision { sigdSigIdsToAcknowledge = sigIdsToAck,
-                         sigdPipelineSigIds      = False,
-                         sigdSigIdsToRequest     = sigIdsToReq
-                       }
+      Zero TxDecision { txdTxIdsToAcknowledge = sigIdsToAck,
+                        txdPipelineTxIds      = False,
+                        txdTxIdsToRequest     = sigIdsToReq
+                      }
       =
       pure $ SendMsgRequestSigIdsBlocking
-                sigIdsToAck sigIdsToReq
+                (NumIdsAck . getNumTxIdsToAck $ sigIdsToAck)
+                (NumIdsReq . getNumTxIdsToReq $ sigIdsToReq)
                 (\sigids -> do
                    let sigidsSeq = StrictSeq.fromList $ fst <$> sigids
                        sigidsMap = Map.fromList sigids
                    unless (StrictSeq.length sigidsSeq <= fromIntegral sigIdsToReq) $
                      throwIO ProtocolErrorTxIdsNotRequested
-                   handleReceivedSigIds sigIdsToReq sigidsSeq sigidsMap
+                   handleReceivedTxIds sigIdsToReq sigidsSeq sigidsMap
                    inboundIdle
                 )
 
     serverReqSigIds
-      n@Zero SigDecision { sigdSigIdsToAcknowledge = sigIdsToAck,
-                           sigdPipelineSigIds      = True,
-                           sigdSigIdsToRequest     = sigIdsToReq
-                         }
+      n@Zero TxDecision { txdTxIdsToAcknowledge = sigIdsToAck,
+                          txdPipelineTxIds      = True,
+                          txdTxIdsToRequest     = sigIdsToReq
+                        }
       =
       pure $ SendMsgRequestSigIdsPipelined
-                sigIdsToAck sigIdsToReq
+                (NumIdsAck . getNumTxIdsToAck $ sigIdsToAck)
+                (NumIdsReq . getNumTxIdsToReq $ sigIdsToReq)
                 (handleReplies (Succ n))
 
     serverReqSigIds
-      n@Succ{} SigDecision { sigdSigIdsToAcknowledge = sigIdsToAck,
-                             sigdPipelineSigIds,
-                             sigdSigIdsToRequest     = sigIdsToReq
-                           }
+      n@Succ{} TxDecision { txdTxIdsToAcknowledge = sigIdsToAck,
+                            txdPipelineTxIds,
+                            txdTxIdsToRequest     = sigIdsToReq
+                          }
       =
       -- it is impossible that we have had `sig`'s to request (Succ{} - is an
       -- evidence for that), but no unacknowledged `sigid`s.
-      assert sigdPipelineSigIds $
+      assert txdPipelineTxIds $
       pure $ SendMsgRequestSigIdsPipelined
-               sigIdsToAck sigIdsToReq
+               (NumIdsAck . getNumTxIdsToAck $ sigIdsToAck)
+               (NumIdsReq . getNumTxIdsToReq $ sigIdsToReq)
                (handleReplies (Succ n))
 
 
@@ -199,7 +200,7 @@ sigSubmissionInboundV2
             sigidsMap = Map.fromList sigids
         unless (StrictSeq.length sigidsSeq <= fromIntegral sigIdsToReq) $
           throwIO ProtocolErrorTxIdsNotRequested
-        handleReceivedSigIds sigIdsToReq sigidsSeq sigidsMap
+        handleReceivedTxIds (NumTxIdsToReq . getNumIdsReq $ sigIdsToReq) sigidsSeq sigidsMap
         k
       CollectSigs sigids sigs -> do
         let requested = Map.keysSet sigids
@@ -208,10 +209,10 @@ sigSubmissionInboundV2
         unless (Map.keysSet received `Set.isSubsetOf` requested) $
           throwIO ProtocolErrorTxNotRequested
 
-        mbe <- handleReceivedSigs sigids received
-        traceWith tracer $ TraceSigSubmissionCollected (txId `map` sigs)
+        mbe <- handleReceivedTxs sigids received
+        traceWith tracer $ TraceTxSubmissionCollected (txId `map` sigs)
         case mbe of
           -- one of `sig`s had a wrong size
-          Just e  -> traceWith tracer (TraceSigInboundError e)
+          Just e  -> traceWith tracer (TraceTxInboundError e)
                   >> throwIO e
           Nothing -> k

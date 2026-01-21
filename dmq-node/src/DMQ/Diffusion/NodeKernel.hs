@@ -47,13 +47,13 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
 import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry,
            newPeerSharingAPI, newPeerSharingRegistry,
            ps_POLICY_PEER_SHARE_MAX_PEERS, ps_POLICY_PEER_SHARE_STICKY_TIME)
+import Ouroboros.Network.TxSubmission.Inbound.V2
 import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool (..),
            MempoolSeq (..), WithIndex (..))
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 
 import DMQ.Configuration as Conf
 import DMQ.Protocol.SigSubmission.Type (Sig (sigExpiresAt, sigId), SigId)
-import DMQ.SigSubmission.Inbound
 import DMQ.Tracer
 
 
@@ -67,9 +67,9 @@ data NodeKernel crypto ntnAddr m =
   , peerSharingRegistry :: !(PeerSharingRegistry ntnAddr m)
   , peerSharingAPI      :: !(PeerSharingAPI ntnAddr StdGen m)
   , mempool             :: !(Mempool m SigId (Sig crypto))
-  , sigChannelVar       :: !(SigChannelsVar m ntnAddr SigId (Sig crypto))
-  , sigMempoolSem       :: !(SigMempoolSem m)
-  , sigSharedTxStateVar :: !(SharedSigStateVar m ntnAddr SigId (Sig crypto))
+  , sigChannelVar       :: !(TxChannelsVar m ntnAddr SigId (Sig crypto))
+  , sigMempoolSem       :: !(TxMempoolSem m)
+  , sigSharedTxStateVar :: !(SharedTxStateVar m ntnAddr SigId (Sig crypto))
   , stakePools          :: !(StakePools m)
   , nextEpochVar        :: !(StrictTVar m (Maybe UTCTime))
   }
@@ -120,10 +120,10 @@ newNodeKernel rng = do
   peerSharingRegistry <- newPeerSharingRegistry
 
   mempool <- Mempool.empty
-  sigChannelVar <- newSigChannelsVar
-  sigMempoolSem <- newSigMempoolSem
+  sigChannelVar <- newTxChannelsVar
+  sigMempoolSem <- newTxMempoolSem
   let (rng', rng'') = Random.split rng
-  sigSharedTxStateVar <- newSharedSigStateVar rng'
+  sigSharedTxStateVar <- newSharedTxStateVar rng'
   (nextEpochVar, ocertCountersVar, stakePoolsVar, ledgerBigPeersVar, ledgerPeersVar) <- atomically $
     (,,,,) <$> newTVar Nothing
            <*> newTVar Map.empty

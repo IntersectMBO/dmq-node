@@ -42,35 +42,30 @@ import Data.Typeable (Typeable)
 import Ouroboros.Network.Channel
 import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
 import Ouroboros.Network.Driver
+import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToReq(..))
+import Ouroboros.Network.TxSubmission.Inbound.V2
 import Ouroboros.Network.Util.ShowProxy
 
 import DMQ.SigSubmission.Outbound (sigSubmissionOutbound)
-import DMQ.SigSubmission.Inbound (SigChannels(..), sigSubmissionInboundV2,
-           PeerSigAPI)
-import DMQ.SigSubmission.Inbound.Types (SigSubmissionInitDelay(..),
-           TraceSigLogic)
-import DMQ.SigSubmission.Inbound.Policy (SigDecisionPolicy,
-           maxUnacknowledgedSigIds)
-import DMQ.Protocol.SigSubmissionV2.Type (NumIdsAck(..), SigSubmissionV2,
-           getNumIdsReq)
+import DMQ.SigSubmission.Inbound (sigSubmissionInboundV2)
+import DMQ.Protocol.SigSubmissionV2.Type (NumIdsAck(..), SigSubmissionV2)
 import DMQ.Protocol.SigSubmissionV2.Codec (byteLimitsSigSubmissionV2,
            timeLimitsSigSubmissionV2)
 import DMQ.Protocol.SigSubmissionV2.Outbound (sigSubmissionV2OutboundPeer)
 import DMQ.Protocol.SigSubmissionV2.Inbound (
            sigSubmissionV2InboundPeerPipelined)
-import DMQ.SigSubmission.Inbound.State (SharedSigState, newSharedSigStateVar)
-import DMQ.SigSubmission.Inbound.Registry (decisionLogicThreads, withPeer,
-           newSigMempoolSem)
+ 
+import Test.DMQ.SigSubmission.Types (SigId, Sig (..), debugTracer,
+           verboseTracer, newMempool, emptyMempool, readMempool,
+           sigSubmissionCodec2, getMempoolReader, getMempoolWriter)
 
+import Test.Ouroboros.Network.TxSubmission.TxLogic (ArbTxDecisionPolicy (..))
 import Test.Ouroboros.Network.Utils hiding (debugTracer)
 
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
 import Test.Tasty.QuickCheck (testProperty)
-import Test.DMQ.SigSubmission.SigLogic (SigSubmissionState (..))
-import Test.DMQ.SigSubmission.Types (SigId, Sig (..), debugTracer,
-           verboseTracer, newMempool, emptyMempool, readMempool,
-           sigSubmissionCodec2, getMempoolReader, getMempoolWriter)
+
 
 tests :: TestTree
 tests = testGroup "Test.DMQ.SigSubmission.App"
@@ -242,7 +237,7 @@ checkMempools (i : is') os@(o : os')
 
 
 newtype SigStateTrace peeraddr sigid =
-    SigStateTrace (SharedSigState peeraddr sigid (Sig sigid))
+    SigStateTrace (SharedTxState peeraddr sigid (Sig sigid))
 
 runSigSubmission
   :: forall m peeraddr sigid.
@@ -268,13 +263,13 @@ runSigSubmission
      , sigid ~ Int
      )
   => Tracer m (String, TraceSendRecv (SigSubmissionV2 sigid (Sig sigid)))
-  -> Tracer m (TraceSigLogic peeraddr sigid (Sig sigid))
+  -> Tracer m (TraceTxLogic peeraddr sigid (Sig sigid))
   -> Map peeraddr ( [Sig sigid]
                   , ControlMessageSTM m
                   , Maybe DiffTime
                   , Maybe DiffTime
                   )
-  -> SigDecisionPolicy
+  -> TxDecisionPolicy
   -> m ([Sig sigid], [[Sig sigid]])
   -- ^ inbound and outbound mempools
 runSigSubmission tracer tracerSigLogic st0 sigDecisionPolicy = do
@@ -286,9 +281,9 @@ runSigSubmission tracer tracerSigLogic st0 sigDecisionPolicy = do
     inboundMempool <- emptyMempool
     let sigRng = mkStdGen 42 -- TODO
 
-    sigChannelsVar <- newMVar (SigChannels Map.empty)
-    sigMempoolSem <- newSigMempoolSem
-    sharedSigStateVar <- newSharedSigStateVar sigRng
+    sigChannelsVar <- newMVar (TxChannels Map.empty)
+    sigMempoolSem <- newTxMempoolSem
+    sharedSigStateVar <- newSharedTxStateVar sigRng
     traceTVarIO sharedSigStateVar \_ -> return . TraceDynamic . SigStateTrace
     labelTVarIO sharedSigStateVar "shared-sig-state"
 
@@ -297,7 +292,7 @@ runSigSubmission tracer tracerSigLogic st0 sigDecisionPolicy = do
       let servers = (\(addr, (mempool, _, _, inDelay, _, inChannel)) -> do
                       let server = sigSubmissionOutbound
                                      (Tracer $ say . show)
-                                     (NumIdsAck $ getNumIdsReq $ maxUnacknowledgedSigIds sigDecisionPolicy)
+                                     (NumIdsAck $ getNumTxIdsToReq $ maxUnacknowledgedTxIds sigDecisionPolicy)
                                      (getMempoolReader mempool)
                                      (maxBound :: TestVersion)
                       runPeerWithLimits
@@ -319,10 +314,10 @@ runSigSubmission tracer tracerSigLogic st0 sigDecisionPolicy = do
                                 (getMempoolReader inboundMempool)
                                 (getMempoolWriter inboundMempool)
                                 getSigSize
-                                addr $ \(api :: PeerSigAPI m SigId (Sig SigId))-> do
+                                addr $ \(api :: PeerTxAPI m SigId (Sig SigId))-> do
                                   let client = sigSubmissionInboundV2
                                                  verboseTracer
-                                                 NoSigSubmissionInitDelay
+                                                 NoTxSubmissionInitDelay
                                                  (getMempoolWriter inboundMempool)
                                                  api
                                                  ctrlMsgSTM
@@ -363,3 +358,52 @@ runSigSubmission tracer tracerSigLogic st0 sigDecisionPolicy = do
       where
         go as []         = action (reverse as)
         go as ((x,y):xs) = withAsync x (\a -> withAsync y (\b -> go ((a, b):as) xs))
+
+
+data SigSubmissionState =
+  SigSubmissionState {
+      peerMap :: Map Int ( [Sig Int]
+                         , Maybe (Positive SmallDelay)
+                         , Maybe (Positive SmallDelay)
+                         -- ^ The delay must be smaller (<) than 5s, so that overall
+                         -- delay is less than 10s, otherwise 'smallDelay' in
+                         -- 'timeLimitsTxSubmission2' will kick in.
+                         )
+    , decisionPolicy :: TxDecisionPolicy
+  } deriving (Show)
+
+instance Arbitrary SigSubmissionState where
+  arbitrary = do
+    ArbTxDecisionPolicy decisionPolicy <- arbitrary
+    peersN <- choose (1, 10)
+    txsN <- choose (1, 10)
+    -- NOTE: using sortOn would forces tx-decision logic to download txs in the
+    -- order of unacknowledgedTxIds.  This could be useful to get better
+    -- properties when wrongly sized txs are present.
+    txs <- divvy txsN . nubBy (on (==) getSigId) {- . List.sortOn getSigId -} <$> vectorOf (peersN * txsN) arbitrary
+    peers <- vectorOf peersN arbitrary
+    peersState <- zipWith (curry (\(a, (b, c)) -> (a, b, c))) txs
+              <$> vectorOf peersN arbitrary
+    return SigSubmissionState  { peerMap = Map.fromList (zip peers peersState),
+                                 decisionPolicy
+                               }
+    where
+      -- | Split a list into sub list of at most `n` elements.
+      --
+      divvy :: Int -> [a] -> [[a]]
+      divvy _ [] = []
+      divvy n as = take n as : divvy n (drop n as)
+  
+  shrink SigSubmissionState { peerMap, decisionPolicy } =
+    SigSubmissionState <$> shrinkMap1 peerMap
+                      <*> [ policy
+                          | ArbTxDecisionPolicy policy <- shrink (ArbTxDecisionPolicy decisionPolicy)
+                          ]
+    where
+      shrinkMap1 :: Ord k => Map k v -> [Map k v]
+      shrinkMap1 m
+        | Map.size m <= 1 = [m]
+        | otherwise       = [Map.delete k m | k <- Map.keys m] ++ singletonMaps
+        where
+          singletonMaps = [Map.singleton k v | (k, v) <- Map.toList m]
+
