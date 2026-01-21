@@ -88,7 +88,8 @@ cardanoClient tracer StakePools { stakePoolsVar } nextEpochVar =
   where
     idle mSystemStart = do
       traceWith tracer $ Acquiring mSystemStart
-      pure $ SendMsgAcquire ImmutableTip acquire
+      -- FIXME: switched to volatiletip for prerelease testing purposes
+      pure $ SendMsgAcquire VolatileTip {-ImmutableTip-} acquire
       where
         acquire :: ClientStAcquiring block point query m Void
         acquire = ClientStAcquiring {
