@@ -140,11 +140,11 @@ encodeSigSubmissionV2 encodeObjectId encodeObject = encode
          CBOR.encodeListLen 2
       <> CBOR.encodeWord 2
       <> CBOR.encodeListLenIndef
-      <> foldMap (\(sigid, SizeInBytes sz) ->
+      <> foldr (\(sigid, SizeInBytes sz) r ->
                        CBOR.encodeListLen 2
                     <> encodeObjectId sigid
-                    <> CBOR.encodeWord32 sz)
-      <> CBOR.encodeBreak
+                    <> CBOR.encodeWord32 sz
+                    <> r) CBOR.encodeBreak objIds
 
     encode MsgReplyNoSigIds =
          CBOR.encodeListLen 1
