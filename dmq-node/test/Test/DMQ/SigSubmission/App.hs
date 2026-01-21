@@ -68,8 +68,8 @@ import Test.Tasty.QuickCheck (testProperty)
 
 
 tests :: TestTree
-tests = testGroup "Test.DMQ.SigSubmission.App"
-  [ testProperty "sigSubmission"  prop_sigSubmission
+tests = testGroup "Test.DMQ.SigSubmissionV2.App"
+  [ testProperty "sigSubmissionV2"  prop_sigSubmissionV2
   ]
 
 
@@ -81,8 +81,8 @@ data TestVersion = TestVersion
 -- This property test is the same as for tx submission v1. We need this to know
 -- we didn't regress.
 --
-prop_sigSubmission :: SigSubmissionState -> Property
-prop_sigSubmission st@(SigSubmissionState peers _) =
+prop_sigSubmissionV2 :: SigSubmissionState -> Property
+prop_sigSubmissionV2 st@(SigSubmissionState peers _) =
     let tr = runSimTrace (sigSubmissionSimulation st)
         numPeersWithWronglySizedSig :: Int
         numPeersWithWronglySizedSig =
@@ -207,7 +207,7 @@ sigSubmissionSimulation (SigSubmissionState state sigDecisionPolicy) = do
           tracer = verboseTracer
                 <> debugTracer
                 <> Tracer traceM
-      runSigSubmission tracer tracer state'' sigDecisionPolicy
+      runSigSubmissionV2 tracer tracer state'' sigDecisionPolicy
 
 
 filterValidSigs :: [Sig SigId] -> [Sig SigId]
@@ -239,7 +239,7 @@ checkMempools (i : is') os@(o : os')
 newtype SigStateTrace peeraddr sigid =
     SigStateTrace (SharedTxState peeraddr sigid (Sig sigid))
 
-runSigSubmission
+runSigSubmissionV2
   :: forall m peeraddr sigid.
      ( MonadAsync m
      , MonadDelay m
@@ -272,7 +272,7 @@ runSigSubmission
   -> TxDecisionPolicy
   -> m ([Sig sigid], [[Sig sigid]])
   -- ^ inbound and outbound mempools
-runSigSubmission tracer tracerSigLogic st0 sigDecisionPolicy = do
+runSigSubmissionV2 tracer tracerSigLogic st0 sigDecisionPolicy = do
     st <- traverse (\(b, c, d, e) -> do
         mempool <- newMempool b
         (outChannel, inChannel) <- createConnectedChannels
