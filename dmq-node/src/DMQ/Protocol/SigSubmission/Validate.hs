@@ -150,8 +150,16 @@ validateSig verKeyHashingFn now sigs ctx0 =
                      } = do
       ctx@PoolValidationCtx { vctxEpoch, vctxStakeMap, vctxOcertMap } <- State.get
 
+      --
+      -- verify KES period
+      --
+
       sigKESPeriod < endKESPeriod    ?! KESAfterEndOCERT endKESPeriod sigKESPeriod
       sigKESPeriod >= startKESPeriod ?! KESBeforeStartOCERT startKESPeriod sigKESPeriod
+
+      --
+      -- verify that the pool is registered and eligible to mint blocks
+      --
 
       let -- `vctxEpoch` and `vctxStakeMap` are initialized in one STM
           -- transaction, which guarantees that fromJust will not fail
@@ -161,6 +169,7 @@ validateSig verKeyHashingFn now sigs ctx0 =
                   -> left NotInitialized
                 | otherwise
                   -> left UnrecognizedPool
+
         Just ss@NotZeroSetSnapshot ->
           if | now <= addUTCTime c_MAX_CLOCK_SKEW_SEC nextEpoch
              -> return ()
@@ -189,16 +198,9 @@ validateSig verKeyHashingFn now sigs ctx0 =
         -- pool unregistered and is ineligible to mint blocks
         Just ZeroSetSnapshot -> left SigExpired
 
-      -- validate OCert, which includes verifying its signature
-      validateOCert coldKey ocertVkHot ocert
-         ?!: InvalidSignatureOCERT ocertN sigKESPeriod
-
-      -- validate KES signature of the payload
-      verifyKES () ocertVkHot
-                (unKESPeriod sigKESPeriod - unKESPeriod startKESPeriod)
-                (LBS.toStrict signedBytes)
-                kesSig
-         ?!: InvalidKESSignature ocertKESPeriod sigKESPeriod
+      --
+      -- verify that our observations of ocertN are strictly monotonic
+      --
 
       case Map.alterF (\a -> (a, Just ocertN))
                       (verKeyHashingFn coldKey)
@@ -214,6 +216,21 @@ validateSig verKeyHashingFn now sigs ctx0 =
 
           | otherwise
           -> left (InvalidOCertCounter prevOcertN ocertN)
+
+      --
+      -- Cryptographic checks
+      --
+
+      -- validate OCert, which includes verifying its signature
+      validateOCert coldKey ocertVkHot ocert
+         ?!: InvalidSignatureOCERT ocertN sigKESPeriod
+
+      -- validate KES signature of the payload
+      verifyKES () ocertVkHot
+                (unKESPeriod sigKESPeriod - unKESPeriod startKESPeriod)
+                (LBS.toStrict signedBytes)
+                kesSig
+         ?!: InvalidKESSignature ocertKESPeriod sigKESPeriod
 
       return sig
       where
