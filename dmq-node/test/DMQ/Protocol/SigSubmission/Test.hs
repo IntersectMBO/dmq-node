@@ -989,7 +989,7 @@ prop_validateSig constr validity = ioProperty do
       . counterexample ("KES seed: " ++ show (ctx constr))
       . counterexample ("KES vk key: " ++ show (ocertVkHot . getSigOpCertificate . sigOpCertificate $ sig))
       . counterexample (show sig)
-      $ case (validity, fst $ validateSig (hashKey . VKey) now [sig] validationCtx) of
+      $ case (validity, fst $ validateSig now [sig] validationCtx) of
           (Valid {}, Left (_, err) : _) -> counterexample (show err) False
           (Valid {}, Right _ : _)       -> property True
 

@@ -30,13 +30,12 @@ import Data.Text (Text)
 import Data.Typeable
 import Data.Word
 
-import Cardano.Crypto.DSIGN.Class (ContextDSIGN)
 import Cardano.Crypto.DSIGN.Class qualified as DSIGN
 import Cardano.Crypto.KES.Class (KESAlgorithm (..))
 import Cardano.KESAgent.KES.Crypto as KES
 import Cardano.KESAgent.KES.OCert (OCert (..), OCertSignable, validateOCert)
 import Cardano.Ledger.BaseTypes.NonZero
-import Cardano.Ledger.Hashes
+import Cardano.Ledger.Keys qualified as Ledger
 
 import DMQ.Diffusion.NodeKernel (PoolValidationCtx (..))
 import DMQ.Protocol.SigSubmission.Type
@@ -113,17 +112,16 @@ pattern ZeroSetSnapshot <- (isZero . ssSetPool -> True)
 
 validateSig :: forall crypto.
                ( Crypto crypto
-               , ContextDSIGN (KES.DSIGN crypto) ~ ()
+               , DSIGN crypto ~ Ledger.DSIGN
                , DSIGN.Signable (DSIGN crypto) (OCertSignable crypto)
                , ContextKES (KES crypto) ~ ()
                , Signable (KES crypto) ByteString
                )
-            => (DSIGN.VerKeyDSIGN (DSIGN crypto) -> KeyHash StakePool)
-            -> UTCTime
+            => UTCTime
             -> [Sig crypto]
             -> PoolValidationCtx
             -> ([Either (SigId, SigValidationError) (Sig crypto)], PoolValidationCtx)
-validateSig verKeyHashingFn now sigs ctx0 =
+validateSig now sigs ctx0 =
     State.runState (traverse (exceptions . validate) sigs) ctx0
   where
     exceptions :: StateT s (Except e) a
@@ -164,7 +162,7 @@ validateSig verKeyHashingFn now sigs ctx0 =
       let -- `vctxEpoch` and `vctxStakeMap` are initialized in one STM
           -- transaction, which guarantees that fromJust will not fail
           nextEpoch = fromJust vctxEpoch
-      case Map.lookup (verKeyHashingFn coldKey) vctxStakeMap of
+      case Map.lookup (Ledger.hashKey (Ledger.VKey coldKey)) vctxStakeMap of
         Nothing | isNothing vctxEpoch
                   -> left NotInitialized
                 | otherwise
@@ -203,7 +201,7 @@ validateSig verKeyHashingFn now sigs ctx0 =
       --
 
       case Map.alterF (\a -> (a, Just ocertN))
-                      (verKeyHashingFn coldKey)
+                      (Ledger.hashKey (Ledger.VKey coldKey))
                       vctxOcertMap of
         (Nothing, ocertCounters')
           -- there is no ocert in the map, e.g. we're validating a signature

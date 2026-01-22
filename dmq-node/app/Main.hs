@@ -34,8 +34,6 @@ import System.IOManager (withIOManager)
 
 import Cardano.Git.Rev (gitRev)
 import Cardano.KESAgent.Protocols.StandardCrypto (StandardCrypto)
-import Cardano.Ledger.Keys (VKey (..))
-import Cardano.Ledger.Hashes (hashKey)
 
 import DMQ.Configuration
 import DMQ.Configuration.CLIOptions (parseCLIOptions)
@@ -156,7 +154,7 @@ runDMQ commandLineConfig = do
                     Mempool.getWriter SigDuplicate
                                       sigId
                                       (\now sigs ->
-                                        withPoolValidationCtx (stakePools nodeKernel) (validateSig (hashKey . VKey) now sigs)
+                                        withPoolValidationCtx (stakePools nodeKernel) (validateSig now sigs)
                                       )
                                       (traverse_ $ \(sigid, reason) -> do
                                         traceWith ntnValidationTracer $ InvalidSignature sigid reason
@@ -190,7 +188,7 @@ runDMQ commandLineConfig = do
                     Mempool.getWriter SigDuplicate
                                       sigId
                                       (\now sigs ->
-                                        withPoolValidationCtx (stakePools nodeKernel) (validateSig (hashKey . VKey) now sigs)
+                                        withPoolValidationCtx (stakePools nodeKernel) (validateSig now sigs)
                                       )
                                       (traverse_ $ \(sigid, reason) ->
                                          traceWith ntcValidationTracer $ InvalidSignature sigid reason
