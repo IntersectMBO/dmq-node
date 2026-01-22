@@ -34,7 +34,7 @@ import Cardano.Crypto.DSIGN.Class qualified as DSIGN
 import Cardano.Crypto.KES.Class (KESAlgorithm (..))
 import Cardano.KESAgent.KES.Crypto as KES
 import Cardano.KESAgent.KES.OCert (OCert (..), OCertSignable, validateOCert)
-import Cardano.Ledger.BaseTypes.NonZero
+import Cardano.Ledger.BaseTypes.NonZero qualified as Ledger
 import Cardano.Ledger.Keys qualified as Ledger
 
 import DMQ.Diffusion.NodeKernel (PoolValidationCtx (..))
@@ -99,13 +99,13 @@ c_MAX_CLOCK_SKEW_SEC :: NominalDiffTime
 c_MAX_CLOCK_SKEW_SEC = 5
 
 pattern NotZeroSetSnapshot :: StakeSnapshot
-pattern NotZeroSetSnapshot <- (isZero . ssSetPool -> False)
+pattern NotZeroSetSnapshot <- (Ledger.isZero . ssSetPool -> False)
 
 pattern NotZeroMarkSnapshot :: StakeSnapshot
-pattern NotZeroMarkSnapshot <- (isZero . ssMarkPool -> False)
+pattern NotZeroMarkSnapshot <- (Ledger.isZero . ssMarkPool -> False)
 
 pattern ZeroSetSnapshot :: StakeSnapshot
-pattern ZeroSetSnapshot <- (isZero . ssSetPool -> True)
+pattern ZeroSetSnapshot <- (Ledger.isZero . ssSetPool -> True)
 
 {-# COMPLETE NotZeroSetSnapshot, NotZeroMarkSnapshot, ZeroSetSnapshot #-}
 
@@ -173,7 +173,7 @@ validateSig now sigs ctx0 =
              -> return ()
 
                -- local-state-query is late, but the pool is about to expire
-             | isZero (ssMarkPool ss)
+             | Ledger.isZero (ssMarkPool ss)
              -> left SigExpired
 
              | otherwise
