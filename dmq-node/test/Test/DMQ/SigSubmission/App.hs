@@ -4,11 +4,12 @@
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE NumericUnderscores  #-}
+{-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
+{-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE TypeOperators       #-}
-
-{-# OPTIONS_GHC -Wno-orphans #-}
 
 module Test.DMQ.SigSubmission.App (tests) where
 
@@ -27,18 +28,29 @@ import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
 import Control.Tracer (Tracer (..), contramap)
 
+import Data.Bifunctor (bimap)
 import Data.ByteString.Lazy qualified as BSL
+import Data.Char (ord)
 import Data.Foldable (traverse_)
 import Data.Function (on)
 import Data.Hashable
-import Data.List (nubBy)
+import Data.List (intercalate, sort, nubBy)
 import Data.List qualified as List
+import Data.List.Trace qualified as Trace
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
+import Data.Monoid (Sum (..))
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
+import Data.Void (Void)
 
+import Simulation.Network.Snocket (noAttenuation)
+
+import Cardano.Network.Diffusion
+import Cardano.Network.PeerSelection
+
+import Ouroboros.Network.BlockFetch
 import Ouroboros.Network.Channel
 import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
 import Ouroboros.Network.Driver
@@ -55,12 +67,18 @@ import DMQ.Protocol.SigSubmissionV2.Outbound (sigSubmissionV2OutboundPeer)
 import DMQ.Protocol.SigSubmissionV2.Inbound (
            sigSubmissionV2InboundPeerPipelined)
  
-import Test.DMQ.SigSubmission.Types (SigId, Sig (..), debugTracer,
-           verboseTracer, newMempool, emptyMempool, readMempool,
-           sigSubmissionCodec2, getMempoolReader, getMempoolWriter)
+import Test.DMQ.SigSubmission.Types (sigSubmissionCodec2, TestVersion,
+           SigSubmissionState (..), SigStateTrace (..), WellSizedSig (..))
 
+import Test.Ouroboros.Network.Data.Script (singletonTimedScript, NonEmpty (..))
+import Test.Ouroboros.Network.Data.Signal ()
+import Test.Ouroboros.Network.Diffusion.Node
+import Test.Ouroboros.Network.LedgerPeers hiding (verboseTracer, tests)
 import Test.Ouroboros.Network.TxSubmission.TxLogic (ArbTxDecisionPolicy (..))
+import Test.Ouroboros.Network.TxSubmission.Types
 import Test.Ouroboros.Network.Utils hiding (debugTracer)
+
+import Test.Cardano.Network.Diffusion.Testnet.Simulation
 
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
@@ -70,11 +88,8 @@ import Test.Tasty.QuickCheck (testProperty)
 tests :: TestTree
 tests = testGroup "Test.DMQ.SigSubmissionV2.App"
   [ testProperty "sigSubmissionV2"  prop_sigSubmissionV2
+  , testProperty "Sig submission all sigs" prop_sigSubmission_allTransactions
   ]
-
-
-data TestVersion = TestVersion
-  deriving (Eq, Ord, Bounded, Enum, Show)
 
 
 -- | Tests overall sig submission semantics.
@@ -88,7 +103,7 @@ prop_sigSubmissionV2 st@(SigSubmissionState peers _) =
         numPeersWithWronglySizedSig =
           foldr
             (\(sigs, _, _) r ->
-              case List.find (\sig -> getSigSize sig /= getSigAdvSize sig) sigs of
+              case List.find (\sig -> getTxSize sig /= getTxAdvSize sig) sigs of
                 Just {} -> r + 1
                 Nothing -> r
             ) 0 peers
@@ -98,7 +113,7 @@ prop_sigSubmissionV2 st@(SigSubmissionState peers _) =
               ++
               renderRanges 10
                 ( Set.size
-                . foldMap (Set.fromList . (\(sigs, _, _) -> getSigId <$> sigs))
+                . foldMap (Set.fromList . (\(sigs, _, _) -> getTxId <$> sigs))
                 $ Map.elems peers
                 ))
       . label ("number of peers with wrongly sized sig: "
@@ -112,11 +127,11 @@ prop_sigSubmissionV2 st@(SigSubmissionState peers _) =
              counterexample (ppTrace tr)
            $ conjoin (validate inmp `map` outmps)
   where
-    validate :: [Sig SigId] -- the inbound mempool
-             -> [Sig SigId] -- one of the outbound mempools
+    validate :: [Tx TxId] -- the inbound mempool
+             -> [Tx TxId] -- one of the outbound mempools
              -> Property
     validate inmp outmp =
-       let outUniqueSigIds = nubBy (on (==) getSigId) outmp
+       let outUniqueSigIds = nubBy (on (==) getTxId) outmp
            outValidSigs    = filterValidSigs outmp
        in
        case ( length outUniqueSigIds == length outmp
@@ -131,7 +146,7 @@ prop_sigSubmissionV2 st@(SigSubmissionState peers _) =
            . counterexample (show outmp)
            $ checkMempools inmp (take (length inmp) outValidSigs)
 
-         x@(True, False) | Nothing <- List.find (\sig -> getSigAdvSize sig /= getSigSize sig) outmp  ->
+         x@(True, False) | Nothing <- List.find (\sig -> getTxAdvSize sig /= getTxSize sig) outmp  ->
            -- If we are presented with a stream of unique sigids then we should have
            -- fetched all valid signatures if all sigs have valid sizes.
              counterexample (show x)
@@ -153,9 +168,9 @@ prop_sigSubmissionV2 st@(SigSubmissionState peers _) =
              counterexample (show x)
            . counterexample (show inmp)
            . counterexample (show outmp)
-           $ checkMempools (map getSigId inmp)
+           $ checkMempools (map getTxId inmp)
                            (take (length inmp)
-                                 (getSigId <$> filterValidSigs outUniqueSigIds))
+                                 (getTxId <$> filterValidSigs outUniqueSigIds))
 
          (False, False) ->
            -- If we are presented with a stream of valid and invalid Sigs with
@@ -165,7 +180,7 @@ prop_sigSubmissionV2 st@(SigSubmissionState peers _) =
 
 
 sigSubmissionSimulation :: forall s . SigSubmissionState
-                       -> IOSim s ([Sig SigId], [[Sig SigId]])
+                       -> IOSim s ([Tx TxId], [[Tx TxId]])
                        -- ^ inbound & outbound mempools
 sigSubmissionSimulation (SigSubmissionState state sigDecisionPolicy) = do
   state' <- traverse (\(sigs, mbOutDelay, mbInDelay) -> do
@@ -210,10 +225,10 @@ sigSubmissionSimulation (SigSubmissionState state sigDecisionPolicy) = do
       runSigSubmissionV2 tracer tracer state'' sigDecisionPolicy
 
 
-filterValidSigs :: [Sig SigId] -> [Sig SigId]
+filterValidSigs :: [Tx TxId] -> [Tx TxId]
 filterValidSigs
-  = filter getSigValid
-  . takeWhile (\Sig{getSigSize, getSigAdvSize} -> getSigSize == getSigAdvSize)
+  = filter getTxValid
+  . takeWhile (\Tx{getTxSize, getTxAdvSize} -> getTxSize == getTxAdvSize)
   
 
 -- | Check that the inbound mempool contains all outbound `sig`s as a proper
@@ -235,9 +250,6 @@ checkMempools (i : is') os@(o : os')
   -- `_i` is not present in the outbound mempool, we can skip it.
   = checkMempools is' os
 
-
-newtype SigStateTrace peeraddr sigid =
-    SigStateTrace (SharedTxState peeraddr sigid (Sig sigid))
 
 runSigSubmissionV2
   :: forall m peeraddr sigid.
@@ -262,15 +274,15 @@ runSigSubmissionV2
 
      , sigid ~ Int
      )
-  => Tracer m (String, TraceSendRecv (SigSubmissionV2 sigid (Sig sigid)))
-  -> Tracer m (TraceTxLogic peeraddr sigid (Sig sigid))
-  -> Map peeraddr ( [Sig sigid]
+  => Tracer m (String, TraceSendRecv (SigSubmissionV2 sigid (Tx sigid)))
+  -> Tracer m (TraceTxLogic peeraddr sigid (Tx sigid))
+  -> Map peeraddr ( [Tx sigid]
                   , ControlMessageSTM m
                   , Maybe DiffTime
                   , Maybe DiffTime
                   )
   -> TxDecisionPolicy
-  -> m ([Sig sigid], [[Sig sigid]])
+  -> m ([Tx sigid], [[Tx sigid]])
   -- ^ inbound and outbound mempools
 runSigSubmissionV2 tracer tracerSigLogic st0 sigDecisionPolicy = do
     st <- traverse (\(b, c, d, e) -> do
@@ -313,8 +325,8 @@ runSigSubmissionV2 tracer tracerSigLogic st0 sigDecisionPolicy = do
                                 sharedSigStateVar
                                 (getMempoolReader inboundMempool)
                                 (getMempoolWriter inboundMempool)
-                                getSigSize
-                                addr $ \(api :: PeerTxAPI m SigId (Sig SigId))-> do
+                                getTxSize
+                                addr $ \(api :: PeerTxAPI m TxId (Tx TxId))-> do
                                   let client = sigSubmissionInbound
                                                  verboseTracer
                                                  NoTxSubmissionInitDelay
@@ -360,50 +372,184 @@ runSigSubmissionV2 tracer tracerSigLogic st0 sigDecisionPolicy = do
         go as ((x,y):xs) = withAsync x (\a -> withAsync y (\b -> go ((a, b):as) xs))
 
 
-data SigSubmissionState =
-  SigSubmissionState {
-      peerMap :: Map Int ( [Sig Int]
-                         , Maybe (Positive SmallDelay)
-                         , Maybe (Positive SmallDelay)
-                         -- ^ The delay must be smaller (<) than 5s, so that overall
-                         -- delay is less than 10s, otherwise 'smallDelay' in
-                         -- 'timeLimitsTxSubmission2' will kick in.
-                         )
-    , decisionPolicy :: TxDecisionPolicy
-  } deriving (Show)
 
-instance Arbitrary SigSubmissionState where
-  arbitrary = do
-    ArbTxDecisionPolicy decisionPolicy <- arbitrary
-    peersN <- choose (1, 10)
-    txsN <- choose (1, 10)
-    -- NOTE: using sortOn would forces tx-decision logic to download txs in the
-    -- order of unacknowledgedTxIds.  This could be useful to get better
-    -- properties when wrongly sized txs are present.
-    txs <- divvy txsN . nubBy (on (==) getSigId) {- . List.sortOn getSigId -} <$> vectorOf (peersN * txsN) arbitrary
-    peers <- vectorOf peersN arbitrary
-    peersState <- zipWith (curry (\(a, (b, c)) -> (a, b, c))) txs
-              <$> vectorOf peersN arbitrary
-    return SigSubmissionState  { peerMap = Map.fromList (zip peers peersState),
-                                 decisionPolicy
-                               }
-    where
-      -- | Split a list into sub list of at most `n` elements.
-      --
-      divvy :: Int -> [a] -> [[a]]
-      divvy _ [] = []
-      divvy n as = take n as : divvy n (drop n as)
-  
-  shrink SigSubmissionState { peerMap, decisionPolicy } =
-    SigSubmissionState <$> shrinkMap1 peerMap
-                      <*> [ policy
-                          | ArbTxDecisionPolicy policy <- shrink (ArbTxDecisionPolicy decisionPolicy)
-                          ]
-    where
-      shrinkMap1 :: Ord k => Map k v -> [Map k v]
-      shrinkMap1 m
-        | Map.size m <= 1 = [m]
-        | otherwise       = [Map.delete k m | k <- Map.keys m] ++ singletonMaps
-        where
-          singletonMaps = [Map.singleton k v | (k, v) <- Map.toList m]
 
+withTimeNameTraceEvents :: forall b name r. (Typeable b, Typeable name)
+                        => Trace r SimEvent
+                        -> Trace r (WithTime (WithName name b))
+withTimeNameTraceEvents = traceSelectTraceEventsDynamic
+                            @r
+                            @(WithTime (WithName name b))
+
+
+-- | This test checks that even in a scenario where nodes keep disconnecting,
+-- but eventually stay online. We manage to get all transactions.
+--
+-- We exclude txs which are not advertise the right size, since they disconnect
+-- the nodes, and as a result not all tx-s might transfer.
+--
+prop_sigSubmission_allTransactions :: ArbTxDecisionPolicy
+                                  -> NonEmptyList WellSizedSig
+                                  -> NonEmptyList WellSizedSig
+                                  -> Property
+prop_sigSubmission_allTransactions (ArbTxDecisionPolicy decisionPolicy)
+                                  (NonEmpty txsA')
+                                  (NonEmpty txsB') =
+  let localRootConfig = LocalRootConfig
+                          DoNotAdvertisePeer
+                          InitiatorAndResponderDiffusionMode
+                          IsNotTrustable
+      diffScript =
+        DiffusionScript
+          (SimArgs 1 10 decisionPolicy)
+          (singletonTimedScript Map.empty)
+          [(NodeArgs
+              (-3)
+              InitiatorAndResponderDiffusionMode
+              Map.empty
+              PraosMode
+              (Script (DontUseBootstrapPeers :| []))
+              (TestAddress (IPAddr (read "0.0.0.0") 0))
+              PeerSharingDisabled
+              [(2,2,Map.fromList [(RelayAccessAddress "0.0.0.1" 0, localRootConfig)])]
+              (Script (LedgerPools [] :| []))
+              (let targets =
+                    PeerSelectionTargets {
+                      targetNumberOfRootPeers = 1,
+                      targetNumberOfKnownPeers = 1,
+                      targetNumberOfEstablishedPeers = 1,
+                      targetNumberOfActivePeers = 1,
+
+                      targetNumberOfKnownBigLedgerPeers = 0,
+                      targetNumberOfEstablishedBigLedgerPeers = 0,
+                      targetNumberOfActiveBigLedgerPeers = 0
+                    }
+               in (targets, targets))
+              (Script (DNSTimeout {getDNSTimeout = 10} :| []))
+              (Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []))
+              Nothing
+              False
+              (Script (PraosFetchMode FetchModeDeadline :| []))
+              uniqueTxsA
+          , [JoinNetwork 0])
+          , (NodeArgs
+               (-1)
+               InitiatorAndResponderDiffusionMode
+               Map.empty
+               PraosMode
+               (Script (DontUseBootstrapPeers :| []))
+               (TestAddress (IPAddr (read "0.0.0.1") 0))
+               PeerSharingDisabled
+               [(1,1,Map.fromList [(RelayAccessAddress "0.0.0.0" 0, localRootConfig)])]
+               (Script (LedgerPools [] :| []))
+               (let targets =
+                      PeerSelectionTargets {
+                        targetNumberOfRootPeers = 1,
+                        targetNumberOfKnownPeers = 1,
+                        targetNumberOfEstablishedPeers = 1,
+                        targetNumberOfActivePeers = 1,
+
+                        targetNumberOfKnownBigLedgerPeers = 0,
+                        targetNumberOfEstablishedBigLedgerPeers = 0,
+                        targetNumberOfActiveBigLedgerPeers = 0
+                      }
+                in (targets, targets)
+               )
+               (Script (DNSTimeout {getDNSTimeout = 10} :| [ ]))
+               (Script (DNSLookupDelay {getDNSLookupDelay = 0} :| []))
+               Nothing
+               False
+               (Script (PraosFetchMode FetchModeDeadline :| []))
+               uniqueTxsB
+         , [JoinNetwork 0])
+         ]
+   in checkAllTransactions (runSimTrace
+                              (diffusionSimulation noAttenuation
+                                                   diffScript)
+                           )
+                           500_000 -- ^ Running for 500k might not be enough.
+  where
+    txsA = getSig <$> txsA'
+    txsB = getSig <$> txsB'
+
+    -- We need to make sure the transactions are unique, this simplifies
+    -- things.
+    --
+    -- TODO: the generator ought to give us unique `TxId`s.
+    uniqueTxsA = zipWith (\t i -> t { getTxId = List.foldl' (+) 0 (map ord "0.0.0.0") + i })
+                         txsA [0 :: TxId ..]
+    uniqueTxsB = zipWith (\t i -> t { getTxId = List.foldl' (+) 0 (map ord "0.0.0.1") + i })
+                         txsB [100 :: TxId ..]
+
+    -- This checks the property that after running the simulation for a while
+    -- both nodes manage to get all valid transactions.
+    --
+    checkAllTransactions :: SimTrace Void
+                         -> Int
+                         -> Property
+    checkAllTransactions ioSimTrace traceNumber =
+      let trace  = Trace.take traceNumber ioSimTrace
+
+          events = fmap (\(WithTime t (WithName name b)) -> WithName name (WithTime t b))
+                 . withTimeNameTraceEvents
+                    @DiffusionTestTrace
+                    @NtNAddr
+                 $ trace
+
+          -- Build the accepted (sorted) txids map for each peer
+          --
+          sortedAcceptedTxidsMap :: Map NtNAddr [TxId]
+          sortedAcceptedTxidsMap =
+              foldr (\l r ->
+                List.foldl' (\rr (WithName n (WithTime _ x)) ->
+                  case x of
+                    -- When we add txids to the mempool, we collect them
+                    -- into the map
+                    DiffusionTxSubmissionInbound (TraceTxInboundAddedToMempool txids _) ->
+                      Map.alter (maybe (Just txids) (Just . sort . (txids ++))) n rr
+                    -- if a node would be killed, we could download some txs
+                    -- multiple times, but this is not possible in the schedule
+                    _ -> rr) r l
+              ) Map.empty
+            . Trace.toList
+            . splitWithNameTrace
+            $ events
+
+          -- Construct the list of valid (sorted) txs from peer A and peer B.
+          -- This is essentially our goal lists
+          --
+          (validSortedTxidsA, validSortedTxidsB) =
+            let f = sort
+                  . map (\Tx {getTxId} -> getTxId)
+                  . filter (\Tx {getTxSize, getTxAdvSize, getTxValid} -> getTxSize == getTxAdvSize
+                                                                      && getTxValid)
+             in bimap f f (uniqueTxsA, uniqueTxsB)
+
+      in counterexample (intercalate "\n" $ map show $ Trace.toList events)
+          -- counterexample (Trace.ppTrace show (ppSimEvent 0 0 0) trace)
+        $ counterexample ("accepted sigids map: " ++ show sortedAcceptedTxidsMap)
+        $ counterexample ("A: unique sigs: " ++ show uniqueTxsA)
+        $ counterexample ("A: valid signatures that should be accepted: " ++ show validSortedTxidsA)
+        $ counterexample ("B: unique sigs: " ++ show uniqueTxsB)
+        $ counterexample ("B: valid signatures that should be accepted: " ++ show validSortedTxidsB)
+        $ label ("number of valid sig transferred: " ++ renderRanges 10 (getSum . foldMap (Sum . List.length) $ sortedAcceptedTxidsMap))
+
+         -- Success criteria, after running for 500k events, we check the map
+         -- for the two nodes involved in the simulation and verify that indeed
+         -- each peer managed to learn about the other peer' transactions.
+         --
+        $ case Map.lookup (TestAddress (IPAddr (read "0.0.0.0") 0)) sortedAcceptedTxidsMap
+               of
+           Just acceptedTxidsA ->
+             counterexample "0.0.0.0" $
+                  acceptedTxidsA === validSortedTxidsB
+           Nothing | [] <- validSortedTxidsB -> property True
+                   | otherwise -> counterexample "Didn't found any entry in the map!" False
+        .&&.
+          case Map.lookup (TestAddress (IPAddr (read "0.0.0.1") 0)) sortedAcceptedTxidsMap
+               of
+           Just acceptedTxidsB ->
+             counterexample "0.0.0.1" $
+                  acceptedTxidsB === validSortedTxidsA
+           Nothing | [] <- validSortedTxidsA -> property True
+                   | otherwise -> counterexample "Didn't found any entry in the map!" False
