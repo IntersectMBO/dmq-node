@@ -77,20 +77,49 @@ import Ouroboros.Network.TxSubmission.Inbound.V2 (TxDecisionPolicy (..))
 
 import DMQ.Configuration.Topology (NoExtraConfig (..), NoExtraFlags (..))
 
--- | Configuration comes in two flavours paramemtrised by `f` functor:
+-- | Configuration comes in two flavours depending on the `f` functor:
 -- `PartialConfig` is using `Last` and `Configuration` is using an identity
 -- functor `I`.
 --
+-- See `defaultConfiguration` for default values.
+--
 data Configuration' f =
   Configuration {
-    dmqcIPv4                                       :: f (Maybe IPv4),
-    dmqcIPv6                                       :: f (Maybe IPv6),
-    dmqcLocalAddress                               :: f LocalAddress,
-    dmqcPortNumber                                 :: f PortNumber,
+    -- | Path from which the `Configuration` is read.
     dmqcConfigFile                                 :: f FilePath,
+
+    -- | Network magic for the DMQ network
+    dmqcNetworkMagic                               :: f NetworkMagic,
+    -- | Network magic for local connections to a cardano-node
+    dmqcCardanoNetworkMagic                        :: f NetworkMagic,
+
+    -- | IPv4 address to bind to for `node-to-node` communication.
+    dmqcIPv4                                       :: f (Maybe IPv4),
+    -- | IPv6 address to bind to for `node-to-node` communication.
+    dmqcIPv6                                       :: f (Maybe IPv6),
+    -- | Port number for `node-to-node` DMQ communication.
+    dmqcPortNumber                                 :: f PortNumber,
+    -- | Local socket address for `node-to-client` DMQ communication.
+    dmqcLocalAddress                               :: f LocalAddress,
+    -- | Topology file path.
     dmqcTopologyFile                               :: f FilePath,
+    -- | Path to the `cardano-node` socket.
+    dmqcCardanoNodeSocket                          :: f FilePath,
+
     dmqcAcceptedConnectionsLimit                   :: f AcceptedConnectionsLimit,
+    -- | Diffusion mode for `node-to-node` communication.
     dmqcDiffusionMode                              :: f DiffusionMode,
+    -- | Node-to-node inbound connection idle timeout.
+    dmqcProtocolIdleTimeout                        :: f DiffTime,
+    -- | Churn interval for peer selection.
+    dmqcChurnInterval                              :: f DiffTime,
+    -- | Peer sharing setting.
+    dmqcPeerSharing                                :: f PeerSharing,
+
+    --
+    -- Peer Selection Targets
+    --
+
     dmqcTargetOfRootPeers                          :: f Int,
     dmqcTargetOfKnownPeers                         :: f Int,
     dmqcTargetOfEstablishedPeers                   :: f Int,
@@ -98,14 +127,10 @@ data Configuration' f =
     dmqcTargetOfKnownBigLedgerPeers                :: f Int,
     dmqcTargetOfEstablishedBigLedgerPeers          :: f Int,
     dmqcTargetOfActiveBigLedgerPeers               :: f Int,
-    dmqcProtocolIdleTimeout                        :: f DiffTime,
-    dmqcChurnInterval                              :: f DiffTime,
-    dmqcPeerSharing                                :: f PeerSharing,
-    -- network magic for the DMQ network itself
-    dmqcNetworkMagic                               :: f NetworkMagic,
-    -- network magic for local connections to a cardano-node
-    dmqcCardanoNetworkMagic                        :: f NetworkMagic,
-    dmqcCardanoNodeSocket                          :: f FilePath,
+
+    --
+    -- Tracers & logging
+    --
     dmqcPrettyLog                                  :: f Bool,
 
     dmqcMuxTracer                                  :: f Bool,
@@ -148,6 +173,10 @@ data Configuration' f =
     dmqcLocalMsgSubmissionServerProtocolTracer     :: f Bool,
     dmqcLocalMsgNotificationServerProtocolTracer   :: f Bool,
 
+    --
+    -- Application tracers
+    --
+
     dmqcSigSubmissionLogicTracer                   :: f Bool,
     dmqcSigSubmissionOutboundTracer                :: f Bool,
     dmqcSigSubmissionInboundTracer                 :: f Bool,
@@ -155,6 +184,7 @@ data Configuration' f =
     dmqcLocalMsgNotificationServerTracer           :: f Bool,
     dmqcLocalStateQueryTracer                      :: f Bool,
 
+    -- | CLI only option to show version and exit.
     dmqcVersion                                    :: f Bool
   }
   deriving Generic
