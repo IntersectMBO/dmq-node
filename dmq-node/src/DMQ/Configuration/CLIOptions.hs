@@ -69,6 +69,13 @@ parseCLIOptions =
           )
         )
     <*> optional (
+          option auto
+          (  long "dmq-network-magic"
+          <> metavar "dmq node network magic"
+          <> help "The network magic of the dmq network"
+          )
+        )
+    <*> optional (
           switch
           (   long "version"
           <>  short 'v'
@@ -77,14 +84,16 @@ parseCLIOptions =
         )
   where
     mkConfiguration ipv4 ipv6 portNumber localAddress
-                    configFile topologyFile cardanoNodeSocket networkMagic version =
-      mempty { dmqcIPv4              = Last (Just <$> ipv4),
-               dmqcIPv6              = Last (Just <$> ipv6),
-               dmqcLocalAddress      = Last (LocalAddress <$> localAddress),
-               dmqcPortNumber        = Last portNumber,
-               dmqcConfigFile        = Last configFile,
-               dmqcTopologyFile      = Last topologyFile,
-               dmqcCardanoNodeSocket = Last cardanoNodeSocket,
-               dmqcNetworkMagic      = Last (NetworkMagic <$> networkMagic),
-               dmqcVersion           = Last version
+                    configFile topologyFile cardanoNodeSocket cardanoNetworkMagic dmqNetworkMagic
+                    version =
+      mempty { dmqcIPv4                = Last (Just <$> ipv4),
+               dmqcIPv6                = Last (Just <$> ipv6),
+               dmqcLocalAddress        = Last (LocalAddress <$> localAddress),
+               dmqcPortNumber          = Last portNumber,
+               dmqcConfigFile          = Last configFile,
+               dmqcTopologyFile        = Last topologyFile,
+               dmqcCardanoNodeSocket   = Last cardanoNodeSocket,
+               dmqcCardanoNetworkMagic = Last (NetworkMagic <$> cardanoNetworkMagic),
+               dmqcNetworkMagic        = Last (NetworkMagic <$> dmqNetworkMagic),
+               dmqcVersion             = Last version
              }
