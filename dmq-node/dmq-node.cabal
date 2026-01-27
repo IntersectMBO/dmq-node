@@ -123,6 +123,7 @@ library
     singletons,
     text >=1.2.4 && <2.2,
     time >=1.12 && <1.15,
+    trace-dispatcher ^>= 2.10.0,
     transformers,
     typed-protocols:{typed-protocols, cborg} ^>=1.1,
 
