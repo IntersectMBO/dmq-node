@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -33,7 +34,7 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, nullTracer)
+import "contra-tracer" Control.Tracer (Tracer, nullTracer)
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
@@ -54,7 +55,7 @@ import Network.TypedProtocol.Codec (AnnotatedCodec, Codec)
 
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 
-import DMQ.Configuration (Configuration, Configuration' (..), I (..))
+import DMQ.Configuration (Configuration)
 import DMQ.Diffusion.NodeKernel (NodeKernel (..))
 import DMQ.NodeToNode.Version
 import DMQ.Policy qualified as Policy
@@ -181,7 +182,7 @@ ntnApps
     , Hashable addr
     , Aeson.ToJSON addr
     )
- => (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
+ => (Tracer m WithEventType)
  -> Configuration
  -> TxSubmissionMempoolReader SigId (Sig crypto) idx m
  -> TxSubmissionMempoolWriter SigId (Sig crypto) idx m SigValidationError
@@ -193,18 +194,7 @@ ntnApps
  -> Apps addr m () ()
 ntnApps
     tracer
-    Configuration {
-      dmqcSigSubmissionClientProtocolTracer  = I sigSubmissionClientProtocolTracer
-    , dmqcSigSubmissionServerProtocolTracer  = I sigSubmissionServerProtocolTracer
-    , dmqcKeepAliveClientProtocolTracer      = I keepAliveClientProtocolTracer
-    , dmqcKeepAliveServerProtocolTracer      = I keepAliveServerProtocolTracer
-    , dmqcPeerSharingClientProtocolTracer    = I peerSharingClientProtocolTracer
-    , dmqcPeerSharingServerProtocolTracer    = I peerSharingServerProtocolTracer
-
-    , dmqcSigSubmissionOutboundTracer        = I sigSubmissionOutboundTracer
-    , dmqcSigSubmissionInboundTracer         = I sigSubmissionInboundTracer
-    , dmqcSigSubmissionLogicTracer           = I sigSubmissionLogicTracer
-    }
+    _
     mempoolReader
     mempoolWriter
     sigSize
@@ -256,9 +246,7 @@ ntnApps
                              eicControlMessage = controlMessage
                            } channel =
         withPeer
-          (if sigSubmissionLogicTracer
-             then WithEventType "SigSubmissionV2.Logic" . Mx.WithBearer connId >$< tracer
-             else nullTracer)
+          (WithEventType (DMQ "SigSubmissionV2.Logic") . Mx.WithBearer connId >$< tracer)
           sigChannelVar
           sigMempoolSem
           sigDecisionPolicy
@@ -269,18 +257,14 @@ ntnApps
           (remoteAddress connId)
           $ \(peerSigAPI :: PeerTxAPI m SigId (Sig crypto)) ->
               runPipelinedAnnotatedPeerWithLimits
-                (if sigSubmissionServerProtocolTracer
-                   then WithEventType "SigSubmissionV2.Protocol.Client" . Mx.WithBearer connId >$< tracer
-                   else nullTracer)
+                (WithEventType (DMQ "SigSubmissionV2.Protocol.Client") . Mx.WithBearer connId >$< tracer)
                 sigSubmissionCodecV2
                 sigSubmissionSizeLimitsV2
                 sigSubmissionTimeLimitsV2
                 channel
                 $ sigSubmissionV2InboundPeerPipelined
                 $ sigSubmissionInbound
-                    (if sigSubmissionInboundTracer
-                       then WithEventType "SigSubmissionV2.Inbound" . Mx.WithBearer connId >$< tracer
-                       else nullTracer)
+                    (WithEventType (DMQ "SigSubmissionV2.Inbound") . Mx.WithBearer connId >$< tracer)
                     mempoolWriter
                     peerSigAPI
                     controlMessage
@@ -296,18 +280,14 @@ ntnApps
                              eicControlMessage = controlMessage
                            } channel =
       runAnnotatedPeerWithLimits
-        (if sigSubmissionClientProtocolTracer
-          then WithEventType "SigSubmissionV1.Protocol.Client" . Mx.WithBearer connId >$< tracer
-          else nullTracer)
+        (WithEventType (DMQ "SigSubmission.Protocol.Client") . Mx.WithBearer connId >$< tracer)
         sigSubmissionCodecV1
         sigSubmissionSizeLimitsV1
         sigSubmissionTimeLimitsV1
         channel
         $ txSubmissionClientPeer
         $ txSubmissionOutbound
-            (if sigSubmissionOutboundTracer
-               then WithEventType "SigSubmissionV1.Outbound" . Mx.WithBearer connId >$< tracer
-               else nullTracer)
+            (WithEventType (DMQ "SigSubmission.Outbound") . Mx.WithBearer connId >$< tracer)
             (NumTxIdsToAck . getNumTxIdsToReq $ maxUnacknowledgedTxIds)
             mempoolReader
             version
@@ -321,18 +301,14 @@ ntnApps
       -> m ((), Maybe BL.ByteString)
     aSigSubmissionV2Server version ResponderContext { rcConnectionId = connId } channel =
        runAnnotatedPeerWithLimits
-         (if sigSubmissionClientProtocolTracer
-           then WithEventType "SigSubmissionV2.Protocol.Server" . Mx.WithBearer connId >$< tracer
-           else nullTracer)
+         (WithEventType (DMQ "SigSubmissionV2.Protocol.Server") . Mx.WithBearer connId >$< tracer)
          sigSubmissionCodecV2
          sigSubmissionSizeLimitsV2
          sigSubmissionTimeLimitsV2
          channel
          $ sigSubmissionV2OutboundPeer
          $ sigSubmissionOutbound
-             (if sigSubmissionOutboundTracer
-                then WithEventType "SigSubmissionV2.Outbound" . Mx.WithBearer connId >$< tracer
-                else nullTracer)
+             (WithEventType (DMQ "SigSubmissionV2.Outbound") . Mx.WithBearer connId >$< tracer)
              (NumIdsAck . getNumTxIdsToReq $ maxUnacknowledgedTxIds)
              mempoolReader
              version
@@ -344,9 +320,7 @@ ntnApps
       -> m ((), Maybe BL.ByteString)
     aSigSubmissionV1Server _version ResponderContext { rcConnectionId = connId } channel =
       withPeer
-          (if sigSubmissionLogicTracer
-             then WithEventType "SigSubmissionV1.Logic" . Mx.WithBearer connId >$< tracer
-             else nullTracer)
+          (WithEventType (DMQ "SigSubmission.Logic") . Mx.WithBearer connId >$< tracer)
           sigChannelVar
           sigMempoolSem
           sigDecisionPolicy
@@ -357,18 +331,14 @@ ntnApps
           (remoteAddress connId)
           $ \(peerSigAPI :: PeerTxAPI m SigId (Sig crypto)) ->
             runPipelinedAnnotatedPeerWithLimits
-              (if sigSubmissionServerProtocolTracer
-                 then WithEventType "SigSubmissionV1.Protocol.Server" . Mx.WithBearer connId >$< tracer
-                 else nullTracer)
+              (WithEventType (DMQ "SigSubmission.Protocol.Server") . Mx.WithBearer connId >$< tracer)
               sigSubmissionCodecV1
               sigSubmissionSizeLimitsV1
               sigSubmissionTimeLimitsV1
               channel
               $ txSubmissionServerPeerPipelined
               $ txSubmissionInboundV2
-                  (if sigSubmissionInboundTracer
-                     then WithEventType "SigSubmissionV1.Inbound" . Mx.WithBearer connId >$< tracer
-                     else nullTracer)
+                  (WithEventType (DMQ "SigSubmission.Inbound") . Mx.WithBearer connId >$< tracer)
                   _SIG_SUBMISSION_INIT_DELAY
                   mempoolWriter
                   peerSigAPI
@@ -388,9 +358,7 @@ ntnApps
       labelThisThread "KeepAlive.Client"
       let kacApp dqCtx =
             runPeerWithLimits
-              (if keepAliveClientProtocolTracer
-                 then WithEventType "KeepAlive.Protocol.Client" . Mx.WithBearer connId >$< tracer
-                 else nullTracer)
+              (WithEventType (DMQ "KeepAlive.Protocol.Client") . Mx.WithBearer connId >$< tracer)
               keepAliveCodec
               keepAliveSizeLimits
               keepAliveTimeLimits
@@ -418,9 +386,7 @@ ntnApps
                      channel = do
       labelThisThread "KeepAlive.Server"
       runPeerWithLimits
-        (if keepAliveServerProtocolTracer
-           then WithEventType "KeepAlive.Protocol.Server" . Mx.WithBearer connId >$< tracer
-           else nullTracer)
+        (WithEventType (DMQ "KeepAlive.Protocol.Server") . Mx.WithBearer connId >$< tracer)
         keepAliveCodec
         keepAliveSizeLimits
         keepAliveTimeLimits
@@ -444,9 +410,7 @@ ntnApps
         $ \controller -> do
           psClient <- peerSharingClient controlMessageSTM controller
           ((), trailing) <- runPeerWithLimits
-            (if peerSharingClientProtocolTracer
-               then WithEventType "PeerSharing.Protocol.Client" . Mx.WithBearer connId >$< tracer
-               else nullTracer)
+            (WithEventType (DMQ "PeerSharing.Protocol.Client") . Mx.WithBearer connId >$< tracer)
             peerSharingCodec
             peerSharingSizeLimits
             peerSharingTimeLimits
@@ -466,9 +430,7 @@ ntnApps
                        channel = do
       labelThisThread "PeerSharing.Server"
       runPeerWithLimits
-        (if peerSharingServerProtocolTracer
-           then WithEventType "PeerSharing.Protocol.Server" . Mx.WithBearer connId >$< tracer
-           else nullTracer)
+        (WithEventType (DMQ "PeerSharing.Protocol.Server") . Mx.WithBearer connId >$< tracer)
         peerSharingCodec
         peerSharingSizeLimits
         peerSharingTimeLimits

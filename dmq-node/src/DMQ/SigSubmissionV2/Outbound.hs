@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -24,7 +25,7 @@ import Control.Monad (unless, when)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer (..), traceWith)
+import "contra-tracer" Control.Tracer (Tracer (..), traceWith)
 
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
            TxSubmissionMempoolReader (..))

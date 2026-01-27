@@ -1,6 +1,7 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE LambdaCase               #-}
 {-# LANGUAGE OverloadedStrings        #-}
+{-# LANGUAGE PackageImports           #-}
 {-# LANGUAGE TypeOperators            #-}
 
 module DMQ.NodeToClient.LocalStateQueryClient
@@ -15,7 +16,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Trans.Except
-import Control.Tracer (Tracer (..), nullTracer, traceWith)
+import "contra-tracer" Control.Tracer (Tracer, nullTracer, traceWith)
 import Data.Aeson (ToJSON (..), object, (.=))
 import Data.Aeson qualified as Aeson
 import Data.Functor ((<&>))

@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleContexts     #-}
 {-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE PackageImports       #-}
 {-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -7,7 +8,7 @@
 module DMQ.NodeToClient.LocalMsgSubmission where
 
 import Control.Monad.Class.MonadThrow
-import Control.Tracer
+import "contra-tracer" Control.Tracer (Tracer, traceWith)
 import Data.Aeson (ToJSON (..), object, (.=))
 import Data.Aeson qualified as Aeson
 import Data.Typeable
