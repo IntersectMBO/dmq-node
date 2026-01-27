@@ -11,6 +11,7 @@
 module Main where
 
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.Concurrent.Class.MonadMVar
 import Control.Monad (void, when)
 import Control.Monad.Class.MonadThrow
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
@@ -33,8 +34,6 @@ import System.IOManager (withIOManager)
 
 import Cardano.Git.Rev (gitRev)
 import Cardano.KESAgent.Protocols.StandardCrypto (StandardCrypto)
-import Cardano.Ledger.Keys (VKey (..))
-import Cardano.Ledger.Hashes (hashKey)
 
 import DMQ.Configuration
 import DMQ.Configuration.CLIOptions (parseCLIOptions)
@@ -93,8 +92,13 @@ runDMQ commandLineConfig = do
         } = config' <> commandLineConfig
             `act`
             defaultConfiguration
-    let tracer :: ToJSON ev => Tracer IO (WithEventType ev)
-        tracer = dmqTracer prettyLog
+
+    lock <- newMVar ()
+    let tracer', tracer  :: ToJSON ev => Tracer IO (WithEventType ev)
+        tracer' = dmqTracer prettyLog
+        -- use a lock to prevent writing two lines at the same time
+        -- TODO: this won't be needed with `cardano-tracer` integration
+        tracer = Tracer $ \a -> withMVar lock $ \_ -> traceWith tracer' a
 
     when version $ do
       let gitrev = $(gitRev)
@@ -119,6 +123,7 @@ runDMQ commandLineConfig = do
 
     stdGen <- newStdGen
     let (psRng, policyRng) = split stdGen
+    policyRngVar <- newTVarIO policyRng
 
     -- TODO: this might not work, since `ouroboros-network` creates its own IO Completion Port.
     withIOManager \iocp -> do
@@ -149,7 +154,7 @@ runDMQ commandLineConfig = do
                     Mempool.getWriter SigDuplicate
                                       sigId
                                       (\now sigs ->
-                                        withPoolValidationCtx (stakePools nodeKernel) (validateSig (hashKey . VKey) now sigs)
+                                        withPoolValidationCtx (stakePools nodeKernel) (validateSig now sigs)
                                       )
                                       (traverse_ $ \(sigid, reason) -> do
                                         traceWith ntnValidationTracer $ InvalidSignature sigid reason
@@ -183,7 +188,7 @@ runDMQ commandLineConfig = do
                     Mempool.getWriter SigDuplicate
                                       sigId
                                       (\now sigs ->
-                                        withPoolValidationCtx (stakePools nodeKernel) (validateSig (hashKey . VKey) now sigs)
+                                        withPoolValidationCtx (stakePools nodeKernel) (validateSig now sigs)
                                       )
                                       (traverse_ $ \(sigid, reason) ->
                                          traceWith ntcValidationTracer $ InvalidSignature sigid reason
@@ -212,7 +217,7 @@ runDMQ commandLineConfig = do
                                     dmqLimitsAndTimeouts
                                     dmqNtNApps
                                     dmqNtCApps
-                                    (policy policyRng)
+                                    (policy policyRngVar)
 
         Diffusion.run dmqDiffusionArguments
                       (dmqDiffusionTracers dmqConfig tracer)

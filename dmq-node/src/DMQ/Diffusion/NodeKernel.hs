@@ -6,6 +6,7 @@ module DMQ.Diffusion.NodeKernel
   , withNodeKernel
   , PoolValidationCtx (..)
   , StakePools (..)
+  , PoolId
   ) where
 
 import Control.Concurrent.Class.MonadMVar
@@ -33,8 +34,8 @@ import Data.Word
 import System.Random (StdGen)
 import System.Random qualified as Random
 
-import Cardano.Ledger.Shelley.API hiding (I)
-import Ouroboros.Consensus.Shelley.Ledger.Query
+import Cardano.Ledger.Shelley.API qualified as Ledger
+import Ouroboros.Consensus.Shelley.Ledger.Query qualified as LedgerQuery
 
 import Ouroboros.Network.BlockFetch (FetchClientRegistry,
            newFetchClientRegistry)
@@ -76,13 +77,13 @@ data NodeKernel crypto ntnAddr m =
 
 -- | Cardano pool id's are hashes of the cold verification key
 --
-type PoolId = KeyHash StakePool
+type PoolId = Ledger.KeyHash Ledger.StakePool
 
 data StakePools m = StakePools {
     -- | contains map of cardano pool stake snapshot obtained
     -- via local state query client
     stakePoolsVar
-      :: !(StrictTVar m (Map PoolId StakeSnapshot))
+      :: !(StrictTVar m (Map PoolId LedgerQuery.StakeSnapshot))
     -- | Acquire and update validation context for signature validation
   , withPoolValidationCtx
       :: forall a. (PoolValidationCtx -> (a, PoolValidationCtx)) ->  STM m a
@@ -99,7 +100,7 @@ data PoolValidationCtx =
   PoolValidationCtx {
       vctxEpoch    :: !(Maybe UTCTime)
       -- ^ UTC time of next epoch boundary for handling clock skew
-    , vctxStakeMap :: !(Map PoolId StakeSnapshot)
+    , vctxStakeMap :: !(Map PoolId LedgerQuery.StakeSnapshot)
       -- ^ for signature validation
     , vctxOcertMap :: !(Map PoolId Word64)
       -- ^ ocert counters to check monotonicity

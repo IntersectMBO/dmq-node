@@ -58,8 +58,9 @@ source-repository-package
 source-repository-package
   type: git
   location: https://github.com/IntersectMBO/ouroboros-network
-  tag: 3c4433d05ec012af6d1a26e6b5e86665627c08c4
-  --sha256: sha256-Jemp6PlzISA+l1wdXV6MrIxaBpAxdrLLAlbkB7ZqF2Y=
+  -- from coot/dmq-related-changes
+  tag: 625296c92363b8c5e77cddee40de4525421d2660
+  --sha256: sha256-WRbKqNimAsYtgj/r3SJ0IT6z7+Q3XZf3p89BM9w6bF8=
   subdir:
     acts-generic
     cardano-diffusion

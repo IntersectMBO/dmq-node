@@ -30,13 +30,12 @@ import Data.Text (Text)
 import Data.Typeable
 import Data.Word
 
-import Cardano.Crypto.DSIGN.Class (ContextDSIGN)
 import Cardano.Crypto.DSIGN.Class qualified as DSIGN
 import Cardano.Crypto.KES.Class (KESAlgorithm (..))
 import Cardano.KESAgent.KES.Crypto as KES
 import Cardano.KESAgent.KES.OCert (OCert (..), OCertSignable, validateOCert)
-import Cardano.Ledger.BaseTypes.NonZero
-import Cardano.Ledger.Hashes
+import Cardano.Ledger.BaseTypes.NonZero qualified as Ledger
+import Cardano.Ledger.Keys qualified as Ledger
 
 import DMQ.Diffusion.NodeKernel (PoolValidationCtx (..))
 import DMQ.Protocol.SigSubmission.Type
@@ -100,30 +99,29 @@ c_MAX_CLOCK_SKEW_SEC :: NominalDiffTime
 c_MAX_CLOCK_SKEW_SEC = 5
 
 pattern NotZeroSetSnapshot :: StakeSnapshot
-pattern NotZeroSetSnapshot <- (isZero . ssSetPool -> False)
+pattern NotZeroSetSnapshot <- (Ledger.isZero . ssSetPool -> False)
 
 pattern NotZeroMarkSnapshot :: StakeSnapshot
-pattern NotZeroMarkSnapshot <- (isZero . ssMarkPool -> False)
+pattern NotZeroMarkSnapshot <- (Ledger.isZero . ssMarkPool -> False)
 
 pattern ZeroSetSnapshot :: StakeSnapshot
-pattern ZeroSetSnapshot <- (isZero . ssSetPool -> True)
+pattern ZeroSetSnapshot <- (Ledger.isZero . ssSetPool -> True)
 
 {-# COMPLETE NotZeroSetSnapshot, NotZeroMarkSnapshot, ZeroSetSnapshot #-}
 
 
 validateSig :: forall crypto.
                ( Crypto crypto
-               , ContextDSIGN (KES.DSIGN crypto) ~ ()
+               , DSIGN crypto ~ Ledger.DSIGN
                , DSIGN.Signable (DSIGN crypto) (OCertSignable crypto)
                , ContextKES (KES crypto) ~ ()
                , Signable (KES crypto) ByteString
                )
-            => (DSIGN.VerKeyDSIGN (DSIGN crypto) -> KeyHash StakePool)
-            -> UTCTime
+            => UTCTime
             -> [Sig crypto]
             -> PoolValidationCtx
             -> ([Either (SigId, SigValidationError) (Sig crypto)], PoolValidationCtx)
-validateSig verKeyHashingFn now sigs ctx0 =
+validateSig now sigs ctx0 =
     State.runState (traverse (exceptions . validate) sigs) ctx0
   where
     exceptions :: StateT s (Except e) a
@@ -150,23 +148,32 @@ validateSig verKeyHashingFn now sigs ctx0 =
                      } = do
       ctx@PoolValidationCtx { vctxEpoch, vctxStakeMap, vctxOcertMap } <- State.get
 
+      --
+      -- verify KES period
+      --
+
       sigKESPeriod < endKESPeriod    ?! KESAfterEndOCERT endKESPeriod sigKESPeriod
       sigKESPeriod >= startKESPeriod ?! KESBeforeStartOCERT startKESPeriod sigKESPeriod
+
+      --
+      -- verify that the pool is registered and eligible to mint blocks
+      --
 
       let -- `vctxEpoch` and `vctxStakeMap` are initialized in one STM
           -- transaction, which guarantees that fromJust will not fail
           nextEpoch = fromJust vctxEpoch
-      case Map.lookup (verKeyHashingFn coldKey) vctxStakeMap of
+      case Map.lookup (Ledger.hashKey (Ledger.VKey coldKey)) vctxStakeMap of
         Nothing | isNothing vctxEpoch
                   -> left NotInitialized
                 | otherwise
                   -> left UnrecognizedPool
+
         Just ss@NotZeroSetSnapshot ->
           if | now <= addUTCTime c_MAX_CLOCK_SKEW_SEC nextEpoch
              -> return ()
 
                -- local-state-query is late, but the pool is about to expire
-             | isZero (ssMarkPool ss)
+             | Ledger.isZero (ssMarkPool ss)
              -> left SigExpired
 
              | otherwise
@@ -189,19 +196,12 @@ validateSig verKeyHashingFn now sigs ctx0 =
         -- pool unregistered and is ineligible to mint blocks
         Just ZeroSetSnapshot -> left SigExpired
 
-      -- validate OCert, which includes verifying its signature
-      validateOCert coldKey ocertVkHot ocert
-         ?!: InvalidSignatureOCERT ocertN sigKESPeriod
-
-      -- validate KES signature of the payload
-      verifyKES () ocertVkHot
-                (unKESPeriod sigKESPeriod - unKESPeriod startKESPeriod)
-                (LBS.toStrict signedBytes)
-                kesSig
-         ?!: InvalidKESSignature ocertKESPeriod sigKESPeriod
+      --
+      -- verify that our observations of ocertN are strictly monotonic
+      --
 
       case Map.alterF (\a -> (a, Just ocertN))
-                      (verKeyHashingFn coldKey)
+                      (Ledger.hashKey (Ledger.VKey coldKey))
                       vctxOcertMap of
         (Nothing, ocertCounters')
           -- there is no ocert in the map, e.g. we're validating a signature
@@ -214,6 +214,21 @@ validateSig verKeyHashingFn now sigs ctx0 =
 
           | otherwise
           -> left (InvalidOCertCounter prevOcertN ocertN)
+
+      --
+      -- Cryptographic checks
+      --
+
+      -- validate OCert, which includes verifying its signature
+      validateOCert coldKey ocertVkHot ocert
+         ?!: InvalidSignatureOCERT ocertN sigKESPeriod
+
+      -- validate KES signature of the payload
+      verifyKES () ocertVkHot
+                (unKESPeriod sigKESPeriod - unKESPeriod startKESPeriod)
+                (LBS.toStrict signedBytes)
+                kesSig
+         ?!: InvalidKESSignature ocertKESPeriod sigKESPeriod
 
       return sig
       where

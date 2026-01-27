@@ -148,7 +148,6 @@ executable dmq-node
     base,
     bytestring,
     cardano-git-rev,
-    cardano-ledger-core,
     contra-tracer >=0.1 && <0.3,
     dmq-node,
     io-classes:{io-classes, strict-stm},
