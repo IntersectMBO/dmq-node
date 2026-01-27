@@ -145,7 +145,6 @@ executable dmq-node
   build-depends:
     Win32-network,
     acts,
-    aeson,
     base,
     bytestring,
     cardano-git-rev,

@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiWayIf               #-}
 {-# LANGUAGE OverloadedRecordDot      #-}
 {-# LANGUAGE OverloadedStrings        #-}
+{-# LANGUAGE PackageImports           #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TemplateHaskell          #-}
 {-# LANGUAGE TypeApplications         #-}
@@ -11,13 +12,11 @@
 module Main where
 
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Concurrent.Class.MonadMVar
 import Control.Monad (void, when)
 import Control.Monad.Class.MonadThrow
-import Control.Tracer (Tracer (..), nullTracer, traceWith)
+import "contra-tracer" Control.Tracer (traceWith)
 
 import Data.Act
-import Data.Aeson (ToJSON)
 import Data.ByteString.Lazy qualified as BSL
 import Data.Functor.Contravariant ((>$<))
 import Data.Foldable (traverse_)
@@ -47,7 +46,9 @@ import DMQ.NodeToNode (NodeToNodeVersion, dmqCodecs, dmqLimitsAndTimeouts,
            ntnApps)
 import DMQ.Protocol.SigSubmission.Type (Sig (..))
 import DMQ.Tracer
-
+  ( mkCardanoTracer
+  , WithEventType (WithEventType), EventType (DMQ)
+  )
 import DMQ.Diffusion.PeerSelection (policy)
 import DMQ.NodeToClient.LocalStateQueryClient
 import DMQ.Protocol.SigSubmission.Validate
@@ -81,24 +82,14 @@ runDMQ commandLineConfig = do
     -- combine default configuration, configuration file and command line
     -- options
     let dmqConfig@Configuration {
-          dmqcPrettyLog             = I prettyLog,
           dmqcTopologyFile          = I topologyFile,
-          dmqcHandshakeTracer       = I handshakeTracer,
-          dmqcValidationTracer      = I validationTracer,
-          dmqcLocalHandshakeTracer  = I localHandshakeTracer,
           dmqcCardanoNodeSocket     = I snocketPath,
-          dmqcVersion               = I version,
-          dmqcLocalStateQueryTracer = I localStateQueryTracer
+          dmqcVersion               = I version
         } = config' <> commandLineConfig
             `act`
             defaultConfiguration
 
-    lock <- newMVar ()
-    let tracer', tracer  :: ToJSON ev => Tracer IO (WithEventType ev)
-        tracer' = dmqTracer prettyLog
-        -- use a lock to prevent writing two lines at the same time
-        -- TODO: this won't be needed with `cardano-tracer` integration
-        tracer = Tracer $ \a -> withMVar lock $ \_ -> traceWith tracer' a
+    (tracer, dmqDiffusionTracers) <- mkCardanoTracer configFilePath
 
     when version $ do
       let gitrev = $(gitRev)
@@ -117,9 +108,9 @@ runDMQ commandLineConfig = do
           ]
       exitSuccess
 
-    traceWith tracer (WithEventType "Configuration" dmqConfig)
+    traceWith tracer (WithEventType (DMQ "Configuration") dmqConfig)
     nt <- readTopologyFileOrError topologyFile
-    traceWith tracer (WithEventType "NetworkTopology" nt)
+    traceWith tracer (WithEventType (DMQ "NetworkTopology") nt)
 
     stdGen <- newStdGen
     let (psRng, policyRng) = split stdGen
@@ -129,9 +120,7 @@ runDMQ commandLineConfig = do
     withIOManager \iocp -> do
       let localSnocket'      = localSnocket iocp
           mkStakePoolMonitor = connectToCardanoNode
-                                 (if localStateQueryTracer
-                                    then WithEventType "LocalStateQuery" >$< tracer
-                                    else nullTracer)
+                                 (WithEventType (DMQ "LocalStateQuery") >$< tracer)
                                  localSnocket'
                                  snocketPath
 
@@ -146,9 +135,7 @@ runDMQ commandLineConfig = do
         let sigSize :: Sig StandardCrypto -> SizeInBytes
             sigSize = fromIntegral . BSL.length . sigRawBytes
             mempoolReader = Mempool.getReader sigId sigSize (mempool nodeKernel)
-            ntnValidationTracer = if validationTracer
-                                    then WithEventType "NtN Validation" >$< tracer
-                                    else nullTracer
+            ntnValidationTracer = (WithEventType (DMQ "NtC Validation") >$< tracer)
             dmqNtNApps =
               let ntnMempoolWriter =
                     Mempool.getWriter SigDuplicate
@@ -180,9 +167,7 @@ runDMQ commandLineConfig = do
                                    (decodeRemoteAddress (maxBound @NodeToNodeVersion)))
                           dmqLimitsAndTimeouts
                           defaultSigDecisionPolicy
-            ntcValidationTracer = if validationTracer
-                                    then WithEventType "NtC Validation" >$< tracer
-                                    else nullTracer
+            ntcValidationTracer = (WithEventType (DMQ "NtC Validation") >$< tracer)
             dmqNtCApps =
               let ntcMempoolWriter =
                     Mempool.getWriter SigDuplicate
@@ -198,12 +183,8 @@ runDMQ commandLineConfig = do
                               mempoolReader ntcMempoolWriter
                               NtC.dmqCodecs
             dmqDiffusionArguments =
-              diffusionArguments (if handshakeTracer
-                                    then WithEventType "Handshake" >$< tracer
-                                    else nullTracer)
-                                 (if localHandshakeTracer
-                                    then WithEventType "Handshake" >$< tracer
-                                    else nullTracer)
+              diffusionArguments (WithEventType (DMQ "Handshake") >$< tracer)
+                                 (WithEventType (DMQ "LocalHandshake") >$< tracer)
                                  $ maybe [] out <$> tryReadTMVar nodeKernel.stakePools.ledgerPeersVar
               where
                 out :: LedgerPeerSnapshot AllLedgerPeers
@@ -220,6 +201,6 @@ runDMQ commandLineConfig = do
                                     (policy policyRngVar)
 
         Diffusion.run dmqDiffusionArguments
-                      (dmqDiffusionTracers dmqConfig tracer)
+                      dmqDiffusionTracers
                       dmqDiffusionConfiguration
                       dmqDiffusionApplications
