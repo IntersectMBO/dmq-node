@@ -86,6 +86,8 @@ newtype SigId = SigId Any
 instance ShowProxy SigId where
     showProxy _ = "SigId"
 
+deriving newtype instance Arbitrary SizeInBytes
+
 deriving newtype instance Arbitrary NumIdsAck
 deriving newtype instance Arbitrary NumIdsReq
 

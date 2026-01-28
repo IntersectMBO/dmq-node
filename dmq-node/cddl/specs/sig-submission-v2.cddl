@@ -18,7 +18,7 @@ sigSubmissionV2Message
 
 
 msgRequestSigIds = [1, blocking, sigCount, sigCount]
-msgReplySigIds   = [2, [*sig.messageId] ]
+msgReplySigIds   = [2, [*messageTuple] ]
 msgReplyNoSigIds = [3]
 msgRequestSigs   = [4, [*sig.messageId] ]
 msgReplySigs     = [5, [*sig.message] ]
@@ -26,5 +26,6 @@ msgDone          = [6]
 
 blocking         = false / true
 sigCount         = sig.word16
+messageTuple     = [sig.messageId, sig.messageSize]
 
 ;# import sig as sig
