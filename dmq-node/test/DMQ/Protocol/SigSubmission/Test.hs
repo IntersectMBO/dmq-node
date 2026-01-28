@@ -719,8 +719,8 @@ prop_codec_sig_standardcrypto = prop_codec_sig . getBlind
 
 
 prop_codec_sig_encoding
-  :: forall crypto. Crypto crypto
-  => WithConstrKES (SeedSizeKES (KES crypto)) (KES crypto) (Sig crypto)
+  :: forall crypto
+  .  WithConstrKES (SeedSizeKES (KES crypto)) (KES crypto) (Sig crypto)
   -> Property
 prop_codec_sig_encoding constr = ioProperty $ do
   sig <- runWithConstr constr
