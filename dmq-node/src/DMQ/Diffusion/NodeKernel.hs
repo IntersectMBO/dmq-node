@@ -53,7 +53,7 @@ import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool (..),
            MempoolSeq (..), WithIndex (..))
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 
-import DMQ.Configuration
+import DMQ.Configuration as Conf
 import DMQ.Protocol.SigSubmission.Type (Sig (sigExpiresAt, sigId), SigId)
 import DMQ.Tracer
 
@@ -207,7 +207,7 @@ withNodeKernel tracer
                    then WithEventType "SigSubmission.Logic" >$< tracer
                    else nullTracer)
                 nullTracer
-                defaultSigDecisionPolicy
+                Conf.defaultSigDecisionPolicy
                 sigChannelVar
                 sigSharedTxStateVar)
             $ \sigLogicThread ->
