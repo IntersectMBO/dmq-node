@@ -1,5 +1,6 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE LambdaCase               #-}
+{-# LANGUAGE PackageImports           #-}
 {-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE TypeOperators            #-}
 
@@ -14,7 +15,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Trans.Except
-import Control.Tracer (Tracer (..), nullTracer, traceWith)
+import "contra-tracer" Control.Tracer (Tracer, traceWith, nullTracer)
 import Data.Aeson (ToJSON (..), object, (.=))
 import Data.Aeson qualified as Aeson
 import Data.Map.Strict qualified as Map

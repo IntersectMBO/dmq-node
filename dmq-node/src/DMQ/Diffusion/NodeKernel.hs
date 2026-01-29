@@ -1,5 +1,6 @@
-{-# LANGUAGE DataKinds  #-}
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE DataKinds      #-}
+{-# LANGUAGE PackageImports #-}
+{-# LANGUAGE RankNTypes     #-}
 
 module DMQ.Diffusion.NodeKernel
   ( NodeKernel (..)
@@ -15,9 +16,8 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, nullTracer)
+import "contra-tracer" Control.Tracer (Tracer, nullTracer)
 
-import Data.Aeson qualified as Aeson
 import Data.Function (on)
 import Data.Functor.Contravariant ((>$<))
 import Data.Hashable
@@ -180,7 +180,7 @@ withNodeKernel :: forall crypto ntnAddr m a.
                   , Show ntnAddr
                   , Hashable ntnAddr
                   )
-               => (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
+               => Tracer m WithEventType
                -> Configuration
                -> StdGen
                -> (NetworkMagic -> NodeKernel crypto ntnAddr m -> m (Either SomeException Void))
@@ -190,8 +190,7 @@ withNodeKernel :: forall crypto ntnAddr m a.
                -> m a
 withNodeKernel tracer
                Configuration {
-                 dmqcSigSubmissionLogicTracer = I sigSubmissionLogicTracer,
-                 dmqcCardanoNetworkMagic      = I networkMagic
+                 dmqcCardanoNetworkMagic = I networkMagic
                }
                rng
                mkStakePoolMonitor k = do
@@ -203,9 +202,7 @@ withNodeKernel tracer
   withAsync (mempoolWorker mempool)
           $ \mempoolThread ->
     withAsync (decisionLogicThreads
-                (if sigSubmissionLogicTracer
-                   then WithEventType "SigSubmission.Logic" >$< tracer
-                   else nullTracer)
+                (WithEventType (DMQ "SigSubmission.Logic") >$< tracer)
                 nullTracer
                 defaultSigDecisionPolicy
                 sigChannelVar
