@@ -4,6 +4,7 @@
 {-# LANGUAGE OverloadedStrings  #-}
 {-# LANGUAGE PatternSynonyms    #-}
 {-# LANGUAGE RankNTypes         #-}
+{-# LANGUAGE TypeApplications   #-}
 {-# LANGUAGE TypeFamilies       #-}
 {-# LANGUAGE TypeOperators      #-}
 {-# LANGUAGE ViewPatterns       #-}
@@ -31,6 +32,8 @@ import Data.Typeable
 import Data.Word
 
 import Cardano.Crypto.DSIGN.Class qualified as DSIGN
+import Cardano.Crypto.Hash (Blake2b_256)
+import Cardano.Crypto.Hash.Class (digest)
 import Cardano.Crypto.KES.Class (KESAlgorithm (..))
 import Cardano.KESAgent.KES.Crypto as KES
 import Cardano.KESAgent.KES.OCert (OCert (..), OCertSignable, validateOCert)
@@ -52,6 +55,7 @@ data SigValidationError =
   | InvalidOCertCounter
       !Word64 -- last seen
       !Word64 -- received
+  | InvalidSignatureId SigId SigId
   | KESBeforeStartOCERT KESPeriod KESPeriod
   | KESAfterEndOCERT KESPeriod KESPeriod
   | PoolNotEligible
@@ -136,8 +140,10 @@ validateSig now sigs ctx0 =
     validate :: Sig crypto
              -> StateT PoolValidationCtx (Except (SigId, SigValidationError)) (Sig crypto)
     validate sig@Sig { sigId,
+                       sigBody,
                        sigSignedBytes = signedBytes,
                        sigKESPeriod,
+                       sigExpiresAt,
                        sigOpCertificate = SigOpCertificate ocert@OCert {
                          ocertKESPeriod,
                          ocertVkHot,
@@ -147,6 +153,18 @@ validateSig now sigs ctx0 =
                        sigKESSignature = SigKESSignature kesSig
                      } = do
       ctx@PoolValidationCtx { vctxEpoch, vctxStakeMap, vctxOcertMap } <- State.get
+
+      --
+      -- verify signature id
+      --
+      let
+        sigBytes =
+          getSigBody sigBody
+          <> LBS.toStrict (encode $ unKESPeriod sigKESPeriod)
+          <> LBS.toStrict (encode sigExpiresAt)
+        sigId' = SigId (SigHash (digest (Proxy @Blake2b_256) sigBytes))
+       in
+        sigId == sigId' ?! InvalidSignatureId sigId sigId'
 
       --
       -- verify KES period
