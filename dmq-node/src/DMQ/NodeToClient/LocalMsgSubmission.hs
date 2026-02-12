@@ -49,7 +49,9 @@ data TraceLocalMsgSubmission msg msgid =
     TraceReceivedMsg msgid
   -- ^ A signature was received.
   | TraceSubmitFailure msgid SigValidationError
+  -- ^ A signature was rejected with the given validation failure.
   | TraceSubmitAccept msgid
+  -- ^ A signature was validated and accepted into the mempool.
 
 deriving instance
      (Show msg, Show msgid)

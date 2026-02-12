@@ -11,9 +11,7 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TupleSections         #-}
-{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeFamilies          #-}
-{-# LANGUAGE TypeOperators         #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
 {-# OPTIONS_GHC -Wno-orphans        #-}
@@ -37,6 +35,7 @@ import Data.Bool (bool)
 import Data.ByteString.Base16.Lazy qualified as BL.Base16
 import Data.ByteString.Lazy qualified as BL
 import Data.ByteString.Lazy.Char8 qualified as BL.Char8
+import Data.Functor ((<&>))
 import Text.Printf
 
 import System.Directory (doesDirectoryExist)
@@ -55,12 +54,16 @@ import DMQ.Protocol.LocalMsgNotification.Codec
 import DMQ.Protocol.LocalMsgNotification.Type as LocalMsgNotification
 import DMQ.Protocol.SigSubmission.Codec
 import DMQ.Protocol.SigSubmission.Type
+import DMQ.Protocol.SigSubmissionV2.Type (SigSubmissionV2)
+import DMQ.Protocol.SigSubmissionV2.Type qualified as SigSubmissionV2
+import DMQ.Protocol.SigSubmissionV2.Test qualified as SigSubmissionV2.Test
+import DMQ.Protocol.SigSubmissionV2.Codec.CDDL
 
 -- import Test.QuickCheck hiding (Result (..))
 import Test.QuickCheck.Instances.ByteString ()
 import Test.Tasty (TestTree, adjustOption, defaultMain, testGroup)
 import Test.Tasty.HUnit
-import Test.Tasty.QuickCheck (QuickCheckMaxSize (..))
+import Test.Tasty.QuickCheck
 
 main :: IO ()
 main = do
@@ -69,7 +72,8 @@ main = do
 
 tests :: CDDLSpecs -> TestTree
 tests CDDLSpecs { cddlSig,
-                  cddlLocalMsgNotification
+                  cddlLocalMsgNotification,
+                  cddlSigSubmissionV2
                 } =
   adjustOption (const $ QuickCheckMaxSize 10) $
   testGroup "cddl"
@@ -77,8 +81,11 @@ tests CDDLSpecs { cddlSig,
       -- validate decoder by generating messages from the specification
       [ testCase "Sig" (unit_decodeSig cddlSig)
       , testCase "LocalMsgNotification" (unit_decodeLocalMsgNotification cddlLocalMsgNotification)
+      , testCase "SigSubmissionV2" (unit_decodeSigSubmissionV2 cddlSigSubmissionV2)
       ]
-      -- TODO: validate `LocalMsgNotification` encoder
+      -- TODO: validate `LocalMsgNotification` encoder (this should be done in
+      -- `DMQ.Protocol.LocalMsgNotification.Test` module, see
+      -- `DMQ.Protocol.SigSubmissionV2.Test.prop_encoding` for an example)
     ]
 
 newtype CDDLSpec ps = CDDLSpec BL.ByteString
@@ -87,13 +94,14 @@ type AnnSigRawWithSignedBytes = BL.ByteString -> SigRawWithSignedBytes StandardC
 
 data CDDLSpecs = CDDLSpecs {
     cddlSig                  :: CDDLSpec AnnSigRawWithSignedBytes,
-    cddlLocalMsgNotification :: CDDLSpec (LocalMsgNotification (Sig StandardCrypto))
+    cddlLocalMsgNotification :: CDDLSpec (LocalMsgNotification (Sig StandardCrypto)),
+    cddlSigSubmissionV2      :: CDDLSpec (SigSubmissionV2 SigSubmissionV2.Test.SigId SigSubmissionV2.Test.Sig)
   }
 
 
 unit_decodeSig :: CDDLSpec AnnSigRawWithSignedBytes
                -> Assertion
-unit_decodeSig spec = validateDecoder spec decodeSig 100
+unit_decodeSig spec = validateDecoder' spec decodeSig 100
 
 unit_decodeLocalMsgNotification :: CDDLSpec (LocalMsgNotification (Sig StandardCrypto))
                                 -> Assertion
@@ -121,6 +129,21 @@ unit_decodeLocalMsgNotification spec =
             term -> term
 
 
+unit_decodeSigSubmissionV2
+    :: CDDLSpec (SigSubmissionV2 SigSubmissionV2.Test.SigId SigSubmissionV2.Test.Sig)
+    -> Assertion
+unit_decodeSigSubmissionV2 spec =
+    validateDecoder
+      (Just indefiniteListFix)
+      spec
+      sigSubmissionV2Codec
+      [ SomeAgency $ SigSubmissionV2.SingSigIds SigSubmissionV2.SingBlocking
+      , SomeAgency $ SigSubmissionV2.SingSigIds SigSubmissionV2.SingNonBlocking
+      , SomeAgency   SigSubmissionV2.SingSigs
+      , SomeAgency   SigSubmissionV2.SingIdle
+      ]
+      100
+
 --
 -- utils
 --
@@ -133,9 +156,9 @@ unit_decodeLocalMsgNotification spec =
 -- The `CDDL_INCLUDE_PATH` environment variable must be set.
 cddlc :: FilePath -> IO BL.ByteString
 cddlc path = do
-  (exitCode, cddl, _) <- readProcessWithExitCode "cddlc" ["-u", "-2", "-t", "cddl", path] mempty
+  (exitCode, cddl, stderr) <- readProcessWithExitCode "cddlc" ["-u", "-2", "-t", "cddl", path] mempty
   unless (exitCode == ExitSuccess) $
-    die $ printf "cddlc failed on \"%s\" with %s " path (show exitCode)
+    die $ printf "cddlc failed on \"%s\" with %s\n%s " path (show exitCode) (BL.Char8.unpack stderr)
   return cddl
 
 
@@ -148,18 +171,72 @@ readCDDLSpecs = do
 
     sigSpec <- cddlc (dir </> "sig.cddl")
     localMessageNotificationSpec <- cddlc (dir </> "local-msg-notification.cddl")
+    sigSubmissionV2Spec <- cddlc (dir </> "sig-submission-v2.cddl")
 
     return CDDLSpecs {
         cddlSig = CDDLSpec sigSpec,
-        cddlLocalMsgNotification = CDDLSpec localMessageNotificationSpec
+        cddlLocalMsgNotification = CDDLSpec localMessageNotificationSpec,
+        cddlSigSubmissionV2 = CDDLSpec sigSubmissionV2Spec
       }
 
+validateDecoder :: Maybe (CBOR.Term -> CBOR.Term)
+                -- ^ transform a generated term
+                -> CDDLSpec ps
+                -> Codec ps CBOR.DeserialiseFailure IO BL.ByteString
+                -> [SomeAgency ps]
+                -> Int
+                -> Assertion
+validateDecoder transform (CDDLSpec spec) codec stoks rounds = do
+    eterms <- runExceptT $ generateCBORFromSpec spec rounds
+    case eterms of
+      Left err -> assertFailure err
+      Right terms ->
+        forM_ terms $ \(generated_term, encoded_term) -> do
+          let encoded_term' = case transform of
+                 Nothing -> encoded_term
+                 Just tr -> case CBOR.deserialiseFromBytes CBOR.decodeTerm encoded_term of
+                   Right (rest, term)  | BL.null rest
+                                      -> CBOR.toLazyByteString (CBOR.encodeTerm (tr term))
+                   Right _            -> error   "validateDecoder: trailing bytes"
+                   Left err           -> error $ "validateDecoder: decoding error: "
+                                              ++ show err
+              Right (_, decoded_term) =
+                CBOR.deserialiseFromBytes CBOR.decodeTerm encoded_term'
+          res <- decodeMsg encoded_term'
+          case res of
+            Just errs -> assertFailure $ concat
+              [ "decoding failures:\n"
+              , unlines (map show errs)
+              , "while decoding:\n"
+              , show decoded_term
+              , "\n"
+              , "generated term:\n"
+              , BL.Char8.unpack generated_term
+              ]
+            Nothing -> return ()
+  where
+    -- | Try decode at all given agencies.  If one succeeds return
+    -- 'Nothing' otherwise return all 'DeserialiseFailure's.
+    --
+    decodeMsg :: BL.ByteString
+              -> IO (Maybe [CBOR.DeserialiseFailure])
+    decodeMsg bs =
+        -- sequence [Nothing, ...] = Nothing
+        fmap (sequence :: [Maybe CBOR.DeserialiseFailure] -> Maybe [CBOR.DeserialiseFailure]) $
+        forM stoks $ \(SomeAgency (stok :: StateToken st)) -> do
+            decoder <- (decode codec stok :: IO (DecodeStep BL.ByteString CBOR.DeserialiseFailure IO (SomeMessage st)))
+            res <- runDecoder [bs] decoder
+            return $ case res of
+              Left err -> Just err
+              Right {} -> Nothing
 
-validateDecoder :: CDDLSpec a
+
+
+validateDecoder' :: CDDLSpec a
                 -> (forall s. CBOR.Decoder s a)
                 -> Int
                 -> Assertion
-validateDecoder (CDDLSpec spec) decoder rounds = do
+validateDecoder' (CDDLSpec spec) decoder rounds = do
   eterms <- runExceptT $ generateCBORFromSpec spec rounds
   case eterms of
     Left err -> assertFailure err
@@ -215,8 +292,8 @@ validateAnnotatedDecoder transform (CDDLSpec spec) codec stoks rounds = do
                  Just tr -> case CBOR.deserialiseFromBytes CBOR.decodeTerm encoded_term of
                    Right (rest, term)  | BL.null rest
                                       -> CBOR.toLazyByteString (CBOR.encodeTerm (tr term))
-                   Right _            -> error   "validateDecoder: trailing bytes"
-                   Left err           -> error $ "validateDecoder: decoding error: "
+                   Right _            -> error   "validateAnnotatedDecoder: trailing bytes"
+                   Left err           -> error $ "validateAnnotatedDecoder: decoding error: "
                                               ++ show err
 
               Right (_, decoded_term) =
@@ -243,7 +320,7 @@ validateAnnotatedDecoder transform (CDDLSpec spec) codec stoks rounds = do
     decodeMsg bs =
         -- sequence [Nothing, ...] = Nothing
         fmap sequence $
-        forM stoks $ \(a@(SomeAgency (stok :: StateToken st))) -> do
+        forM stoks $ \a@(SomeAgency (stok :: StateToken st)) -> do
             decoder <- decode codec stok
             res <- runDecoder [bs] decoder
             return $ case res of
@@ -270,17 +347,28 @@ generateCBORFromSpec spec rounds = do
                 . readProcessWithExitCode "diag2cbor.rb" ["-"]
 
 
-    unpackResult :: IO (ExitCode, BL.ByteString, BL.ByteString)
-                 -> IO (Either String BL.ByteString)
-    unpackResult r = r >>= \case
-        (ExitFailure _, _, err) -> return (Left $ BL.Char8.unpack err)
-        (ExitSuccess, bytes, _) -> return (Right bytes)
+-- | The cddl spec cannot differentiate between fix-length list encoding and
+-- infinite-length encoding. The cddl tool always generates fix-length
+-- encoding but tx-submission and object-diffusion codecs are accepting only
+-- indefinite-length encoding.
+--
+indefiniteListFix :: CBOR.Term -> CBOR.Term
+indefiniteListFix term =
+    case term of
+      TList [TInt tag, TList l] -> TList [TInt tag, TListI l]
+      _                         -> term
 
 
-    withTemporaryFile :: BL.ByteString
-                      -> (FilePath -> IO a) -> IO a
-    withTemporaryFile bs k =
-        withTempFile "." "tmp" $
-          \fileName h -> BL.hPut h bs
-                      >> hClose h
-                      >> k fileName
+unpackResult :: IO (ExitCode, BL.ByteString, BL.ByteString)
+             -> IO (Either String BL.ByteString)
+unpackResult r = r <&> \case
+    (ExitFailure _, _, err) -> (Left $ BL.Char8.unpack err)
+    (ExitSuccess, bytes, _) -> (Right bytes)
+
+
+withTemporaryFile :: BL.ByteString -> (FilePath -> IO a) -> IO a
+withTemporaryFile bs k =
+    withTempFile "." "tmp" $
+      \fileName h -> BL.hPut h bs
+                  >> hClose h
+                  >> k fileName
