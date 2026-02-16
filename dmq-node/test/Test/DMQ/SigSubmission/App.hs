@@ -309,7 +309,6 @@ runSigSubmissionV2 tracer tracerSigLogic st0 sigDecisionPolicy = do
                                 addr $ \(api :: PeerTxAPI m TxId (Tx TxId))-> do
                                   let client = sigSubmissionInbound
                                                  verboseTracer
-                                                 NoTxSubmissionInitDelay
                                                  (getMempoolWriter inboundMempool)
                                                  api
                                                  ctrlMsgSTM

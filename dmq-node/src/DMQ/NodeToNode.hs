@@ -276,7 +276,6 @@ ntnApps
                     (if sigSubmissionInboundTracer
                        then WithEventType "SigSubmissionV2.Inbound" . Mx.WithBearer connId >$< tracer
                        else nullTracer)
-                    _SIG_SUBMISSION_INIT_DELAY
                     mempoolWriter
                     peerSigAPI
                     controlMessage

@@ -73,9 +73,9 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
+import Ouroboros.Network.TxSubmission.Inbound.V2 (TxDecisionPolicy (..))
 
 import DMQ.Configuration.Topology (NoExtraConfig (..), NoExtraFlags (..))
-import Ouroboros.Network.TxSubmission.Inbound.V2 (TxDecisionPolicy(..))
 
 -- | Configuration comes in two flavours depending on the `f` functor:
 -- `PartialConfig` is using `Last` and `Configuration` is using an identity
