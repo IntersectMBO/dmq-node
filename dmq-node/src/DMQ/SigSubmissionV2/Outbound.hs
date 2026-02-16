@@ -97,10 +97,10 @@ sigSubmissionOutbound
   -> version
   -> SigSubmissionOutbound sigId sig m ()
 sigSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version =
-    SigSubmissionOutbound (pure (client Seq.empty mempoolZeroIdx))
+    SigSubmissionOutbound (pure (server Seq.empty mempoolZeroIdx))
   where
-    client :: StrictSeq (sigId, idx) -> idx -> OutboundStIdle sigId sig m ()
-    client !unackedSeq !lastIdx =
+    server :: StrictSeq (sigId, idx) -> idx -> OutboundStIdle sigId sig m ()
+    server !unackedSeq !lastIdx =
         OutboundStIdle { recvMsgRequestSigIds, recvMsgRequestSigs, recvMsgDone }
       where
         recvMsgDone :: m ()
@@ -133,12 +133,12 @@ sigSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version =
                   let !unackedSeq'' = unackedSeq' <> Seq.fromList
                                         [ (sigId, idx) | (sigId, idx, _) <- sigs ]
                       !lastIdx'
-                        | null sigs  = lastIdx
+                        | null sigs = lastIdx
                         | otherwise = idx where (_, idx, _) = last sigs
-                      sigs'         :: [(sigId, SizeInBytes)]
-                      sigs'          = [ (sigId, size) | (sigId, _, size) <- sigs ]
-                      client'       = client unackedSeq'' lastIdx'
-                  in  (sigs', client')
+                      sigs'        :: [(sigId, SizeInBytes)]
+                      sigs'         = [ (sigId, size) | (sigId, _, size) <- sigs ]
+                      server'       = server unackedSeq'' lastIdx'
+                  in  (sigs', server')
 
           -- Grab info about any new sigs after the last sig idx we've seen,
           -- up to the number that the peer has requested.
@@ -156,13 +156,13 @@ sigSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version =
                   check (not $ null sigs)
                   pure (take (fromIntegral reqNo) sigs)
 
-              let !(sigs', client') = update sigs
+              let !(sigs', server') = update sigs
                   sigs'' = case NonEmpty.nonEmpty sigs' of
                     Just x -> x
                     -- Assert sigs is non-empty: we blocked until sigs was non-null,
                     -- and we know reqNo > 0, hence `take reqNo sigs` is non-null.
                     Nothing -> error "sigSubmissionOutbound: empty signature list"
-              pure (SendMsgReplySigIds (BlockingReply sigs'') client')
+              pure (SendMsgReplySigIds (BlockingReply sigs'') server')
 
             SingNonBlocking -> do
               when (reqNo == 0 && ackNo == 0) $
@@ -175,8 +175,8 @@ sigSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version =
                 let sigs = mempoolTxIdsAfter lastIdx
                 return (take (fromIntegral reqNo) sigs)
 
-              let !(sigs', client') = update sigs
-              pure (SendMsgReplySigIds (NonBlockingReply sigs') client')
+              let !(sigs', server') = update sigs
+              pure (SendMsgReplySigIds (NonBlockingReply sigs') server')
 
         recvMsgRequestSigs :: [sigId]
                           -> m (OutboundStSigs sigId sig m ())
@@ -196,10 +196,10 @@ sigSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version =
           -- The 'mempoolLookupTx' will return nothing if the signature is no
           -- longer in the mempool. This is good. Neither the sending nor
           -- receiving side wants to forward sigs that are no longer of interest.
-          let sigs          = mapMaybe mempoolLookupTx sigIdxs'
-              client'      = client unackedSeq lastIdx
+          let sigs    = mapMaybe mempoolLookupTx sigIdxs'
+              server' = server unackedSeq lastIdx
 
           -- Trace the sigs to be sent in the response.
           traceWith tracer (TraceSigSubmissionOutboundSendMsgReplySigs sigs)
 
-          return $ SendMsgReplySigs sigs client'
+          return $ SendMsgReplySigs sigs server'

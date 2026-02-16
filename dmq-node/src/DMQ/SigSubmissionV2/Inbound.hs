@@ -19,25 +19,21 @@ import Control.Exception (assert)
 import Control.Monad (unless, when)
 import Control.Monad.Class.MonadAsync (MonadAsync (..))
 import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer, traceWith)
 import Network.TypedProtocol
 
 import Ouroboros.Network.ControlMessage (ControlMessageSTM,
            timeoutWithControlMessage)
-
-import Ouroboros.Network.TxSubmission.Inbound.V2.Types
-           (TxSubmissionMempoolWriter (..))
-
-import DMQ.Protocol.SigSubmissionV2.Inbound
-
-import DMQ.Protocol.SigSubmissionV2.Type (NumIdsAck (NumIdsAck), NumIdsReq (..))
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..),
            NumTxIdsToReq (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2 (PeerTxAPI (..),
            TraceTxSubmissionInbound (..), TxDecision (..),
-           TxSubmissionInitDelay (..), TxSubmissionProtocolError (..),
-           TxsToMempool (..))
+           TxSubmissionProtocolError (..), TxsToMempool (..))
+import Ouroboros.Network.TxSubmission.Inbound.V2.Types
+           (TxSubmissionMempoolWriter (..))
+
+import DMQ.Protocol.SigSubmissionV2.Inbound
+import DMQ.Protocol.SigSubmissionV2.Type (NumIdsAck (NumIdsAck), NumIdsReq (..))
 
 -- | A sig-submission inbound side (client, sic!).
 --
@@ -48,20 +44,17 @@ import Ouroboros.Network.TxSubmission.Inbound.V2 (PeerTxAPI (..),
 --
 sigSubmissionInbound
   :: forall sigid sig idx m failure.
-     ( MonadDelay m
-     , MonadThrow m
+     ( MonadThrow m
      , MonadAsync m
      , Ord sigid
      )
   => Tracer m (TraceTxSubmissionInbound sigid sig)
-  -> TxSubmissionInitDelay
   -> TxSubmissionMempoolWriter sigid sig idx m failure
   -> PeerTxAPI m sigid sig
   -> ControlMessageSTM m
   -> SigSubmissionInboundPipelined sigid sig m ()
 sigSubmissionInbound
     tracer
-    initDelay
     TxSubmissionMempoolWriter { txId }
     PeerTxAPI {
       readTxDecision,
@@ -71,11 +64,7 @@ sigSubmissionInbound
     }
     controlMessageSTM
     =
-      SigSubmissionInboundPipelined $ do
-        case initDelay of
-          TxSubmissionInitDelay delay -> threadDelay delay
-          NoTxSubmissionInitDelay     -> return ()
-        inboundIdle
+      SigSubmissionInboundPipelined inboundIdle
   where
     inboundIdle
       :: m (InboundStIdle Z sigid sig m ())
@@ -107,29 +96,29 @@ sigSubmissionInbound
                      -- We can update the state so that other `sig-submission` servers will
                      -- not try to add these sigs to the mempool.
                      if Map.null sigsToRequest
-                       then serverReqSigIds Zero sigd
-                       else serverReqSigs sigd
+                       then clientReqSigIds Zero sigd
+                       else clientReqSigs sigd
 
 
     -- Pipelined request of sigs
-    serverReqSigs :: TxDecision sigid sig
+    clientReqSigs :: TxDecision sigid sig
                  -> m (InboundStIdle Z sigid sig m ())
-    serverReqSigs sigd@TxDecision { txdTxsToRequest = sigdSigsToRequest } =
+    clientReqSigs sigd@TxDecision { txdTxsToRequest = sigdSigsToRequest } =
       pure $ SendMsgRequestSigsPipelined sigdSigsToRequest
-                                         (serverReqSigIds (Succ Zero) sigd)
+                                         (clientReqSigIds (Succ Zero) sigd)
 
-    serverReqSigIds :: forall (n :: N).
+    clientReqSigIds :: forall (n :: N).
                       Nat n
                    -> TxDecision sigid sig
                    -> m (InboundStIdle n sigid sig m ())
-    serverReqSigIds
+    clientReqSigIds
       n TxDecision { txdTxIdsToRequest = 0 }
       =
       case n of
         Zero   -> inboundIdle
         Succ _ -> handleReplies n
 
-    serverReqSigIds
+    clientReqSigIds
       -- if there are no unacknowledged sigids, the protocol requires sending
       -- a blocking `MsgRequestSigIds` request.  This is important, as otherwise
       -- the client side wouldn't have a chance to terminate the
@@ -151,7 +140,7 @@ sigSubmissionInbound
                    inboundIdle
                 )
 
-    serverReqSigIds
+    clientReqSigIds
       n@Zero TxDecision { txdTxIdsToAcknowledge = sigIdsToAck,
                           txdPipelineTxIds      = True,
                           txdTxIdsToRequest     = sigIdsToReq
@@ -162,7 +151,7 @@ sigSubmissionInbound
                 (NumIdsReq . getNumTxIdsToReq $ sigIdsToReq)
                 (handleReplies (Succ n))
 
-    serverReqSigIds
+    clientReqSigIds
       n@Succ{} TxDecision { txdTxIdsToAcknowledge = sigIdsToAck,
                             txdPipelineTxIds,
                             txdTxIdsToRequest     = sigIdsToReq
