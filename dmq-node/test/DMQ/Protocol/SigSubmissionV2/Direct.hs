@@ -31,9 +31,9 @@ directPipelined (SigSubmissionOutbound mOutbound)
     directSender EmptyQ inbound outbound
   where
     directSender :: forall (n :: N).
-                    Queue          n (Collect sigId sig)
+                    Queue         n (Collect sigId sig)
                  -> InboundStIdle n sigId sig m a
-                 -> OutboundStIdle    sigId sig m a
+                 -> OutboundStIdle  sigId sig m a
                  -> m a
     directSender q (SendMsgRequestSigIdsBlocking ackNo reqNo inboundNext)
                    OutboundStIdle{recvMsgRequestSigIds} = do
