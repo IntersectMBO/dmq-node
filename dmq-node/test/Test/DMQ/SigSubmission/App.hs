@@ -160,8 +160,8 @@ prop_sigSubmissionV2 st@(SigSubmissionState peers _) =
 
 
 sigSubmissionSimulation :: forall s . SigSubmissionState
-                       -> IOSim s ([Tx TxId], [[Tx TxId]])
-                       -- ^ inbound & outbound mempools
+                        -> IOSim s ([Tx TxId], [[Tx TxId]])
+                        -- ^ inbound & outbound mempools
 sigSubmissionSimulation (SigSubmissionState state sigDecisionPolicy) = do
   state' <- traverse (\(sigs, mbOutDelay, mbInDelay) -> do
                       let mbOutDelayTime = getSmallDelay . getPositive <$> mbOutDelay
