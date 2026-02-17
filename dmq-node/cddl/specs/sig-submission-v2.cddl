@@ -8,7 +8,7 @@
 sigSubmissionV2Message
     =
     ; corresponds to either MsgRequestSigIdsBlocking or
-    ; MsgRequestSigIdsNonBlocking in the spec
+    ; MsgRequestSigIdsNonBlocking in the Haskell implementation
       msgRequestSigIds
     / msgReplySigIds
     / msgReplyNoSigIds
