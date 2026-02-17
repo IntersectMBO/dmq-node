@@ -89,6 +89,7 @@ library
     DMQ.Protocol.SigSubmissionV2.Type
     DMQ.SigSubmissionV2.Inbound
     DMQ.SigSubmissionV2.Outbound
+    DMQ.SigSubmissionV2.Types
     DMQ.Tracer
 
   build-depends:

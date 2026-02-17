@@ -8,7 +8,6 @@
 module DMQ.SigSubmissionV2.Outbound
   ( sigSubmissionOutbound
   , TraceSigSubmissionOutbound (..)
-  , SigSubmissionProtocolError (..)
   ) where
 
 import Data.Aeson (ToJSON (toJSON), Value (String), object, KeyValue ((.=)))
@@ -17,7 +16,6 @@ import Data.List.NonEmpty qualified as NonEmpty
 import Data.Maybe (catMaybes, isNothing, mapMaybe)
 import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as Seq
-import Data.Word (Word16)
 
 import Control.Exception (assert)
 import Control.Monad (unless, when)
@@ -30,6 +28,7 @@ import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
  
 import DMQ.Protocol.SigSubmissionV2.Outbound
 import DMQ.Protocol.SigSubmissionV2.Type
+import DMQ.SigSubmissionV2.Types
 
 
 data TraceSigSubmissionOutbound sigId sig
@@ -53,40 +52,6 @@ instance (ToJSON sigId, ToJSON sig)
       [ "kind" .= String "SigSubmissionOutboundSendMsgReplySigs"
       , "sigs"  .= sigs
       ]
-
-data SigSubmissionProtocolError =
-       ProtocolErrorAckedTooManySigIds
-     | ProtocolErrorRequestedNothing
-     | ProtocolErrorRequestedTooManySigIds NumIdsReq Word16 NumIdsAck
-     | ProtocolErrorRequestBlocking
-     | ProtocolErrorRequestNonBlocking
-     | ProtocolErrorRequestedUnavailableSig
-  deriving Show
-
-instance Exception SigSubmissionProtocolError where
-  displayException ProtocolErrorAckedTooManySigIds =
-      "The peer tried to acknowledged more sigIds than are available to do so."
-
-  displayException (ProtocolErrorRequestedTooManySigIds reqNo unackedNo maxUnacked) =
-      "The peer requested " ++ show reqNo ++ " sigIds which would put the "
-   ++ "total in flight over the limit of " ++ show maxUnacked ++ "."
-   ++ " Number of unacked sigIds " ++ show unackedNo
-
-  displayException ProtocolErrorRequestedNothing =
-      "The peer requested zero sigIds."
-
-  displayException ProtocolErrorRequestBlocking =
-      "The peer made a blocking request for more sigIds when there are still "
-   ++ "unacknowledged sigIds. It should have used a non-blocking request."
-
-  displayException ProtocolErrorRequestNonBlocking =
-      "The peer made a non-blocking request for more sigIds when there are "
-   ++ "no unacknowledged sigIds. It should have used a blocking request."
-
-  displayException ProtocolErrorRequestedUnavailableSig =
-      "The peer requested a signature which is not available, either "
-   ++ "because it was never available or because it was previously requested."
-
 
 sigSubmissionOutbound
   :: forall version sigId sig idx m.
