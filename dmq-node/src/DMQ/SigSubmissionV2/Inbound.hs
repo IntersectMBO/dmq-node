@@ -20,6 +20,7 @@ import Control.Monad (unless, when)
 import Control.Monad.Class.MonadAsync (MonadAsync (..))
 import Control.Monad.Class.MonadThrow
 import Control.Tracer (Tracer, traceWith)
+
 import Network.TypedProtocol
 
 import Ouroboros.Network.ControlMessage (ControlMessageSTM,
@@ -27,13 +28,14 @@ import Ouroboros.Network.ControlMessage (ControlMessageSTM,
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..),
            NumTxIdsToReq (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2 (PeerTxAPI (..),
-           TraceTxSubmissionInbound (..), TxDecision (..),
-           TxSubmissionProtocolError (..), TxsToMempool (..))
+           TraceTxSubmissionInbound (..), TxDecision (..), TxsToMempool (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
            (TxSubmissionMempoolWriter (..))
 
 import DMQ.Protocol.SigSubmissionV2.Inbound
 import DMQ.Protocol.SigSubmissionV2.Type (NumIdsAck (NumIdsAck), NumIdsReq (..))
+import DMQ.SigSubmissionV2.Types
+
 
 -- | A sig-submission inbound side (client, sic!).
 --
@@ -135,7 +137,7 @@ sigSubmissionInbound
                    let sigidsSeq = StrictSeq.fromList $ fst <$> sigids
                        sigidsMap = Map.fromList sigids
                    unless (StrictSeq.length sigidsSeq <= fromIntegral sigIdsToReq) $
-                     throwIO ProtocolErrorTxIdsNotRequested
+                     throwIO ProtocolErrorSigIdsNotRequested
                    handleReceivedTxIds sigIdsToReq sigidsSeq sigidsMap
                    inboundIdle
                 )
@@ -189,7 +191,7 @@ sigSubmissionInbound
         let sigidsSeq = StrictSeq.fromList $ fst <$> sigids
             sigidsMap = Map.fromList sigids
         unless (StrictSeq.length sigidsSeq <= fromIntegral sigIdsToReq) $
-          throwIO ProtocolErrorTxIdsNotRequested
+          throwIO ProtocolErrorSigIdsNotRequested
         handleReceivedTxIds (NumTxIdsToReq . getNumIdsReq $ sigIdsToReq) sigidsSeq sigidsMap
         k
       CollectSigs sigids sigs -> do
@@ -197,7 +199,7 @@ sigSubmissionInbound
             received  = Map.fromList [ (txId sig, sig) | sig <- sigs ]
 
         unless (Map.keysSet received `Set.isSubsetOf` requested) $
-          throwIO ProtocolErrorTxNotRequested
+          throwIO ProtocolErrorSigNotRequested
 
         mbe <- handleReceivedTxs sigids received
         traceWith tracer $ TraceTxSubmissionCollected (txId `map` sigs)
