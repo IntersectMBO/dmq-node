@@ -169,8 +169,8 @@ sigSubmissionInbound
 
 
     handleReplies :: forall (n :: N).
-                   Nat (S n)
-                -> m (InboundStIdle (S n) sigid sig m ())
+                     Nat (S n)
+                  -> m (InboundStIdle (S n) sigid sig m ())
     handleReplies (Succ n'@Succ{}) =
       pure $ CollectPipelined
                 Nothing
