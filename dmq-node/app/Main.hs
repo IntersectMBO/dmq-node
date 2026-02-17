@@ -34,7 +34,6 @@ import System.IOManager (withIOManager)
 
 import Cardano.Git.Rev (gitRev)
 import Cardano.KESAgent.Protocols.StandardCrypto (StandardCrypto)
-import Cardano.Network.NodeToNode (NodeToNodeVersion)
 
 import DMQ.Configuration
 import DMQ.Configuration.CLIOptions (parseCLIOptions)
@@ -44,7 +43,8 @@ import DMQ.Diffusion.Arguments
 import DMQ.Diffusion.NodeKernel
 import DMQ.Handlers.TopLevel (toplevelExceptionHandler)
 import DMQ.NodeToClient qualified as NtC
-import DMQ.NodeToNode (dmqCodecs, dmqLimitsAndTimeouts, ntnApps)
+import DMQ.NodeToNode (NodeToNodeVersion, dmqCodecs, dmqLimitsAndTimeouts,
+           ntnApps)
 import DMQ.Protocol.SigSubmission.Type (Sig (..))
 import DMQ.Tracer
 
@@ -176,8 +176,8 @@ runDMQ commandLineConfig = do
                           (dmqCodecs
                              -- TODO: `maxBound :: Cardano.Network.NodeToNode.NodeToNodeVersion`
                              -- is unsafe here!
-                             (encodeRemoteAddress (maxBound @Cardano.Network.NodeToNode.NodeToNodeVersion))
-                             (decodeRemoteAddress (maxBound @Cardano.Network.NodeToNode.NodeToNodeVersion)))
+                             (encodeRemoteAddress (maxBound @NodeToNodeVersion))
+                             (decodeRemoteAddress (maxBound @NodeToNodeVersion)))
                           dmqLimitsAndTimeouts
                           defaultSigDecisionPolicy
             ntcValidationTracer = if validationTracer

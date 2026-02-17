@@ -156,7 +156,6 @@ executable dmq-node
     aeson,
     base,
     bytestring,
-    cardano-diffusion,
     cardano-git-rev,
     contra-tracer >=0.1 && <0.3,
     dmq-node,
