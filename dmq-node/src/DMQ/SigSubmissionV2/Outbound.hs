@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -17,10 +18,12 @@ import Data.Maybe (catMaybes, isNothing, mapMaybe)
 import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as Seq
 
+import Control.Concurrent.Class.MonadSTM (MonadSTM(..))
 import Control.Exception (assert)
 import Control.Monad (unless, when)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTimer (MonadTimer(registerDelay))
 import Control.Tracer (Tracer (..), traceWith)
 
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
@@ -55,7 +58,7 @@ instance (ToJSON sigId, ToJSON sig)
 
 sigSubmissionOutbound
   :: forall version sigId sig idx m.
-     (Ord sigId, Ord idx, MonadSTM m, MonadThrow m)
+     (Ord sigId, Ord idx, MonadTimer m, MonadThrow m)
   => Tracer m (TraceSigSubmissionOutbound sigId sig)
   -> NumIdsAck  -- ^ Maximum number of unacknowledged sigIds allowed
   -> TxSubmissionMempoolReader sigId sig idx m
@@ -114,20 +117,27 @@ sigSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version =
               unless (Seq.null unackedSeq') $
                 throwIO ProtocolErrorRequestBlocking
 
-              sigs <- atomically $
-                do
+              let
+                timeout timer = do
+                  readTVar timer >>= check
+                  let !(_, server') = update []
+                  pure (SendMsgReplyNoSigIds server')
+
+                sigIds  = do
                   MempoolSnapshot{mempoolTxIdsAfter} <- mempoolGetSnapshot
                   let sigs = mempoolTxIdsAfter lastIdx
                   check (not $ null sigs)
-                  pure (take (fromIntegral reqNo) sigs)
+                  let !(sigs', server') = update (take (fromIntegral reqNo) sigs)
+                      sigs'' = case NonEmpty.nonEmpty sigs' of
+                        Just x -> x
+                        -- Assert sigs is non-empty: we blocked until sigs was non-null,
+                        -- and we know reqNo > 0, hence `take reqNo sigs` is non-null.
+                        Nothing -> error "sigSubmissionOutbound: empty signature list"
+                  pure (SendMsgReplySigIds (BlockingReply sigs'') server')
 
-              let !(sigs', server') = update sigs
-                  sigs'' = case NonEmpty.nonEmpty sigs' of
-                    Just x -> x
-                    -- Assert sigs is non-empty: we blocked until sigs was non-null,
-                    -- and we know reqNo > 0, hence `take reqNo sigs` is non-null.
-                    Nothing -> error "sigSubmissionOutbound: empty signature list"
-              pure (SendMsgReplySigIds (BlockingReply sigs'') server')
+              -- Timeout is 2 seconds less than the protocol timeout for blocking
+              timerExpired <- registerDelay 17_000_000
+              atomically $ timeout timerExpired `orElse` sigIds
 
             SingNonBlocking -> do
               when (reqNo == 0 && ackNo == 0) $

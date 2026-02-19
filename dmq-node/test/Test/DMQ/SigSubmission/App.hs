@@ -195,7 +195,7 @@ sigSubmissionSimulation (SigSubmissionState state sigDecisionPolicy) = do
                         <$> Map.elems state'
 
   withAsync
-    (do threadDelay (simDelayTime + 1000)
+    (do threadDelay (simDelayTime + 1100)
         atomically (traverse_ (`writeTVar` Terminate) controlMessageVars)
     ) \_ -> do
       let tracer :: forall a. (Show a, Typeable a) => Tracer (IOSim s) a
@@ -281,23 +281,23 @@ runSigSubmissionV2 tracer tracerSigLogic st0 sigDecisionPolicy = do
 
     withAsync (decisionLogicThreads tracerSigLogic sayTracer
                                     sigDecisionPolicy sigChannelsVar sharedSigStateVar) $ \a -> do
-      let servers = (\(addr, (mempool, _, _, inDelay, _, inChannel)) -> do
-                      let server = sigSubmissionOutbound
-                                     (Tracer $ say . show)
-                                     (NumIdsAck $ getNumTxIdsToReq $ maxUnacknowledgedTxIds sigDecisionPolicy)
-                                     (getMempoolReader mempool)
-                                     (maxBound :: TestVersion)
+      let outbounds = (\(addr, (mempool, _, outDelay, _, outChannel, _)) -> do
+                      let outbound = sigSubmissionOutbound
+                                       (Tracer $ say . show)
+                                       (NumIdsAck $ getNumTxIdsToReq $ maxUnacknowledgedTxIds sigDecisionPolicy)
+                                       (getMempoolReader mempool)
+                                       (maxBound :: TestVersion)
                       runPeerWithLimits
                         (("OUTBOUND " ++ show addr,) `contramap` tracer)
                         sigSubmissionCodec2
                         (byteLimitsSigSubmissionV2 (fromIntegral . BSL.length))
                         timeLimitsSigSubmissionV2
-                        (maybe id delayChannel inDelay inChannel)
-                        (sigSubmissionV2OutboundPeer server)
+                        (maybe id delayChannel outDelay outChannel)
+                        (sigSubmissionV2OutboundPeer outbound)
                     )
                    <$> Map.assocs st
 
-      let clients = (\(addr, (_, ctrlMsgSTM, outDelay, _, outChannel, _)) -> do
+      let inbounds = (\(addr, (_, ctrlMsgSTM, _, inDelay, _, inChannel)) -> do
                        withPeer tracerSigLogic
                                 sigChannelsVar
                                 sigMempoolSem
@@ -307,23 +307,23 @@ runSigSubmissionV2 tracer tracerSigLogic st0 sigDecisionPolicy = do
                                 (getMempoolWriter inboundMempool)
                                 getTxSize
                                 addr $ \(api :: PeerTxAPI m TxId (Tx TxId))-> do
-                                  let client = sigSubmissionInbound
-                                                 verboseTracer
-                                                 (getMempoolWriter inboundMempool)
-                                                 api
-                                                 ctrlMsgSTM
+                                  let inbound = sigSubmissionInbound
+                                                  verboseTracer
+                                                  (getMempoolWriter inboundMempool)
+                                                  api
+                                                  ctrlMsgSTM
                                   runPipelinedPeerWithLimits
                                     (("INBOUND " ++ show addr,) `contramap` verboseTracer)
                                     sigSubmissionCodec2
                                     (byteLimitsSigSubmissionV2 (fromIntegral . BSL.length))
                                     timeLimitsSigSubmissionV2
-                                    (maybe id delayChannel outDelay outChannel)
-                                    (sigSubmissionV2InboundPeerPipelined client)
+                                    (maybe id delayChannel inDelay inChannel)
+                                    (sigSubmissionV2InboundPeerPipelined inbound)
                     ) <$> Map.assocs st
 
-      -- Run clients and servers
-      withAsyncAll (zip clients servers) $ \as -> do
-        _ <- waitAllClients as
+      -- Run servers
+      withAsyncAll (zip inbounds outbounds) $ \as -> do
+        _ <- waitAllServers as
         -- cancel decision logic thread
         cancel a
 
@@ -333,13 +333,13 @@ runSigSubmissionV2 tracer tracerSigLogic st0 sigDecisionPolicy = do
 
         return (inmp, outmp)
   where
-    waitAllClients :: [(Async m x, Async m x)] -> m [Either SomeException x]
-    waitAllClients [] = return []
-    waitAllClients ((client, server):as) = do
-      r <- waitCatch client
+    waitAllServers :: [(Async m x, Async m x)] -> m [Either SomeException x]
+    waitAllServers [] = return []
+    waitAllServers ((inbound, outbound):as) = do
+      r <- waitCatch inbound
       -- cancel server as soon as the client exits
-      cancel server
-      rs <- waitAllClients as
+      cancel outbound
+      rs <- waitAllServers as
       return (r : rs)
 
     withAsyncAll :: [(m a, m a)]
