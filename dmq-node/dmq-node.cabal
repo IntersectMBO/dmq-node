@@ -83,6 +83,13 @@ library
     DMQ.Protocol.SigSubmission.Codec
     DMQ.Protocol.SigSubmission.Type
     DMQ.Protocol.SigSubmission.Validate
+    DMQ.Protocol.SigSubmissionV2.Codec
+    DMQ.Protocol.SigSubmissionV2.Inbound
+    DMQ.Protocol.SigSubmissionV2.Outbound
+    DMQ.Protocol.SigSubmissionV2.Type
+    DMQ.SigSubmissionV2.Inbound
+    DMQ.SigSubmissionV2.Outbound
+    DMQ.SigSubmissionV2.Types
     DMQ.Tracer
 
   build-depends:
@@ -101,6 +108,7 @@ library
     cardano-ledger-core,
     cardano-ledger-shelley,
     cardano-slotting,
+    cardano-strict-containers,
     cborg >=0.2.1 && <0.3,
     containers >=0.5 && <0.8,
     contra-tracer >=0.1 && <0.3,
@@ -114,11 +122,13 @@ library
     mtl,
     network ^>=3.2.7,
     network-mux ^>=0.9.1,
+    nothunks,
     optparse-applicative >=0.18 && <0.20,
     ouroboros-consensus,
     ouroboros-consensus-cardano,
     ouroboros-consensus-diffusion,
     ouroboros-network:{ouroboros-network, api, framework, orphan-instances, protocols} ^>=0.23,
+    quiet,
     random ^>=1.2,
     singletons,
     text >=1.2.4 && <2.2,
@@ -171,8 +181,13 @@ test-suite dmq-tests
     DMQ.Protocol.LocalMsgNotification.Test
     DMQ.Protocol.LocalMsgSubmission.Test
     DMQ.Protocol.SigSubmission.Test
+    DMQ.Protocol.SigSubmissionV2.Codec.CDDL
+    DMQ.Protocol.SigSubmissionV2.Direct
+    DMQ.Protocol.SigSubmissionV2.Test
     Test.DMQ.NodeToClient
     Test.DMQ.NodeToNode
+    Test.DMQ.SigSubmission.App
+    Test.DMQ.SigSubmission.Types
 
   type: exitcode-stdio-1.0
   hs-source-dirs: test
@@ -188,12 +203,14 @@ test-suite dmq-tests
     containers,
     contra-tracer,
     dmq-node,
-    io-classes:{io-classes, si-timers},
+    hashable,
+    io-classes:{io-classes, si-timers, strict-mvar, strict-stm},
     io-sim,
     kes-agent-crypto,
     ouroboros-consensus-cardano,
-    ouroboros-network:{api, framework, protocols, protocols-tests-lib, tests-lib},
+    ouroboros-network:{ouroboros-network, api, framework, ouroboros-network-tests-lib, protocols, protocols-tests-lib, tests-lib},
     quickcheck-instances,
+    random,
     serialise,
     tasty,
     tasty-quickcheck,
@@ -218,8 +235,14 @@ test-suite dmq-cddl
     extensions
 
   type: exitcode-stdio-1.0
-  hs-source-dirs: cddl
+  hs-source-dirs:
+    cddl
+    test
+
   main-is: Main.hs
+  other-modules:
+    DMQ.Protocol.SigSubmissionV2.Codec.CDDL
+    DMQ.Protocol.SigSubmissionV2.Test
 
   if flag(cddl)
     buildable: True
@@ -228,6 +251,7 @@ test-suite dmq-cddl
 
   default-language: Haskell2010
   build-depends:
+    QuickCheck,
     base >=4.14 && <4.23,
     base16-bytestring,
     bytestring,
@@ -235,8 +259,10 @@ test-suite dmq-cddl
     directory,
     dmq-node,
     filepath,
+    io-classes,
     kes-agent-crypto,
     mtl,
+    ouroboros-network:{api, protocols-tests-lib, tests-lib},
     process-extras,
     quickcheck-instances,
     serialise,
@@ -244,7 +270,7 @@ test-suite dmq-cddl
     tasty-hunit,
     tasty-quickcheck,
     temporary,
-    typed-protocols,
+    typed-protocols:{typed-protocols, codec-properties},
 
   ghc-options:
     -threaded

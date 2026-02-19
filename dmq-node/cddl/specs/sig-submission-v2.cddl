@@ -1,0 +1,31 @@
+;
+; SigSubmission v2 mini-protocol
+;
+
+; reference implementation of the codec in:
+; dmq-node/src/DMQ/Protocol/SigSubmission/V2/Codec.hs
+
+sigSubmissionV2Message
+    =
+    ; corresponds to either MsgRequestSigIdsBlocking or
+    ; MsgRequestSigIdsNonBlocking in the Haskell implementation
+      msgRequestSigIds
+    / msgReplySigIds
+    / msgReplyNoSigIds
+    / msgRequestSigs
+    / msgReplySigs
+    / msgDone
+
+
+msgRequestSigIds = [1, blocking, sigCount, sigCount]
+msgReplySigIds   = [2, [*messageTuple] ]
+msgReplyNoSigIds = [3]
+msgRequestSigs   = [4, [*sig.messageId] ]
+msgReplySigs     = [5, [*sig.message] ]
+msgDone          = [6]
+
+blocking         = false / true
+sigCount         = sig.word16
+messageTuple     = [sig.messageId, sig.messageSize]
+
+;# import sig as sig
