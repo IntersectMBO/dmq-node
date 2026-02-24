@@ -29,7 +29,7 @@ import Data.Version (showVersion)
 import Data.Void (Void)
 import Options.Applicative
 import System.Exit (exitSuccess)
-import System.Random (newStdGen, split)
+import System.Random qualified as Random
 import System.IOManager (withIOManager)
 
 import Cardano.Git.Rev (gitRev)
@@ -122,8 +122,8 @@ runDMQ commandLineConfig = do
     nt <- readTopologyFileOrError topologyFile
     traceWith tracer (WithEventType "NetworkTopology" nt)
 
-    stdGen <- newStdGen
-    let (psRng, policyRng) = split stdGen
+    stdGen <- Random.newStdGen
+    let (psRng, policyRng) = Random.splitGen stdGen
     policyRngVar <- newTVarIO policyRng
 
     -- TODO: this might not work, since `ouroboros-network` creates its own IO Completion Port.

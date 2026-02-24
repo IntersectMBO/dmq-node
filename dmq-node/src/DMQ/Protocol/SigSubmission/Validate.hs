@@ -34,12 +34,12 @@ import Cardano.Crypto.DSIGN.Class qualified as DSIGN
 import Cardano.Crypto.KES.Class (KESAlgorithm (..))
 import Cardano.KESAgent.KES.Crypto as KES
 import Cardano.KESAgent.KES.OCert (OCert (..), OCertSignable, validateOCert)
+import Cardano.Ledger.Api.State.Query (StakeSnapshot (..))
 import Cardano.Ledger.BaseTypes.NonZero qualified as Ledger
 import Cardano.Ledger.Keys qualified as Ledger
 
 import DMQ.Diffusion.NodeKernel (PoolValidationCtx (..))
 import DMQ.Protocol.SigSubmission.Type
-import Ouroboros.Consensus.Shelley.Ledger.Query
 import Ouroboros.Network.Util.ShowProxy
 
 

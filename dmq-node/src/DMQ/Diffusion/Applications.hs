@@ -30,7 +30,7 @@ diffusionApplications
   -> PeerSelectionPolicy ntnAddr m
   -> Diffusion.Applications ntnAddr NodeToNodeVersion   NodeToNodeVersionData
                             ntcAddr NodeToClientVersion NodeToClientVersionData
-                            m a
+                            NoExtraFlags m a
 diffusionApplications
   NodeKernel {
     peerSharingRegistry

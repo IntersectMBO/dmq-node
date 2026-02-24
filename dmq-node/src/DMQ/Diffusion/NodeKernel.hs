@@ -6,6 +6,7 @@ module DMQ.Diffusion.NodeKernel
   , withNodeKernel
   , PoolValidationCtx (..)
   , StakePools (..)
+  , SomeLedgerPeerSnapshot
   , PoolId
   ) where
 
@@ -35,12 +36,13 @@ import System.Random (StdGen)
 import System.Random qualified as Random
 
 import Cardano.Ledger.Shelley.API qualified as Ledger
-import Ouroboros.Consensus.Shelley.Ledger.Query qualified as LedgerQuery
+import Cardano.Ledger.Api.State.Query qualified as LedgerQuery
 
 import Ouroboros.Network.BlockFetch (FetchClientRegistry,
            newFetchClientRegistry)
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.Magic (NetworkMagic (..))
+import Ouroboros.Network.PeerSelection.LedgerPeers (SomeLedgerPeerSnapshot)
 import Ouroboros.Network.PeerSelection.Governor.Types
            (makePublicPeerSelectionStateVar)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
@@ -124,7 +126,7 @@ newNodeKernel rng = do
   mempool <- Mempool.empty
   sigChannelVar <- newTxChannelsVar
   sigMempoolSem <- newTxMempoolSem
-  let (rng', rng'') = Random.split rng
+  let (rng', rng'') = Random.splitGen rng
   sigSharedTxStateVar <- newSharedTxStateVar rng'
   (nextEpochVar, ocertCountersVar, stakePoolsVar, ledgerBigPeersVar, ledgerPeersVar) <- atomically $
     (,,,,) <$> newTVar Nothing

@@ -1,8 +1,9 @@
-{-# LANGUAGE DeriveAnyClass    #-}
-{-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE NamedFieldPuns    #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveAnyClass     #-}
+{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE LambdaCase         #-}
+{-# LANGUAGE NamedFieldPuns     #-}
+{-# LANGUAGE OverloadedStrings  #-}
 
 module DMQ.NodeToClient.Version
   ( NodeToClientVersion (..)
@@ -77,7 +78,8 @@ data NodeToClientVersionData = NodeToClientVersionData
   { networkMagic :: !NetworkMagic
   , query        :: !Bool
   }
-  deriving (Eq, Show)
+  deriving stock    (Eq, Show, Generic)
+  deriving anyclass NFData
 
 instance Aeson.ToJSON NodeToClientVersionData where
   toJSON NodeToClientVersionData {
