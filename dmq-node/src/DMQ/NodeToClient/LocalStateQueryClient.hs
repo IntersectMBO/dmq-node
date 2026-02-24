@@ -22,6 +22,7 @@ import Data.Proxy
 import Data.Void
 
 import Cardano.Chain.Slotting (EpochSlots(..))
+import Cardano.Ledger.Api.State.Query (StakeSnapshots (..))
 import Cardano.Network.NodeToClient
 import Cardano.Slotting.EpochInfo.API
 import Cardano.Slotting.Slot (EpochNo)

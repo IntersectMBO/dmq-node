@@ -6,7 +6,7 @@ import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Word (Word32)
 import Ouroboros.Network.PeerSelection
-import System.Random (Random (..), StdGen, split)
+import System.Random (Random (..), StdGen, splitGen)
 
 -- | Trivial peer selection policy used as dummy value
 --
@@ -32,7 +32,9 @@ policy rngVar =
     policyPeerShareRetryTime         = 0, -- seconds
     policyPeerShareBatchWaitTime     = 0, -- seconds
     policyPeerShareOverallTimeout    = 0, -- seconds
-    policyPeerShareActivationDelay   = 2 -- seconds
+    policyPeerShareActivationDelay   = 2, -- seconds
+    policyMaxConnectionRetries       = 5,
+    policyClearFailCountDelay        = 120   -- seconds
   }
   where
     hotDemotionPolicy :: PickPolicy peerAddr (STM m)
@@ -108,7 +110,7 @@ addRand :: ( MonadSTM m
 addRand rngVar available scaleFn = do
   inRng <- readTVar rngVar
 
-  let (rng, rng') = split inRng
+  let (rng, rng') = splitGen inRng
       rns = take (Set.size available) $ unfoldr (Just . random)  rng :: [Word32]
       available' = Map.fromList $ zipWith scaleFn (Set.toList available) rns
   writeTVar rngVar rng'

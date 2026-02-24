@@ -186,9 +186,7 @@ dmqDiffusionTracers
       dmqcTracePublicRootPeersTracer                 = I tracePublicRootPeersTracer,
       dmqcTraceLedgerPeersTracer                     = I traceLedgerPeersTracer,
       dmqcTracePeerSelectionTracer                   = I tracePeerSelectionTracer,
-      dmqcTraceChurnCounters                         = I traceChurnCounters,
-      dmqcDebugPeerSelectionInitiatorTracer          = I debugPeerSelectionInitiatorTracer,
-      dmqcDebugPeerSelectionInitiatorResponderTracer = I debugPeerSelectionInitiatorResponderTracer,
+      dmqcDebugPeerSelectionTracer                   = I debugPeerSelectionTracer,
       dmqcTracePeerSelectionCounters                 = I tracePeerSelectionCounters,
       dmqcPeerSelectionActionsTracer                 = I peerSelectionActionsTracer,
       dmqcConnectionManagerTracer                    = I connectionManagerTracer,
@@ -229,14 +227,10 @@ dmqDiffusionTracers
                                                           .- WithEventType "LedgerPeers" >$< tracer,
     Diffusion.dtTracePeerSelectionTracer                   = tracePeerSelectionTracer
                                                           .- WithEventType "PeerSelection" >$< tracer,
-    Diffusion.dtDebugPeerSelectionInitiatorTracer          = debugPeerSelectionInitiatorTracer
-                                                          .- WithEventType "DebugPeerSelectionInitiator" >$< tracer,
-    Diffusion.dtDebugPeerSelectionInitiatorResponderTracer = debugPeerSelectionInitiatorResponderTracer
-                                                          .- WithEventType "DebugPeerSelectionInitiatorResponder" >$< tracer,
+    Diffusion.dtDebugPeerSelectionTracer                   = debugPeerSelectionTracer
+                                                          .- WithEventType "DebugPeerSelection" >$< tracer,
     Diffusion.dtTracePeerSelectionCounters                 = tracePeerSelectionCounters
                                                           .- WithEventType "PeerSelectionCounters" >$< tracer,
-    Diffusion.dtTraceChurnCounters                         = traceChurnCounters
-                                                          .- WithEventType "ChurnCounters" >$< tracer,
     Diffusion.dtPeerSelectionActionsTracer                 = peerSelectionActionsTracer
                                                           .- WithEventType "PeerSelectionActions" >$< tracer,
     Diffusion.dtConnectionManagerTracer                    = connectionManagerTracer

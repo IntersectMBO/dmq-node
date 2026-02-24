@@ -52,6 +52,7 @@ import Cardano.Crypto.PinnedSizedBytes (PinnedSizedBytes, psbToByteString)
 import Cardano.Crypto.Seed (mkSeedFromBytes)
 import Cardano.Ledger.Keys (VKey (..))
 import Cardano.Ledger.Keys qualified as Ledger.Keys
+import Cardano.Ledger.Api.State.Query (StakeSnapshot (..))
 import Cardano.Ledger.Hashes (hashKey)
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Cardano.KESAgent.KES.Evolution qualified as KES
@@ -65,7 +66,6 @@ import DMQ.Protocol.SigSubmission.Codec
 import DMQ.Protocol.SigSubmission.Type
 import DMQ.Protocol.SigSubmission.Validate
 
-import Ouroboros.Consensus.Shelley.Ledger.Query (StakeSnapshot (..))
 import Ouroboros.Network.Protocol.TxSubmission2.Test (labelMsg)
 
 import Test.Ouroboros.Network.Protocol.Utils (prop_codec_cborM,

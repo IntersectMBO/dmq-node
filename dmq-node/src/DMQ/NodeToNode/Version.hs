@@ -1,8 +1,9 @@
-{-# LANGUAGE DeriveAnyClass    #-}
-{-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE NamedFieldPuns    #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveAnyClass     #-}
+{-# LANGUAGE DeriveGeneric      #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE LambdaCase         #-}
+{-# LANGUAGE NamedFieldPuns     #-}
+{-# LANGUAGE OverloadedStrings  #-}
 
 module DMQ.NodeToNode.Version
   ( NodeToNodeVersion (..)
@@ -64,7 +65,8 @@ data NodeToNodeVersionData = NodeToNodeVersionData
   , peerSharing   :: !PeerSharing
   , query         :: !Bool
   }
-  deriving (Show, Eq)
+  deriving stock    (Show, Eq, Generic)
+  deriving anyclass NFData
 
 instance Aeson.ToJSON NodeToNodeVersionData where
   toJSON NodeToNodeVersionData {

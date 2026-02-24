@@ -146,9 +146,7 @@ data Configuration' f =
     dmqcTracePublicRootPeersTracer                 :: f Bool,
     dmqcTraceLedgerPeersTracer                     :: f Bool,
     dmqcTracePeerSelectionTracer                   :: f Bool,
-    dmqcTraceChurnCounters                         :: f Bool,
-    dmqcDebugPeerSelectionInitiatorTracer          :: f Bool,
-    dmqcDebugPeerSelectionInitiatorResponderTracer :: f Bool,
+    dmqcDebugPeerSelectionTracer                   :: f Bool,
     dmqcTracePeerSelectionCounters                 :: f Bool,
     dmqcPeerSelectionActionsTracer                 :: f Bool,
     dmqcConnectionManagerTracer                    :: f Bool,
@@ -275,9 +273,7 @@ defaultConfiguration = Configuration {
       dmqcTracePublicRootPeersTracer                 = I False,
       dmqcTraceLedgerPeersTracer                     = I False,
       dmqcTracePeerSelectionTracer                   = I True,
-      dmqcTraceChurnCounters                         = I True,
-      dmqcDebugPeerSelectionInitiatorTracer          = I False,
-      dmqcDebugPeerSelectionInitiatorResponderTracer = I False,
+      dmqcDebugPeerSelectionTracer                   = I False,
       dmqcTracePeerSelectionCounters                 = I True,
       dmqcPeerSelectionActionsTracer                 = I False,
       dmqcConnectionManagerTracer                    = I True,
@@ -371,9 +367,7 @@ instance FromJSON PartialConfig where
       dmqcTracePublicRootPeersTracer                 <- Last <$> v .:? "PublicRootPeersTracer"
       dmqcTraceLedgerPeersTracer                     <- Last <$> v .:? "LedgerPeersTracer"
       dmqcTracePeerSelectionTracer                   <- Last <$> v .:? "PeerSelectionTracer"
-      dmqcTraceChurnCounters                         <- Last <$> v .:? "ChurnCounters"
-      dmqcDebugPeerSelectionInitiatorTracer          <- Last <$> v .:? "DebugPeerSelectionInitiatorTracer"
-      dmqcDebugPeerSelectionInitiatorResponderTracer <- Last <$> v .:? "DebugPeerSelectionInitiatorResponderTracer"
+      dmqcDebugPeerSelectionTracer                   <- Last <$> v .:? "DebugPeerSelectionTracer"
       dmqcTracePeerSelectionCounters                 <- Last <$> v .:? "PeerSelectionCounters"
       dmqcPeerSelectionActionsTracer                 <- Last <$> v .:? "PeerSelectionActionsTracer"
       dmqcConnectionManagerTracer                    <- Last <$> v .:? "ConnectionManagerTracer"
@@ -452,9 +446,7 @@ instance ToJSON Configuration where
            , "PublicRootPeersTracer"                      .= unI dmqcTracePublicRootPeersTracer
            , "LedgerPeersTracer"                          .= unI dmqcTraceLedgerPeersTracer
            , "PeerSelectionTracer"                        .= unI dmqcTracePeerSelectionTracer
-           , "ChurnCounters"                              .= unI dmqcTraceChurnCounters
-           , "DebugPeerSelectionInitiatorTracer"          .= unI dmqcDebugPeerSelectionInitiatorTracer
-           , "DebugPeerSelectionInitiatorResponderTracer" .= unI dmqcDebugPeerSelectionInitiatorResponderTracer
+           , "DebugPeerSelectionTracer"                   .= unI dmqcDebugPeerSelectionTracer
            , "PeerSelectionCounters"                      .= unI dmqcTracePeerSelectionCounters
            , "PeerSelectionActionsTracer"                 .= unI dmqcPeerSelectionActionsTracer
            , "ConnectionManagerTracer"                    .= unI dmqcConnectionManagerTracer

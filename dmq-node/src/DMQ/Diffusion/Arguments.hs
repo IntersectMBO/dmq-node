@@ -98,6 +98,7 @@ diffusionArguments handshakeNtNTracer
           , enableProgressMakingActions = const True
           , ledgerPeerSnapshotExtraStateChange = id
           }
+      , defaultExtraFlags = NoExtraFlags
       }
   , Diffusion.daPeerSelectionStateToExtraCounters = const NoExtraCounters
   , Diffusion.daToExtraPeers                      = const NoExtraPeers
