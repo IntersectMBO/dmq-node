@@ -1,7 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
+{-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE NumericUnderscores  #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -23,7 +23,7 @@ import Control.Exception (assert)
 import Control.Monad (unless, when)
 import Control.Monad.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
-import Control.Monad.Class.MonadTimer (MonadTimer (registerDelay))
+import Control.Monad.Class.MonadTimer.SI
 import Control.Tracer (Tracer (..), traceWith)
 
 import Ouroboros.Network.TxSubmission.Mempool.Reader (MempoolSnapshot (..),
@@ -118,12 +118,17 @@ sigSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version =
                 throwIO ProtocolErrorRequestBlocking
 
               let
-                timeout timer = do
+                -- block until timeout expires
+                timeoutSTM :: TVar m Bool
+                           -> STM m (OutboundStSigIds StBlocking sigId sig m ())
+                timeoutSTM timer = do
                   readTVar timer >>= check
                   let !(_, server') = update []
                   pure (SendMsgReplyNoSigIds server')
 
-                sigIds  = do
+                -- block until we have any sidids to send back
+                sigIdsSTM :: STM m (OutboundStSigIds StBlocking sigId sig m ())
+                sigIdsSTM = do
                   MempoolSnapshot{mempoolTxIdsAfter} <- mempoolGetSnapshot
                   let sigs = mempoolTxIdsAfter lastIdx
                   check (not $ null sigs)
@@ -136,8 +141,10 @@ sigSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version =
                   pure (SendMsgReplySigIds (BlockingReply sigs'') server')
 
               -- Timeout is 2 seconds less than the protocol timeout for blocking
-              timerExpired <- registerDelay 17_000_000
-              atomically $ timeout timerExpired `orElse` sigIds
+              timerExpired <- registerDelay 17
+              atomically $ timeoutSTM timerExpired
+                           `orElse`
+                           sigIdsSTM
 
             SingNonBlocking -> do
               when (reqNo == 0 && ackNo == 0) $
