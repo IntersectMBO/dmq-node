@@ -50,18 +50,18 @@ import Cardano.Crypto.KES.Class (KESAlgorithm (..), VerKeyKES, encodeSigKES)
 import Cardano.Crypto.KES.Class qualified as KES
 import Cardano.Crypto.PinnedSizedBytes (PinnedSizedBytes, psbToByteString)
 import Cardano.Crypto.Seed (mkSeedFromBytes)
-import Cardano.Ledger.Keys (VKey (..))
-import Cardano.Ledger.Keys qualified as Ledger.Keys
-import Cardano.Ledger.Api.State.Query (StakeSnapshot (..))
-import Cardano.Ledger.Hashes (hashKey)
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Cardano.KESAgent.KES.Evolution qualified as KES
 import Cardano.KESAgent.KES.OCert (OCert (..))
 import Cardano.KESAgent.KES.OCert qualified as KES
 import Cardano.KESAgent.Protocols.StandardCrypto (MockCrypto, StandardCrypto)
+import Cardano.Ledger.Api.State.Query (StakeSnapshot (..))
+import Cardano.Ledger.Hashes (hashKey)
+import Cardano.Ledger.Keys (VKey (..))
+import Cardano.Ledger.Keys qualified as Ledger.Keys
 import Test.Crypto.Instances
 
-import DMQ.Diffusion.NodeKernel (PoolValidationCtx(..))
+import DMQ.Diffusion.NodeKernel (PoolValidationCtx (..))
 import DMQ.Protocol.SigSubmission.Codec
 import DMQ.Protocol.SigSubmission.Type
 import DMQ.Protocol.SigSubmission.Validate
@@ -975,7 +975,7 @@ prop_validateSig constr validity = ioProperty do
           case validity of
             InvalidViaNotInitialized   -> Map.empty
             InvalidViaUnrecognizedPool -> Map.empty
-            _ -> Map.fromList [(poolId, stakeSnapshot)]
+            _                          -> Map.fromList [(poolId, stakeSnapshot)]
 
         vctxOcertMap =
           case validity of

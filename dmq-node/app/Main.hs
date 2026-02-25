@@ -10,8 +10,8 @@
 
 module Main where
 
-import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Concurrent.Class.MonadMVar
+import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad (void, when)
 import Control.Monad.Class.MonadThrow
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
@@ -19,8 +19,8 @@ import Control.Tracer (Tracer (..), nullTracer, traceWith)
 import Data.Act
 import Data.Aeson (ToJSON)
 import Data.ByteString.Lazy qualified as BSL
-import Data.Functor.Contravariant ((>$<))
 import Data.Foldable (traverse_)
+import Data.Functor.Contravariant ((>$<))
 import Data.List.NonEmpty (NonEmpty)
 import Data.Maybe (maybeToList)
 import Data.Text qualified as Text
@@ -29,8 +29,8 @@ import Data.Version (showVersion)
 import Data.Void (Void)
 import Options.Applicative
 import System.Exit (exitSuccess)
-import System.Random qualified as Random
 import System.IOManager (withIOManager)
+import System.Random qualified as Random
 
 import Cardano.Git.Rev (gitRev)
 import Cardano.KESAgent.Protocols.StandardCrypto (StandardCrypto)

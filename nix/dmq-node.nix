@@ -1,6 +1,9 @@
-{ inputs, pkgs, lib }:
+inputs: final: prev:
 
 let
+  inherit (prev) lib;
+  inherit (prev) pkgs;
+
   buildSystem = pkgs.stdenv.buildPlatform.system;
   onLinux = buildSystem == "x86_64-linux";
 
@@ -17,7 +20,7 @@ let
       });
   };
 
-  cabalProject = pkgs.haskell-nix.cabalProject' (
+  dmq-node = pkgs.haskell-nix.cabalProject' (
 
     { config, pkgs, ... }:
 
@@ -33,7 +36,7 @@ let
         (lib.genAttrs otherCompilers
           (compiler-nix-name: { inherit compiler-nix-name; }))
         // { ${defaultCompiler} = { }; }; # placeholder to access
-                                          # defaultCompiler in `nix/shell.nix`
+      # defaultCompiler in `nix/shell.nix`
 
       inputMap = { "https://chap.intersectmbo.org/" = inputs.CHaP; };
 
@@ -68,5 +71,4 @@ let
   );
 
 in
-
-cabalProject
+{ inherit dmq-node; }

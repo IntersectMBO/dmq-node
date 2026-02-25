@@ -21,7 +21,7 @@ import Data.Map.Strict qualified as Map
 import Data.Proxy
 import Data.Void
 
-import Cardano.Chain.Slotting (EpochSlots(..))
+import Cardano.Chain.Slotting (EpochSlots (..))
 import Cardano.Ledger.Api.State.Query (StakeSnapshots (..))
 import Cardano.Network.NodeToClient
 import Cardano.Slotting.EpochInfo.API

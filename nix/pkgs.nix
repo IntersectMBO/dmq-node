@@ -25,5 +25,7 @@ import inputs.nixpkgs {
         postFixup = "";
       });
     })
+    (import ./tools.nix inputs)
+    (import ./dmq-node.nix inputs)
   ];
 }

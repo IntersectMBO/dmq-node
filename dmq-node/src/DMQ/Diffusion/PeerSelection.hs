@@ -13,7 +13,7 @@ import System.Random (Random (..), StdGen, splitGen)
 policy :: forall peerAddr m.
           ( MonadSTM m
           , Ord peerAddr
-          ) 
+          )
        => StrictTVar m StdGen
        -> PeerSelectionPolicy peerAddr m
 policy rngVar =

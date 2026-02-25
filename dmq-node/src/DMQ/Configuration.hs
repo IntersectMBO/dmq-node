@@ -33,7 +33,7 @@ module DMQ.Configuration
   ) where
 
 import Cardano.Chain.Genesis (mainnetProtocolMagicId)
-import Cardano.Crypto.ProtocolMagic (ProtocolMagicId(..))
+import Cardano.Crypto.ProtocolMagic (ProtocolMagicId (..))
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI (DiffTime)
@@ -86,104 +86,104 @@ import DMQ.Configuration.Topology (NoExtraConfig (..), NoExtraFlags (..))
 data Configuration' f =
   Configuration {
     -- | Path from which the `Configuration` is read.
-    dmqcConfigFile                                 :: f FilePath,
+    dmqcConfigFile                               :: f FilePath,
 
     -- | Network magic for the DMQ network
-    dmqcNetworkMagic                               :: f NetworkMagic,
+    dmqcNetworkMagic                             :: f NetworkMagic,
     -- | Network magic for local connections to a cardano-node
-    dmqcCardanoNetworkMagic                        :: f NetworkMagic,
+    dmqcCardanoNetworkMagic                      :: f NetworkMagic,
 
     -- | IPv4 address to bind to for `node-to-node` communication.
-    dmqcIPv4                                       :: f (Maybe IPv4),
+    dmqcIPv4                                     :: f (Maybe IPv4),
     -- | IPv6 address to bind to for `node-to-node` communication.
-    dmqcIPv6                                       :: f (Maybe IPv6),
+    dmqcIPv6                                     :: f (Maybe IPv6),
     -- | Port number for `node-to-node` DMQ communication.
-    dmqcPortNumber                                 :: f PortNumber,
+    dmqcPortNumber                               :: f PortNumber,
     -- | Local socket address for `node-to-client` DMQ communication.
-    dmqcLocalAddress                               :: f LocalAddress,
+    dmqcLocalAddress                             :: f LocalAddress,
     -- | Topology file path.
-    dmqcTopologyFile                               :: f FilePath,
+    dmqcTopologyFile                             :: f FilePath,
     -- | Path to the `cardano-node` socket.
-    dmqcCardanoNodeSocket                          :: f FilePath,
+    dmqcCardanoNodeSocket                        :: f FilePath,
 
-    dmqcAcceptedConnectionsLimit                   :: f AcceptedConnectionsLimit,
+    dmqcAcceptedConnectionsLimit                 :: f AcceptedConnectionsLimit,
     -- | Diffusion mode for `node-to-node` communication.
-    dmqcDiffusionMode                              :: f DiffusionMode,
+    dmqcDiffusionMode                            :: f DiffusionMode,
     -- | Node-to-node inbound connection idle timeout.
-    dmqcProtocolIdleTimeout                        :: f DiffTime,
+    dmqcProtocolIdleTimeout                      :: f DiffTime,
     -- | Churn interval for peer selection.
-    dmqcChurnInterval                              :: f DiffTime,
+    dmqcChurnInterval                            :: f DiffTime,
     -- | Peer sharing setting.
-    dmqcPeerSharing                                :: f PeerSharing,
+    dmqcPeerSharing                              :: f PeerSharing,
 
     --
     -- Peer Selection Targets
     --
 
-    dmqcTargetOfRootPeers                          :: f Int,
-    dmqcTargetOfKnownPeers                         :: f Int,
-    dmqcTargetOfEstablishedPeers                   :: f Int,
-    dmqcTargetOfActivePeers                        :: f Int,
-    dmqcTargetOfKnownBigLedgerPeers                :: f Int,
-    dmqcTargetOfEstablishedBigLedgerPeers          :: f Int,
-    dmqcTargetOfActiveBigLedgerPeers               :: f Int,
+    dmqcTargetOfRootPeers                        :: f Int,
+    dmqcTargetOfKnownPeers                       :: f Int,
+    dmqcTargetOfEstablishedPeers                 :: f Int,
+    dmqcTargetOfActivePeers                      :: f Int,
+    dmqcTargetOfKnownBigLedgerPeers              :: f Int,
+    dmqcTargetOfEstablishedBigLedgerPeers        :: f Int,
+    dmqcTargetOfActiveBigLedgerPeers             :: f Int,
 
     --
     -- Tracers & logging
     --
-    dmqcPrettyLog                                  :: f Bool,
+    dmqcPrettyLog                                :: f Bool,
 
-    dmqcMuxTracer                                  :: f Bool,
-    dmqcChannelTracer                              :: f Bool,
-    dmqcBearerTracer                               :: f Bool,
-    dmqcHandshakeTracer                            :: f Bool,
-    dmqcLocalMuxTracer                             :: f Bool,
-    dmqcLocalChannelTracer                         :: f Bool,
-    dmqcLocalBearerTracer                          :: f Bool,
-    dmqcLocalHandshakeTracer                       :: f Bool,
-    dmqcDiffusionTracer                            :: f Bool,
-    dmqcTraceLocalRootPeersTracer                  :: f Bool,
-    dmqcTracePublicRootPeersTracer                 :: f Bool,
-    dmqcTraceLedgerPeersTracer                     :: f Bool,
-    dmqcTracePeerSelectionTracer                   :: f Bool,
-    dmqcDebugPeerSelectionTracer                   :: f Bool,
-    dmqcTracePeerSelectionCounters                 :: f Bool,
-    dmqcPeerSelectionActionsTracer                 :: f Bool,
-    dmqcConnectionManagerTracer                    :: f Bool,
-    dmqcConnectionManagerTransitionTracer          :: f Bool,
-    dmqcServerTracer                               :: f Bool,
-    dmqcInboundGovernorTracer                      :: f Bool,
-    dmqcInboundGovernorTransitionTracer            :: f Bool,
-    dmqcLocalConnectionManagerTracer               :: f Bool,
-    dmqcLocalServerTracer                          :: f Bool,
-    dmqcLocalInboundGovernorTracer                 :: f Bool,
-    dmqcDnsTracer                                  :: f Bool,
-    dmqcValidationTracer                           :: f Bool,
+    dmqcMuxTracer                                :: f Bool,
+    dmqcChannelTracer                            :: f Bool,
+    dmqcBearerTracer                             :: f Bool,
+    dmqcHandshakeTracer                          :: f Bool,
+    dmqcLocalMuxTracer                           :: f Bool,
+    dmqcLocalChannelTracer                       :: f Bool,
+    dmqcLocalBearerTracer                        :: f Bool,
+    dmqcLocalHandshakeTracer                     :: f Bool,
+    dmqcDiffusionTracer                          :: f Bool,
+    dmqcTraceLocalRootPeersTracer                :: f Bool,
+    dmqcTracePublicRootPeersTracer               :: f Bool,
+    dmqcTraceLedgerPeersTracer                   :: f Bool,
+    dmqcTracePeerSelectionTracer                 :: f Bool,
+    dmqcDebugPeerSelectionTracer                 :: f Bool,
+    dmqcTracePeerSelectionCounters               :: f Bool,
+    dmqcPeerSelectionActionsTracer               :: f Bool,
+    dmqcConnectionManagerTracer                  :: f Bool,
+    dmqcConnectionManagerTransitionTracer        :: f Bool,
+    dmqcServerTracer                             :: f Bool,
+    dmqcInboundGovernorTracer                    :: f Bool,
+    dmqcInboundGovernorTransitionTracer          :: f Bool,
+    dmqcLocalConnectionManagerTracer             :: f Bool,
+    dmqcLocalServerTracer                        :: f Bool,
+    dmqcLocalInboundGovernorTracer               :: f Bool,
+    dmqcDnsTracer                                :: f Bool,
+    dmqcValidationTracer                         :: f Bool,
 
     -- low level verbose traces which trace protocol messages
     -- TODO: pref
-    dmqcSigSubmissionClientProtocolTracer          :: f Bool,
-    dmqcSigSubmissionServerProtocolTracer          :: f Bool,
-    dmqcKeepAliveClientProtocolTracer              :: f Bool,
-    dmqcKeepAliveServerProtocolTracer              :: f Bool,
-    dmqcPeerSharingClientProtocolTracer            :: f Bool,
-    dmqcPeerSharingServerProtocolTracer            :: f Bool,
-    dmqcLocalMsgSubmissionServerProtocolTracer     :: f Bool,
-    dmqcLocalMsgNotificationServerProtocolTracer   :: f Bool,
+    dmqcSigSubmissionClientProtocolTracer        :: f Bool,
+    dmqcSigSubmissionServerProtocolTracer        :: f Bool,
+    dmqcKeepAliveClientProtocolTracer            :: f Bool,
+    dmqcKeepAliveServerProtocolTracer            :: f Bool,
+    dmqcPeerSharingClientProtocolTracer          :: f Bool,
+    dmqcPeerSharingServerProtocolTracer          :: f Bool,
+    dmqcLocalMsgSubmissionServerProtocolTracer   :: f Bool,
+    dmqcLocalMsgNotificationServerProtocolTracer :: f Bool,
 
     --
     -- Application tracers
     --
 
-    dmqcSigSubmissionLogicTracer                   :: f Bool,
-    dmqcSigSubmissionOutboundTracer                :: f Bool,
-    dmqcSigSubmissionInboundTracer                 :: f Bool,
-    dmqcLocalMsgSubmissionServerTracer             :: f Bool,
-    dmqcLocalMsgNotificationServerTracer           :: f Bool,
-    dmqcLocalStateQueryTracer                      :: f Bool,
+    dmqcSigSubmissionLogicTracer                 :: f Bool,
+    dmqcSigSubmissionOutboundTracer              :: f Bool,
+    dmqcSigSubmissionInboundTracer               :: f Bool,
+    dmqcLocalMsgSubmissionServerTracer           :: f Bool,
+    dmqcLocalMsgNotificationServerTracer         :: f Bool,
+    dmqcLocalStateQueryTracer                    :: f Bool,
 
     -- | CLI only option to show version and exit.
-    dmqcVersion                                    :: f Bool
+    dmqcVersion                                  :: f Bool
   }
   deriving Generic
 

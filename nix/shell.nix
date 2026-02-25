@@ -1,7 +1,8 @@
-{ inputs, pkgs, lib, project, utils, ghc }:
+{ inputs, pkgs, lib, utils, ghc }:
 
 let
-  tool = project.projectVariants.${ghc}.tool;
+  dmq-node = pkgs.dmq-node;
+  tool = dmq-node.projectVariants.${ghc}.tool;
   tools = {
     cabal = tool "cabal" "latest";
     cabal-gild = tool "cabal-gild" "latest";
@@ -35,7 +36,7 @@ let
     pkgs.which
   ];
 
-  shell = project.shellFor {
+  shell = dmq-node.shellFor {
     name = "dmq-node-shell-${ghc}";
 
     buildInputs = lib.concatLists [
