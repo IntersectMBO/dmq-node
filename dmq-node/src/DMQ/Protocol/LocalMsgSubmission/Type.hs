@@ -13,9 +13,9 @@ module DMQ.Protocol.LocalMsgSubmission.Type
   , module Ouroboros
   ) where
 
+import DMQ.Protocol.SigSubmission.Validate (SigValidationError (..))
 import Network.TypedProtocol.Core as Core
 import Ouroboros.Network.Protocol.LocalTxSubmission.Type as Ouroboros
-import DMQ.Protocol.SigSubmission.Validate (SigValidationError (..))
 
 -- | The LocalMsgSubmission protocol is an alias for the LocalTxSubmission
 --

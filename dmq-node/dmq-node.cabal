@@ -60,7 +60,6 @@ library
     DMQ.Configuration
     DMQ.Configuration.CLIOptions
     DMQ.Configuration.Topology
-    DMQ.Policy
     DMQ.Diffusion.Applications
     DMQ.Diffusion.Arguments
     DMQ.Diffusion.NodeKernel
@@ -73,6 +72,7 @@ library
     DMQ.NodeToClient.Version
     DMQ.NodeToNode
     DMQ.NodeToNode.Version
+    DMQ.Policy
     DMQ.Protocol.LocalMsgNotification.Client
     DMQ.Protocol.LocalMsgNotification.Codec
     DMQ.Protocol.LocalMsgNotification.Server

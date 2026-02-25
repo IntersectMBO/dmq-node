@@ -35,16 +35,16 @@ import Data.Word
 import System.Random (StdGen)
 import System.Random qualified as Random
 
-import Cardano.Ledger.Shelley.API qualified as Ledger
 import Cardano.Ledger.Api.State.Query qualified as LedgerQuery
+import Cardano.Ledger.Shelley.API qualified as Ledger
 
 import Ouroboros.Network.BlockFetch (FetchClientRegistry,
            newFetchClientRegistry)
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.Magic (NetworkMagic (..))
-import Ouroboros.Network.PeerSelection.LedgerPeers (SomeLedgerPeerSnapshot)
 import Ouroboros.Network.PeerSelection.Governor.Types
            (makePublicPeerSelectionStateVar)
+import Ouroboros.Network.PeerSelection.LedgerPeers (SomeLedgerPeerSnapshot)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
            LedgerPeersKind (..))
 import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry,

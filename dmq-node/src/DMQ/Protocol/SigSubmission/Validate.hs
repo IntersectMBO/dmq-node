@@ -1,12 +1,12 @@
-{-# LANGUAGE DataKinds          #-}
-{-# LANGUAGE FlexibleInstances  #-}
-{-# LANGUAGE MultiWayIf         #-}
-{-# LANGUAGE OverloadedStrings  #-}
-{-# LANGUAGE PatternSynonyms    #-}
-{-# LANGUAGE RankNTypes         #-}
-{-# LANGUAGE TypeFamilies       #-}
-{-# LANGUAGE TypeOperators      #-}
-{-# LANGUAGE ViewPatterns       #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiWayIf        #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PatternSynonyms   #-}
+{-# LANGUAGE RankNTypes        #-}
+{-# LANGUAGE TypeFamilies      #-}
+{-# LANGUAGE TypeOperators     #-}
+{-# LANGUAGE ViewPatterns      #-}
 
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
@@ -16,10 +16,10 @@ module DMQ.Protocol.SigSubmission.Validate where
 
 import Control.Exception (Exception (..))
 import Control.Monad.Class.MonadTime.SI
-import Control.Monad.State.Strict (State, StateT (..))
-import Control.Monad.State.Strict qualified as State
 import Control.Monad.Except (Except)
 import Control.Monad.Except qualified as Except
+import Control.Monad.State.Strict (State, StateT (..))
+import Control.Monad.State.Strict qualified as State
 
 import Data.Aeson
 import Data.ByteString (ByteString)
@@ -88,7 +88,7 @@ data SigValidationTrace = InvalidSignature SigId SigValidationError
   deriving Show
 
 instance ToJSON SigValidationTrace where
-  toJSON (InvalidSignature sigid reason) = object 
+  toJSON (InvalidSignature sigid reason) = object
     [ "type"   .= String "InvalidSignature"
     , "sigid"  .= sigid
     , "reason" .= reason
