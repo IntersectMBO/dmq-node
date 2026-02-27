@@ -38,6 +38,7 @@ import Cardano.KESAgent.Protocols.StandardCrypto (StandardCrypto)
 import DMQ.Configuration
 import DMQ.Configuration.CLIOptions (parseCLIOptions)
 import DMQ.Configuration.Topology (readTopologyFileOrError)
+import DMQ.Policy qualified as Policy
 import DMQ.Diffusion.Applications (diffusionApplications)
 import DMQ.Diffusion.Arguments
 import DMQ.Diffusion.NodeKernel
@@ -179,7 +180,7 @@ runDMQ commandLineConfig = do
                                    (encodeRemoteAddress (maxBound @NodeToNodeVersion))
                                    (decodeRemoteAddress (maxBound @NodeToNodeVersion)))
                           dmqLimitsAndTimeouts
-                          defaultSigDecisionPolicy
+                          Policy.sigDecisionPolicy
             ntcValidationTracer = if validationTracer
                                     then WithEventType "NtC Validation" >$< tracer
                                     else nullTracer

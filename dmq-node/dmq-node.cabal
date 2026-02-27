@@ -60,6 +60,7 @@ library
     DMQ.Configuration
     DMQ.Configuration.CLIOptions
     DMQ.Configuration.Topology
+    DMQ.Policy
     DMQ.Diffusion.Applications
     DMQ.Diffusion.Arguments
     DMQ.Diffusion.NodeKernel

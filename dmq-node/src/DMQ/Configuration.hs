@@ -25,7 +25,6 @@ module DMQ.Configuration
   , I (..)
   , readConfigurationFileOrError
   , mkDiffusionConfiguration
-  , defaultSigDecisionPolicy
   , defaultConfiguration
   , NoExtraConfig (..)
   , NoExtraFlags (..)
@@ -73,7 +72,6 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
 import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
-import Ouroboros.Network.TxSubmission.Inbound.V2 (TxDecisionPolicy (..))
 
 import DMQ.Configuration.Topology (NoExtraConfig (..), NoExtraFlags (..))
 
@@ -610,20 +608,6 @@ mkDiffusionConfiguration
             , addrSocketType = Stream
             }
 
-
--- TODO: review this once we know what is the size of a `Sig`.
--- TODO: parts of should be configurable
-defaultSigDecisionPolicy :: TxDecisionPolicy
-defaultSigDecisionPolicy = TxDecisionPolicy {
-    maxNumTxIdsToRequest   = 10,
-    maxUnacknowledgedTxIds = 40,
-    txsSizeInflightPerPeer = 100_000,
-    maxTxsSizeInflight     = 250_000,
-    txInflightMultiplicity = 1,
-    bufferedTxsMinLifetime = 0,
-    scoreRate              = 0.1,
-    scoreMax               = 15 * 60
-  }
 
 data ConfigurationError =
     NoAddressInformation -- ^ dmq was not configured with IPv4 or IPv6 address
