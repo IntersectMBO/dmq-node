@@ -55,6 +55,7 @@ import Network.TypedProtocol.Codec (AnnotatedCodec, Codec)
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 
 import DMQ.Configuration (Configuration, Configuration' (..), I (..))
+import DMQ.Policy qualified as Policy
 import DMQ.Diffusion.NodeKernel (NodeKernel (..))
 import DMQ.NodeToNode.Version
 import DMQ.Protocol.SigSubmission.Codec
@@ -586,11 +587,7 @@ data LimitsAndTimeouts crypto addr =
 dmqLimitsAndTimeouts :: LimitsAndTimeouts crypto addr
 dmqLimitsAndTimeouts =
     LimitsAndTimeouts {
-      sigSubmissionLimits =
-        MiniProtocolLimits {
-          -- TODO
-          maximumIngressQueue = maxBound
-        }
+      sigSubmissionLimits = Policy.sigSubmissionIngressLimit
     , sigSubmissionTimeLimits = timeLimitsSigSubmission
     , sigSubmissionSizeLimits = byteLimitsSigSubmission size
 
