@@ -115,6 +115,8 @@ data Configuration' f =
     dmqcChurnInterval                            :: f DiffTime,
     -- | Peer sharing setting.
     dmqcPeerSharing                              :: f PeerSharing,
+    -- | Ledger peers are hidden behind a flag.
+    dmqcLedgerPeers                              :: f Bool,
 
     --
     -- Peer Selection Targets
@@ -259,6 +261,7 @@ defaultConfiguration = Configuration {
       dmqcProtocolIdleTimeout                        = I defaultProtocolIdleTimeout,
       dmqcChurnInterval                              = I defaultDeadlineChurnInterval,
       dmqcPeerSharing                                = I PeerSharingEnabled,
+      dmqcLedgerPeers                                = I False,
       dmqcPrettyLog                                  = I False,
       dmqcMuxTracer                                  = I True,
       dmqcChannelTracer                              = I False,
@@ -337,6 +340,7 @@ instance FromJSON PartialConfig where
       dmqcNetworkMagic <- Last . fmap NetworkMagic <$> v .:? "NetworkMagic"
       dmqcCardanoNetworkMagic <- Last . fmap NetworkMagic <$> v .:? "CardanoNetworkMagic"
       dmqcDiffusionMode <- Last <$> v .:? "DiffusionMode"
+      dmqcLedgerPeers <- Last <$> v .:? "LedgerPeers"
       dmqcPeerSharing <- Last <$> v .:? "PeerSharing"
       dmqcCardanoNodeSocket <- Last <$> v .:? "CardanoNodeSocket"
 
@@ -429,6 +433,7 @@ instance ToJSON Configuration where
            , "TargetOfActiveBigLedgerPeers"               .= unI dmqcTargetOfActiveBigLedgerPeers
            , "ProtocolIdleTimeout"                        .= unI dmqcProtocolIdleTimeout
            , "ChurnInterval"                              .= unI dmqcChurnInterval
+           , "LedgerPeers"                                .= unI dmqcLedgerPeers
            , "PeerSharing"                                .= unI dmqcPeerSharing
            , "NetworkMagic"                               .= unNetworkMagic (unI dmqcNetworkMagic)
            , "CardanoNetworkMagic"                        .= unNetworkMagic (unI dmqcCardanoNetworkMagic)

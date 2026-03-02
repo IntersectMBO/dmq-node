@@ -88,7 +88,8 @@ runDMQ commandLineConfig = do
           dmqcLocalHandshakeTracer  = I localHandshakeTracer,
           dmqcCardanoNodeSocket     = I snocketPath,
           dmqcVersion               = I version,
-          dmqcLocalStateQueryTracer = I localStateQueryTracer
+          dmqcLocalStateQueryTracer = I localStateQueryTracer,
+          dmqcLedgerPeers           = I ledgerPeers
         } = config' <> commandLineConfig
             `act`
             defaultConfiguration
@@ -132,6 +133,7 @@ runDMQ commandLineConfig = do
                                  (if localStateQueryTracer
                                     then WithEventType "LocalStateQuery" >$< tracer
                                     else nullTracer)
+                                 ledgerPeers
                                  localSnocket'
                                  snocketPath
 
