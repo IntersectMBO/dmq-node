@@ -283,6 +283,7 @@ runSigSubmissionV2 tracer tracerSigLogic st0 sigDecisionPolicy = do
     withAsync (decisionLogicThreads tracerSigLogic sayTracer
                                     sigDecisionPolicy sigChannelsVar sharedSigStateVar) $ \a -> do
       let outbounds = (\(addr, (mempool, _, outDelay, _, outChannel, _)) -> do
+                      labelThisThread ("outbound-" ++ show addr)
                       let outbound = sigSubmissionOutbound
                                        (Tracer $ say . show)
                                        (NumIdsAck $ getNumTxIdsToReq $ maxUnacknowledgedTxIds sigDecisionPolicy)
@@ -299,6 +300,7 @@ runSigSubmissionV2 tracer tracerSigLogic st0 sigDecisionPolicy = do
                    <$> Map.assocs st
 
       let inbounds = (\(addr, (_, ctrlMsgSTM, _, inDelay, _, inChannel)) -> do
+                       labelThisThread ("inbound-" ++ show addr)
                        withPeer tracerSigLogic
                                 sigChannelsVar
                                 sigMempoolSem
@@ -323,8 +325,8 @@ runSigSubmissionV2 tracer tracerSigLogic st0 sigDecisionPolicy = do
                     ) <$> Map.assocs st
 
       -- Run servers
-      withAsyncAll (zip inbounds outbounds) $ \as -> do
-        _ <- waitAllServers as
+      withAsyncAll (inbounds `zip` outbounds) $ \as -> do
+        _ <- waitAllInbounds as
         -- cancel decision logic thread
         cancel a
 
@@ -334,13 +336,13 @@ runSigSubmissionV2 tracer tracerSigLogic st0 sigDecisionPolicy = do
 
         return (inmp, outmp)
   where
-    waitAllServers :: [(Async m x, Async m x)] -> m [Either SomeException x]
-    waitAllServers [] = return []
-    waitAllServers ((inbound, outbound):as) = do
+    waitAllInbounds :: [(Async m x, Async m x)] -> m [Either SomeException x]
+    waitAllInbounds [] = return []
+    waitAllInbounds ((inbound, outbound):as) = do
       r <- waitCatch inbound
-      -- cancel server as soon as the client exits
+      -- cancel outbound as soon as the inbound exits
       cancel outbound
-      rs <- waitAllServers as
+      rs <- waitAllInbounds as
       return (r : rs)
 
     withAsyncAll :: [(m a, m a)]
