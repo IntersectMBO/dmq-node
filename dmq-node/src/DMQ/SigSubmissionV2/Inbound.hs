@@ -15,6 +15,7 @@ import Data.Map.Strict qualified as Map
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set qualified as Set
 
+import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Exception (assert)
 import Control.Monad (unless, when)
 import Control.Monad.Class.MonadAsync (MonadAsync (..))
@@ -23,8 +24,7 @@ import Control.Tracer (Tracer, traceWith)
 
 import Network.TypedProtocol
 
-import Ouroboros.Network.ControlMessage (ControlMessageSTM,
-           timeoutWithControlMessage)
+import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToAck (..),
            NumTxIdsToReq (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2 (PeerTxAPI (..),
@@ -71,35 +71,52 @@ sigSubmissionInbound
     inboundIdle
       :: m (InboundStIdle Z sigid sig m ())
     inboundIdle = do
-      -- TODO
-      -- readSigDecision is blocking on next decision because takeMVar and ControlMessageSTM is blocking
-      sigDecision <- async readTxDecision
-      msigd <- timeoutWithControlMessage controlMessageSTM (waitSTM sigDecision)
-      case msigd of
-        Nothing -> pure (SendMsgDone $ return ())
-        Just sigd@TxDecision
+
+      -- NOTE: The `tx-logic` is using `MVar` API, while `controlMessage` an
+      -- `STM`, we need to compose both.  We do that in two steps to avoid
+      -- Situation where the `tx-logic` is much quicker to reply, and wins the
+      -- race each time.
+      k <-
+        -- 1. non-blocking check of `ControlMessage`
+        atomically controlMessageSTM >>= \case
+          Terminate -> return (Left ())
+          _ ->
+            -- 2. race  `readTXDecision` and `controlMessageSTM`
+            atomically (do
+              cntrlMsg <- controlMessageSTM
+              case cntrlMsg of
+                Terminate -> return ()
+                Continue  -> retry
+                Quiesce   -> retry
+              )
+            `race`
+            readTxDecision
+
+      case k of
+        Left{} -> pure (SendMsgDone $ return ())
+        Right sigd@TxDecision
               { txdTxsToRequest = sigsToRequest
               , txdTxsToMempool = TxsToMempool { listOfTxsToMempool }
               } -> do
-                     traceWith tracer (TraceTxInboundDecision sigd)
+          traceWith tracer (TraceTxInboundDecision sigd)
 
-                     let !collected = length listOfTxsToMempool
+          let !collected = length listOfTxsToMempool
 
-                     -- Only attempt to add sigs if we have some work to do
-                     when (collected > 0) $ do
-                       -- submitTxToMempool traces:
-                       -- * `TraceTxSubmissionProcessed`,
-                       -- * `TraceTxInboundAddedToMempool`, and
-                       -- * `TraceTxInboundRejectedFromMempool`
-                       -- events.
-                       mapM_ (uncurry $ submitTxToMempool tracer) listOfTxsToMempool
+          -- Only attempt to add sigs if we have some work to do
+          when (collected > 0) $ do
+            -- submitTxToMempool traces:
+            -- * `TraceTxSubmissionProcessed`,
+            -- * `TraceTxInboundAddedToMempool`, and
+            -- * `TraceTxInboundRejectedFromMempool`
+            -- events.
+            mapM_ (uncurry $ submitTxToMempool tracer) listOfTxsToMempool
 
-                     -- TODO:
-                     -- We can update the state so that other `sig-submission` servers will
-                     -- not try to add these sigs to the mempool.
-                     if Map.null sigsToRequest
-                       then clientReqSigIds Zero sigd
-                       else clientReqSigs sigd
+          -- TODO:
+          -- We can update the state so that other `sig-submission` servers will
+          -- not try to add these sigs to the mempool.
+          if Map.null sigsToRequest
+            then clientReqSigIds Zero sigd
+            else clientReqSigs sigd
 
 
     -- Pipelined request of sigs
