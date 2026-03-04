@@ -53,6 +53,7 @@ source-repository-package
   subdir: network-mux
           cardano-diffusion
           ouroboros-network
+          acts-generic
 
 source-repository-package
   type: git
