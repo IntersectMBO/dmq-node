@@ -11,6 +11,7 @@ module DMQ.Protocol.LocalMsgNotification.Test where
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.Serialise (DeserialiseFailure, Serialise (..))
+import Control.DeepSeq (NFData (..))
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow
@@ -112,7 +113,11 @@ prop_connect (Positive maxMsgs) (DistinctNEList msgs) =
 
 -- | Run a local tx-submission client and server using connected channels.
 --
-prop_channel :: (MonadAsync m, MonadCatch m, MonadST m)
+prop_channel :: ( MonadAsync m
+                , MonadCatch m
+                , MonadEvaluate m
+                , MonadST m
+                )
              => m (Channel m ByteString, Channel m ByteString)
              -> Positive Word16
              -> DistinctNEList MsgWithBytes
@@ -202,6 +207,7 @@ type LocalMsgNotificationCodec m msg =
 
 newtype Msg = Msg Int
   deriving stock (Show, Eq)
+  deriving newtype NFData
   deriving newtype Arbitrary
   deriving newtype Serialise -- TODO: why do I need this instance?
 
@@ -213,6 +219,12 @@ decodeMsg :: forall s. CBOR.Decoder s (ByteString -> Msg)
 decodeMsg = const . Msg <$> CBOR.decodeInt
 
 type MsgWithBytes = WithBytes Msg
+
+instance NFData (WithBytes Msg) where
+  rnf WithBytes {cborBytes, cborPayload} =
+    rnf cborBytes
+    `seq`
+    rnf cborPayload
 
 instance ShowProxy (WithBytes Msg) where
   showProxy _ = "WithBytes Msg"

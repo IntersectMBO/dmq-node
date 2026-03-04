@@ -3,13 +3,12 @@
 let
   inherit (pkgs) lib;
 
+  # pkgs contains `dmq-node` included as an overlay of nixpkgs
   pkgs = import ./pkgs.nix { inherit inputs system; };
 
   utils = import ./utils.nix { inherit pkgs lib; };
 
-  project = import ./project.nix { inherit inputs pkgs lib; };
-
-  mkShell = ghc: import ./shell.nix { inherit inputs pkgs lib project utils ghc; };
+  mkShell = ghc: import ./shell.nix { inherit inputs pkgs lib utils ghc; };
 
   buildSystem = pkgs.stdenv.buildPlatform.system;
 
@@ -20,13 +19,13 @@ let
       # setGitRev broken?
       # pkgs.setGitRev
       # (inputs.self.rev or inputs.self.dirtyShortRev)
-      project.hsPkgs.dmq-node.components.exes.dmq-node;
+      pkgs.dmq-node.hsPkgs.dmq-node.components.exes.dmq-node;
     default = dmq-node;
   } // lib.optionalAttrs (buildSystem == "x86_64-linux") {
     dmq-node-static =
       # pkgs.setGitRev
       # (inputs.self.rev or inputs.self.dirtyShortRev)
-      project.projectCross.musl64.hsPkgs.dmq-node.components.exes.dmq-node;
+      pkgs.dmq-node.projectCross.musl64.hsPkgs.dmq-node.components.exes.dmq-node;
     docker-dmq = pkgs.dockerTools.buildImage {
       name = "docker-dmq-node";
       tag = "latest";
@@ -55,12 +54,14 @@ let
     # ghc9122 = mkShell "ghc9122";
   };
 
-  flake = project.flake { };
+  flake = pkgs.dmq-node.flake { };
+  format = pkgs.callPackage ./formatting.nix pkgs;
 
   defaultHydraJobs = {
     ciJobs = flake.hydraJobs;
     inherit packages;
     inherit devShells;
+    inherit format;
     required = utils.makeHydraRequiredJob hydraJobs;
   };
 
@@ -79,5 +80,16 @@ in
   inherit app;
   inherit devShells;
   inherit hydraJobs;
-  __internal = { inherit pkgs project; };
+  legacyPackages = {
+    format =
+      format
+      // {
+        all = pkgs.releaseTools.aggregate {
+          name = "dmq-node-format";
+          meta.description = "Run all formatters";
+          constituents = lib.collect lib.isDerivation format;
+        };
+      };
+  };
+  __internal = { inherit pkgs; };
 }

@@ -134,7 +134,8 @@ _ntc_MAX_SIGS_TO_ACK = 1000
 --
 ntcApps
   :: forall crypto idx ntcAddr m.
-     ( MonadThrow m
+     ( MonadEvaluate m
+     , MonadThrow m
      , MonadThread m
      , MonadSTM m
      , Crypto crypto

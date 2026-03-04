@@ -1,4 +1,4 @@
-# Stylish-haskell configuration file used for the dmq-node
+# Stylish-haskell configuration file used for the network layer
 # It's based on default config provided by `stylish-haskell --defaults` but
 # has some changes ==================================
 
@@ -288,3 +288,4 @@ language_extensions:
   - TypeFamilies
   - ViewPatterns
   - ExplicitNamespaces
+

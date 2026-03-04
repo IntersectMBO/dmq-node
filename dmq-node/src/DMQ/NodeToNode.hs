@@ -55,9 +55,9 @@ import Network.TypedProtocol.Codec (AnnotatedCodec, Codec)
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 
 import DMQ.Configuration (Configuration, Configuration' (..), I (..))
-import DMQ.Policy qualified as Policy
 import DMQ.Diffusion.NodeKernel (NodeKernel (..))
 import DMQ.NodeToNode.Version
+import DMQ.Policy qualified as Policy
 import DMQ.Protocol.SigSubmission.Codec
 import DMQ.Protocol.SigSubmission.Type
 import DMQ.Protocol.SigSubmission.Validate (SigValidationError)
@@ -115,7 +115,7 @@ import Ouroboros.Network.Protocol.TxSubmission2.Server
 -- This makes sense, since `ctx` already contains `versionData`.
 type ClientApp addr m a =
      NodeToNodeVersion
-  -> ExpandedInitiatorContext addr m
+  -> ExpandedInitiatorContext addr NoExtraFlags m
   -> Channel m BL.ByteString
   -> m (a, Maybe BL.ByteString)
 
@@ -153,6 +153,7 @@ ntnApps
     , Alternative (STM m)
     , MonadAsync m
     , MonadDelay m
+    , MonadEvaluate m
     , MonadFork m
     , MonadMask m
     , MonadMVar m
@@ -226,7 +227,7 @@ ntnApps
   where
     aSigSubmissionClient
       :: NodeToNodeVersion
-      -> ExpandedInitiatorContext addr m
+      -> ExpandedInitiatorContext addr NoExtraFlags m
       -> Channel m BL.ByteString
       -> m ((), Maybe BL.ByteString)
     aSigSubmissionClient version
@@ -292,7 +293,7 @@ ntnApps
 
     aKeepAliveClient
       :: NodeToNodeVersion
-      -> ExpandedInitiatorContext addr m
+      -> ExpandedInitiatorContext addr NoExtraFlags m
       -> Channel m BL.ByteString
       -> m ((), Maybe BL.ByteString)
     aKeepAliveClient _version
@@ -346,7 +347,7 @@ ntnApps
 
     aPeerSharingClient
       :: NodeToNodeVersion
-      -> ExpandedInitiatorContext addr m
+      -> ExpandedInitiatorContext addr NoExtraFlags m
       -> Channel m BL.ByteString
       -> m ((), Maybe BL.ByteString)
     aPeerSharingClient _version
@@ -480,7 +481,7 @@ initiatorProtocols
   -> Apps addr m a b
   -> NodeToNodeVersion
   -> NodeToNodeVersionData
-  -> OuroborosBundleWithExpandedCtx 'InitiatorMode addr BL.ByteString m a Void
+  -> OuroborosBundleWithExpandedCtx 'InitiatorMode addr NoExtraFlags BL.ByteString m a Void
 initiatorProtocols limitsAndTimeouts
                    Apps {
                      aSigSubmissionClient
@@ -505,7 +506,7 @@ initiatorAndResponderProtocols
   -> Apps addr m a b
   -> NodeToNodeVersion
   -> NodeToNodeVersionData
-  -> OuroborosBundleWithExpandedCtx 'InitiatorResponderMode addr BL.ByteString m a b
+  -> OuroborosBundleWithExpandedCtx 'InitiatorResponderMode addr NoExtraFlags BL.ByteString m a b
 initiatorAndResponderProtocols limitsAndTimeouts
                                Apps {
                                  aSigSubmissionClient

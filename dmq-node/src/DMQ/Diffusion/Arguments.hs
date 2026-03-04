@@ -36,7 +36,8 @@ import Ouroboros.Network.PeerSelection.Churn (peerChurnGovernor)
 import Ouroboros.Network.PeerSelection.Governor.Types
            (ExtraGuardedDecisions (..), PeerSelectionGovernorArgs (..))
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
-           (LedgerPeersConsensusInterface (..), PoolStake, LedgerRelayAccessPoint)
+           (LedgerPeersConsensusInterface (..), LedgerRelayAccessPoint,
+           PoolStake)
 import Ouroboros.Network.PeerSelection.RelayAccessPoint (SRVPrefix)
 import Ouroboros.Network.PeerSelection.Types (nullPublicExtraPeersAPI)
 
@@ -98,6 +99,7 @@ diffusionArguments handshakeNtNTracer
           , enableProgressMakingActions = const True
           , ledgerPeerSnapshotExtraStateChange = id
           }
+      , defaultExtraFlags = NoExtraFlags
       }
   , Diffusion.daPeerSelectionStateToExtraCounters = const NoExtraCounters
   , Diffusion.daToExtraPeers                      = const NoExtraPeers
