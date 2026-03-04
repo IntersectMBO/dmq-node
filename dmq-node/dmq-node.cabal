@@ -63,6 +63,7 @@ library
     DMQ.Diffusion.Applications
     DMQ.Diffusion.Arguments
     DMQ.Diffusion.NodeKernel
+    DMQ.Diffusion.NodeKernel.Types
     DMQ.Diffusion.PeerSelection
     DMQ.Handlers.TopLevel
     DMQ.NodeToClient
@@ -101,6 +102,7 @@ library
     cardano-ledger-byron,
     cardano-ledger-core,
     cardano-ledger-shelley,
+    cardano-protocol-tpraos,
     cardano-slotting,
     cborg >=0.2.1 && <0.3,
     containers >=0.5 && <0.8,

@@ -49,7 +49,6 @@ import DMQ.Protocol.SigSubmission.Type (Sig (..))
 import DMQ.Tracer
 
 import DMQ.Diffusion.PeerSelection (policy)
-import DMQ.NodeToClient.LocalStateQueryClient
 import DMQ.Protocol.SigSubmission.Validate
 import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
@@ -86,10 +85,7 @@ runDMQ commandLineConfig = do
           dmqcHandshakeTracer       = I handshakeTracer,
           dmqcValidationTracer      = I validationTracer,
           dmqcLocalHandshakeTracer  = I localHandshakeTracer,
-          dmqcCardanoNodeSocket     = I snocketPath,
-          dmqcVersion               = I version,
-          dmqcLocalStateQueryTracer = I localStateQueryTracer,
-          dmqcLedgerPeers           = I ledgerPeers
+          dmqcVersion               = I version
         } = config' <> commandLineConfig
             `act`
             defaultConfiguration
@@ -128,20 +124,12 @@ runDMQ commandLineConfig = do
 
     -- TODO: this might not work, since `ouroboros-network` creates its own IO Completion Port.
     withIOManager \iocp -> do
-      let localSnocket'      = localSnocket iocp
-          mkStakePoolMonitor = connectToCardanoNode
-                                 (if localStateQueryTracer
-                                    then WithEventType "LocalStateQuery" >$< tracer
-                                    else nullTracer)
-                                 ledgerPeers
-                                 localSnocket'
-                                 snocketPath
-
       withNodeKernel @StandardCrypto
+                     (localSnocket iocp)
+                     makeLocalBearer
                      tracer
                      dmqConfig
-                     psRng
-                     mkStakePoolMonitor $ \nodeKernel -> do
+                     psRng $ \nodeKernel -> do
         dmqDiffusionConfiguration <-
           mkDiffusionConfiguration dmqConfig nt nodeKernel.stakePools.ledgerBigPeersVar
 
