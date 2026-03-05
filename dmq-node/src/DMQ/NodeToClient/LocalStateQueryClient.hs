@@ -61,6 +61,7 @@ data TraceLocalStateQueryClient =
   | CurrentEpoch EpochNo
   | NextEpoch UTCTime NominalDiffTime
   | PastHorizon PastHorizonException
+  | LedgerPeersNotAvailable
 
 instance ToJSON TraceLocalStateQueryClient where
   toJSON = \case
@@ -80,6 +81,8 @@ instance ToJSON TraceLocalStateQueryClient where
       object [ "kind" .= Aeson.String "PastHorizon"
              , "error" .= show e
              ]
+    LedgerPeersNotAvailable ->
+      object [ "kind" .= Aeson.String "LedgerPeersNotAvailable" ]
 
 -- TODO generalize to handle ledger eras other than Conway
 -- | connects the dmq node to cardano node via local state query
@@ -244,7 +247,12 @@ cardanoClient tracer ledgerPeers
 
           pure $ release systemStart toNextEpoch
 
-        handleLedgerPeers _ = error "handleLedgerPeers: impossible!"
+        handleLedgerPeers (SomeLedgerPeerSnapshot _ LedgerBigPeerSnapshotV23 {}) = do
+          pure $ release systemStart toNextEpoch
+
+        handleLedgerPeers (SomeLedgerPeerSnapshot _ LedgerPeerSnapshotV2 {}) = do
+          traceWith tracer LedgerPeersNotAvailable
+          pure $ release systemStart toNextEpoch
 
 
     -- release, continue the loop in `idle`
