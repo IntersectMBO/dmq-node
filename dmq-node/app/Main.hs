@@ -175,10 +175,8 @@ runDMQ commandLineConfig = do
                           sigSize
                           nodeKernel
                           (dmqCodecs
-                                   -- TODO: `maxBound :: Cardano.Network.NodeToNode.NodeToNodeVersion`
-                                   -- is unsafe here!
-                                   (encodeRemoteAddress (maxBound @NodeToNodeVersion))
-                                   (decodeRemoteAddress (maxBound @NodeToNodeVersion)))
+                             (encodeRemoteAddress (maxBound @NodeToNodeVersion))
+                             (decodeRemoteAddress (maxBound @NodeToNodeVersion)))
                           dmqLimitsAndTimeouts
                           Policy.sigDecisionPolicy
             ntcValidationTracer = if validationTracer

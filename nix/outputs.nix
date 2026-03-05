@@ -48,22 +48,22 @@ let
   };
 
   devShells = rec {
-    default = ghc967;
-    ghc967 = mkShell "ghc967";
-
+    default = mkShell pkgs.dmq-node.args.compiler-nix-name;
     # ghc9122 = mkShell "ghc9122";
   };
 
   flake = pkgs.dmq-node.flake { };
   format = pkgs.callPackage ./formatting.nix pkgs;
 
-  defaultHydraJobs = {
-    ciJobs = flake.hydraJobs;
-    inherit packages;
-    inherit devShells;
-    inherit format;
-    required = utils.makeHydraRequiredJob hydraJobs;
-  };
+  defaultHydraJobs =
+    flake.hydraJobs
+    //
+    {
+      inherit packages;
+      inherit devShells;
+      inherit format;
+      required = utils.makeHydraRequiredJob hydraJobs;
+    };
 
   hydraJobsPerSystem = {
     "x86_64-linux" = defaultHydraJobs;

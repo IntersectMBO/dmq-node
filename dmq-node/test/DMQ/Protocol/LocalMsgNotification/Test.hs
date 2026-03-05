@@ -233,7 +233,6 @@ codec :: MonadST m
       => LocalMsgNotificationCodec m MsgWithBytes
 codec = codecLocalMsgNotification' Utils.runWithByteSpan encodeMsg decodeMsg
 
-
 instance Arbitrary HasMore where
   arbitrary = elements [HasMore, DoesNotHaveMore]
 
