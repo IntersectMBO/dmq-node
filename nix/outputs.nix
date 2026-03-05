@@ -65,19 +65,18 @@ let
       required = utils.makeHydraRequiredJob hydraJobs;
     };
 
-  hydraJobsPerSystem = {
-    "x86_64-linux" = defaultHydraJobs;
-    "x86_64-darwin" = defaultHydraJobs;
-    "aarch64-linux" = { };
-    "aarch64-darwin" = defaultHydraJobs;
-  };
-
-  hydraJobs = utils.flattenDerivationTree "-" hydraJobsPerSystem.${system};
+  hydraJobs =
+    utils.flattenDerivationTree "-"
+      {
+        "x86_64-linux" = defaultHydraJobs;
+        "x86_64-darwin" = defaultHydraJobs;
+        "aarch64-linux" = { };
+        "aarch64-darwin" = defaultHydraJobs;
+      }.${system};
 in
 
 {
   inherit packages;
-  inherit app;
   inherit devShells;
   inherit hydraJobs;
   legacyPackages = {
