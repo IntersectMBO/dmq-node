@@ -22,6 +22,7 @@ import Data.Functor ((<&>))
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict qualified as Map
 import Data.Proxy
+import Data.SOP.Strict.NS (NS (..))
 import Data.Void
 
 import Cardano.Chain.Slotting (EpochSlots (..))
@@ -32,9 +33,13 @@ import Cardano.Network.PeerSelection (LedgerPeerSnapshot (..),
 import Cardano.Slotting.EpochInfo.API
 import Cardano.Slotting.Slot (EpochNo)
 import Cardano.Slotting.Time
+
 import DMQ.Diffusion.NodeKernel
 import Ouroboros.Consensus.Cardano.Block
 import Ouroboros.Consensus.Cardano.Node
+import Ouroboros.Consensus.HardFork.Combinator (EraIndex)
+import Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
+           (EraIndex (..))
 import Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
 import Ouroboros.Consensus.HardFork.History.EpochInfo (interpreterToEpochInfo)
 import Ouroboros.Consensus.HardFork.History.Qry (PastHorizonException)
@@ -84,6 +89,12 @@ instance ToJSON TraceLocalStateQueryClient where
     LedgerPeersNotAvailable ->
       object [ "kind" .= Aeson.String "LedgerPeersNotAvailable" ]
 
+
+data QueryError = UnsupportedEra
+  deriving Show
+
+instance Exception QueryError where
+
 -- TODO generalize to handle ledger eras other than Conway
 -- | connects the dmq node to cardano node via local state query
 -- and updates the node kernel with stake pool data necessary to perform message
@@ -126,6 +137,9 @@ cardanoClient tracer ledgerPeers
              throwIO . userError $ "recvMsgFailure: " <> show failure
          }
 
+    wrappingMismatch :: forall err r.
+                        (r -> m (ClientStAcquired block point query m Void))
+                     -> ClientStQuerying block point query m Void (Either err r)
     wrappingMismatch k = ClientStQuerying $
       either (const . throwIO . userError $ "mismatch era info") k
 
@@ -152,11 +166,10 @@ cardanoClient tracer ledgerPeers
         Right relativeTime -> do
           let nextEpoch = fromRelativeTime systemStart relativeTime
           -- continue with stake snapshot query
-          pure $ queryStakeSnapshots systemStart nextEpoch
+          pure $ queryCurrentEra systemStart nextEpoch
 
 
-    -- query stake snapshot
-    queryStakeSnapshots
+    queryCurrentEra
       :: SystemStart
       -> UTCTime
       -> ClientStAcquired
@@ -165,9 +178,44 @@ cardanoClient tracer ledgerPeers
            (Query (CardanoBlock crypto))
            m
            Void
-    queryStakeSnapshots systemStart nextEpoch =
-        SendMsgQuery (BlockQuery . QueryIfCurrentConway $ GetStakeSnapshots Nothing)
-          $ wrappingMismatch handleStakeSnapshots
+    queryCurrentEra systemStart nextEpoch =
+        SendMsgQuery (BlockQuery (QueryHardFork GetCurrentEra))
+          $ ClientStQuerying $ \era -> queryStakeSnapshots systemStart nextEpoch era
+
+    -- query stake snapshot
+    queryStakeSnapshots
+      :: SystemStart
+      -> UTCTime
+      -> EraIndex idx
+      -> m (ClientStAcquired
+             (CardanoBlock crypto)
+             (Point (CardanoBlock crypto))
+             (Query (CardanoBlock crypto))
+             m
+             Void)
+    queryStakeSnapshots systemStart nextEpoch era =
+        case getEraIndex era of
+          Z _                           -> throwIO UnsupportedEra
+          S Z{}                         -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentShelley (GetStakeSnapshots Nothing)))
+                                                  $ wrappingMismatch handleStakeSnapshots
+          S (S Z{})                     -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentAllegra (GetStakeSnapshots Nothing)))
+                                                  $ wrappingMismatch handleStakeSnapshots
+          S (S (S Z{}))                 -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentMary (GetStakeSnapshots Nothing)))
+                                                  $ wrappingMismatch handleStakeSnapshots
+          S (S (S (S Z{})))             -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentAlonzo (GetStakeSnapshots Nothing)))
+                                                  $ wrappingMismatch handleStakeSnapshots
+          S (S (S (S (S Z{}))))         -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentBabbage (GetStakeSnapshots Nothing)))
+                                                  $ wrappingMismatch handleStakeSnapshots
+          S (S (S (S (S (S Z{})))))     -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentConway (GetStakeSnapshots Nothing)))
+                                                  $ wrappingMismatch handleStakeSnapshots
+          S (S (S (S (S (S (S Z{})))))) -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentDijkstra (GetStakeSnapshots Nothing)))
+                                                  $ wrappingMismatch handleStakeSnapshots
+          -- TODO: requires manual intervention when new era is introduced, it
+          -- would be nice if `ouroboros-consensus` exposed its
+          -- `TagByron..TagDjikstra` patterns and made them complete as all the
+          -- other patterns are.  Then we'd get an incomplete GHC warning when
+          -- a new era is introduced.
+          _                             -> throwIO UnsupportedEra
       where
         handleStakeSnapshots
           :: StakeSnapshots

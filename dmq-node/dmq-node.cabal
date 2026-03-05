@@ -133,6 +133,7 @@ library
     quiet,
     random ^>=1.3,
     singletons,
+    strict-sop-core,
     text >=1.2.4 && <2.2,
     time >=1.12 && <1.15,
     transformers,
