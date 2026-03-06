@@ -22,14 +22,13 @@ import Data.Functor ((<&>))
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict qualified as Map
 import Data.Proxy
-import Data.SOP.Strict.NS (NS (..))
 import Data.Void
 
 import Cardano.Chain.Slotting (EpochSlots (..))
 import Cardano.Ledger.Api.State.Query (StakeSnapshots (..))
 import Cardano.Network.NodeToClient
 import Cardano.Network.PeerSelection (LedgerPeerSnapshot (..),
-           LedgerRelayAccessPoint (..))
+           LedgerRelayAccessPoint (..), SingLedgerPeersKind (..))
 import Cardano.Slotting.EpochInfo.API
 import Cardano.Slotting.Slot (EpochNo)
 import Cardano.Slotting.Time
@@ -37,9 +36,6 @@ import Cardano.Slotting.Time
 import DMQ.Diffusion.NodeKernel
 import Ouroboros.Consensus.Cardano.Block
 import Ouroboros.Consensus.Cardano.Node
-import Ouroboros.Consensus.HardFork.Combinator (EraIndex)
-import Ouroboros.Consensus.HardFork.Combinator.Abstract.SingleEraBlock
-           (EraIndex (..))
 import Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
 import Ouroboros.Consensus.HardFork.History.EpochInfo (interpreterToEpochInfo)
 import Ouroboros.Consensus.HardFork.History.Qry (PastHorizonException)
@@ -53,8 +49,8 @@ import Ouroboros.Network.Block
 import Ouroboros.Network.Magic
 import Ouroboros.Network.Mux qualified as Mx
 import Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeersKind (..),
-           SomeLedgerPeerSnapshot (..), accumulateBigLedgerStake)
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type (SomeHashableBlock)
+           accumulateBigLedgerStake)
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type (RawBlockHash)
 import Ouroboros.Network.Point (Block (..))
 import Ouroboros.Network.Protocol.LocalStateQuery.Client
 import Ouroboros.Network.Protocol.LocalStateQuery.Type
@@ -186,7 +182,7 @@ cardanoClient tracer ledgerPeers
     queryStakeSnapshots
       :: SystemStart
       -> UTCTime
-      -> EraIndex idx
+      -> EraIndex (CardanoEras crypto)
       -> m (ClientStAcquired
              (CardanoBlock crypto)
              (Point (CardanoBlock crypto))
@@ -194,28 +190,22 @@ cardanoClient tracer ledgerPeers
              m
              Void)
     queryStakeSnapshots systemStart nextEpoch era =
-        case getEraIndex era of
-          Z _                           -> throwIO UnsupportedEra
-          S Z{}                         -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentShelley (GetStakeSnapshots Nothing)))
-                                                  $ wrappingMismatch handleStakeSnapshots
-          S (S Z{})                     -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentAllegra (GetStakeSnapshots Nothing)))
-                                                  $ wrappingMismatch handleStakeSnapshots
-          S (S (S Z{}))                 -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentMary (GetStakeSnapshots Nothing)))
-                                                  $ wrappingMismatch handleStakeSnapshots
-          S (S (S (S Z{})))             -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentAlonzo (GetStakeSnapshots Nothing)))
-                                                  $ wrappingMismatch handleStakeSnapshots
-          S (S (S (S (S Z{}))))         -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentBabbage (GetStakeSnapshots Nothing)))
-                                                  $ wrappingMismatch handleStakeSnapshots
-          S (S (S (S (S (S Z{})))))     -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentConway (GetStakeSnapshots Nothing)))
-                                                  $ wrappingMismatch handleStakeSnapshots
-          S (S (S (S (S (S (S Z{})))))) -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentDijkstra (GetStakeSnapshots Nothing)))
-                                                  $ wrappingMismatch handleStakeSnapshots
-          -- TODO: requires manual intervention when new era is introduced, it
-          -- would be nice if `ouroboros-consensus` exposed its
-          -- `TagByron..TagDjikstra` patterns and made them complete as all the
-          -- other patterns are.  Then we'd get an incomplete GHC warning when
-          -- a new era is introduced.
-          _                             -> throwIO UnsupportedEra
+        case era of
+          EraByron{}    -> throwIO UnsupportedEra
+          EraShelley{}  -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentShelley (GetStakeSnapshots Nothing)))
+                                  $ wrappingMismatch handleStakeSnapshots
+          EraAllegra{}  -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentAllegra (GetStakeSnapshots Nothing)))
+                                  $ wrappingMismatch handleStakeSnapshots
+          EraMary{}     -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentMary (GetStakeSnapshots Nothing)))
+                                  $ wrappingMismatch handleStakeSnapshots
+          EraAlonzo{}   -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentAlonzo (GetStakeSnapshots Nothing)))
+                                  $ wrappingMismatch handleStakeSnapshots
+          EraBabbage{}  -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentBabbage (GetStakeSnapshots Nothing)))
+                                  $ wrappingMismatch handleStakeSnapshots
+          EraConway{}   -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentConway (GetStakeSnapshots Nothing)))
+                                  $ wrappingMismatch handleStakeSnapshots
+          EraDijkstra{} -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentDijkstra (GetStakeSnapshots Nothing)))
+                                  $ wrappingMismatch handleStakeSnapshots
       where
         handleStakeSnapshots
           :: StakeSnapshots
@@ -251,18 +241,18 @@ cardanoClient tracer ledgerPeers
            m
            Void
     queryLedgerPeers systemStart toNextEpoch =
-        SendMsgQuery (BlockQuery . QueryIfCurrentConway $ GetLedgerPeerSnapshot AllLedgerPeers)
+        SendMsgQuery (BlockQuery . QueryIfCurrentConway $ GetLedgerPeerSnapshot SingAllLedgerPeers)
         $ wrappingMismatch handleLedgerPeers
       where
         handleLedgerPeers
-          :: SomeLedgerPeerSnapshot
+          :: LedgerPeerSnapshot AllLedgerPeers
           -> m (ClientStAcquired
                   (CardanoBlock crypto)
                   (Point (CardanoBlock crypto))
                   (Query (CardanoBlock crypto))
                   m
                   Void)
-        handleLedgerPeers (SomeLedgerPeerSnapshot _ (LedgerAllPeerSnapshotV23 pt magic peers)) = do
+        handleLedgerPeers (LedgerAllPeerSnapshotV23 pt magic peers) = do
           let bigSrvRelays = force
                 [(accStake, (stake, NonEmpty.fromList relays'))
                 | (accStake, (stake, relays)) <- accumulateBigLedgerStake peers
@@ -274,7 +264,7 @@ cardanoClient tracer ledgerPeers
                                   relays
                 , not (null relays')
                 ]
-              pt' :: Point SomeHashableBlock
+              pt' :: Point RawBlockHash
               pt' = Point $ getPoint pt <&>
                               \blk -> blk { blockPointSlot = maxBound }
               srvRelays = force
@@ -293,13 +283,6 @@ cardanoClient tracer ledgerPeers
             writeTMVar ledgerPeersVar $ LedgerAllPeerSnapshotV23 pt magic srvRelays
             writeTVar  ledgerBigPeersVar . Just $! LedgerBigPeerSnapshotV23 pt' magic bigSrvRelays
 
-          pure $ release systemStart toNextEpoch
-
-        handleLedgerPeers (SomeLedgerPeerSnapshot _ LedgerBigPeerSnapshotV23 {}) = do
-          pure $ release systemStart toNextEpoch
-
-        handleLedgerPeers (SomeLedgerPeerSnapshot _ LedgerPeerSnapshotV2 {}) = do
-          traceWith tracer LedgerPeersNotAvailable
           pure $ release systemStart toNextEpoch
 
 
