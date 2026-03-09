@@ -35,7 +35,6 @@ sigDecisionPolicy = TxDecisionPolicy {
     maxNumTxIdsToRequest   = maxSigsInflight,
     maxUnacknowledgedTxIds = 4 * maxSigsInflight,
     txsSizeInflightPerPeer = maxSigSize * fromIntegral maxSigsInflight,
-    maxTxsSizeInflight     = 250_000,
     txInflightMultiplicity = 1,
     bufferedTxsMinLifetime = 0,
     scoreRate              = 0.1,

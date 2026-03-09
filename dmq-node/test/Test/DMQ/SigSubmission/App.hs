@@ -14,6 +14,7 @@ module Test.DMQ.SigSubmission.App (tests) where
 import Prelude hiding (seq)
 
 import Control.Concurrent.Class.MonadMVar.Strict
+import Control.Concurrent.Class.MonadSTM qualified as LazySTM
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadFork
@@ -199,9 +200,7 @@ sigSubmissionSimulation (SigSubmissionState state sigDecisionPolicy) = do
         atomically (traverse_ (`writeTVar` Terminate) controlMessageVars)
     ) \_ -> do
       let tracer :: forall a. (Show a, Typeable a) => Tracer (IOSim s) a
-          tracer = verboseTracer
-                <> debugTracer
-                <> Tracer traceM
+          tracer = dynamicTracer <> sayTracer
       runSigSubmissionV2 tracer tracer state'' sigDecisionPolicy
 
 
@@ -279,6 +278,7 @@ runSigSubmissionV2 tracer tracerSigLogic st0 sigDecisionPolicy = do
     sharedSigStateVar <- newSharedTxStateVar sigRng
     traceTVarIO sharedSigStateVar \_ -> return . TraceDynamic . SigStateTrace
     labelTVarIO sharedSigStateVar "shared-sig-state"
+    duplicateSigsVar <- LazySTM.newTVarIO []
 
     withAsync (decisionLogicThreads tracerSigLogic sayTracer
                                     sigDecisionPolicy sigChannelsVar sharedSigStateVar) $ \a -> do
@@ -307,12 +307,12 @@ runSigSubmissionV2 tracer tracerSigLogic st0 sigDecisionPolicy = do
                                 sigDecisionPolicy
                                 sharedSigStateVar
                                 (getMempoolReader inboundMempool)
-                                (getMempoolWriter inboundMempool)
+                                (getMempoolWriter duplicateSigsVar inboundMempool)
                                 getTxSize
                                 addr $ \(api :: PeerTxAPI m TxId (Tx TxId))-> do
                                   let inbound = sigSubmissionInbound
                                                   verboseTracer
-                                                  (getMempoolWriter inboundMempool)
+                                                  (getMempoolWriter duplicateSigsVar inboundMempool)
                                                   api
                                                   ctrlMsgSTM
                                   runPipelinedPeerWithLimits

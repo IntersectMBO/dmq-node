@@ -31,9 +31,9 @@ import Data.Aeson.Encode.Pretty (encodePretty)
 import Data.Bool (bool)
 import Data.ByteString.Lazy.Char8 qualified as LBS.Char8
 import Data.Functor.Contravariant ((>$<))
-import Data.Set qualified as Set
 import Data.Text qualified as Text
 
+import Ouroboros.Network.Diffusion (NoExtraPeers (..))
 import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.OrphanInstances ()
 import Ouroboros.Network.PeerSelection (DebugPeerSelection (..))
@@ -79,17 +79,7 @@ dmqTracer pretty = contramapM
 instance ToJSON Term where
   toJSON term = String (Text.pack . show $ term)
 
-data NoExtraPeers = NoExtraPeers
-instance Semigroup NoExtraPeers where
-  _ <> _ = NoExtraPeers
-instance Monoid NoExtraPeers where
-  mempty = NoExtraPeers
-
-instance ToJSON NoExtraPeers where
-  toJSON _ = Null
-  omitField _ = True
-
-instance ToJSON (PublicRootPeers NoExtraPeers RemoteAddress) where
+instance ToJSON (PublicRootPeers (NoExtraPeers RemoteAddress) RemoteAddress) where
   toJSON prp =
     object [ "kind"              .= String "PublicRootPeers"
            , "ledgerPeers"       .= PublicRootPeers.getLedgerPeers prp
@@ -145,17 +135,65 @@ instance ToJSON (Governor.PeerSelectionCounters NoExtraCounters) where
            , "activeNonRootPeersDemotions" .= numberOfActiveNonRootPeersDemotions
            ]
 
-instance ToJSON (DebugPeerSelection NoExtraState NoExtraFlags NoExtraPeers RemoteAddress) where
+instance ToJSON (DebugPeerSelection NoExtraState NoExtraFlags (NoExtraPeers RemoteAddress) RemoteAddress) where
   toJSON (TraceGovernorState blockedAt wakeupAfter st@Governor.PeerSelectionState { Governor.targets }) =
     object [ "kind"        .= String "DebugPeerSelection"
            , "blockedAt"   .= String (Text.pack . show $ blockedAt)
            , "wakeupAfter" .= String (Text.pack . show $ wakeupAfter)
            , "targets"     .= targets
-           , "counters"    .= Governor.peerSelectionStateToCounters
-                                (const Set.empty)
-                                (const NoExtraCounters)
-                                st
+           , "counters"    .= Governor.peerSelectionStateToCounters st
            ]
+
+
+instance ToJSON (Governor.ToExtraTrace (NoExtraPeers RemoteAddress)) where
+    toJSON _ = Null
+    omitField _ = True
+
+instance ToJSON (Governor.PeerSelectionCounters (Governor.ViewExtraPeers (NoExtraPeers RemoteAddress))) where
+    toJSON Governor.PeerSelectionCounters {..} =
+      object [ "kind" .= String "PeerSelectionCounters"
+
+             , "rootPeers" .= numberOfRootPeers
+
+             , "knownPeers" .= numberOfKnownPeers
+             , "availableToConnect" .= numberOfAvailableToConnectPeers
+             , "coldPeersPromotions" .= numberOfColdPeersPromotions
+             , "establishedPeers" .= numberOfEstablishedPeers
+             , "warmPeersDemotions" .= numberOfWarmPeersDemotions
+             , "warmPeersPromotions" .= numberOfWarmPeersPromotions
+             , "activePeers" .= numberOfActivePeers
+             , "activePeersDemotions" .= numberOfActivePeersDemotions
+
+             , "knownBigLedgerPeers" .= numberOfKnownBigLedgerPeers
+             , "availableToConnectBigLegerPeers" .= numberOfAvailableToConnectBigLedgerPeers
+             , "coldBigLedgerPeersPromotions" .= numberOfColdBigLedgerPeersPromotions
+             , "establishedBigLedgerPeers" .= numberOfEstablishedBigLedgerPeers
+             , "warmBigLedgerPeersDemotions" .= numberOfWarmBigLedgerPeersDemotions
+             , "warmBigLedgerPeersPromotions" .= numberOfWarmBigLedgerPeersPromotions
+             , "activeBigLedgerPeers" .= numberOfActiveBigLedgerPeers
+             , "activeBigLedgerPeersDemotions" .= numberOfActiveBigLedgerPeersDemotions
+
+             , "knownLocalRootPeers" .= numberOfKnownLocalRootPeers
+             , "availableToConnectLocalRootPeers" .= numberOfAvailableToConnectLocalRootPeers
+             , "coldLocalRootPeersPromotions" .= numberOfColdLocalRootPeersPromotions
+             , "establishedLocalRootPeers" .= numberOfEstablishedLocalRootPeers
+             , "warmLocalRootPeersPromotions" .= numberOfWarmLocalRootPeersPromotions
+             , "activeLocalRootPeers" .= numberOfActiveLocalRootPeers
+             , "activeLocalRootPeersDemotions" .= numberOfActiveLocalRootPeersDemotions
+
+             , "knownNonRootPeers" .= numberOfKnownNonRootPeers
+             , "coldNonRootPeersPromotions" .= numberOfColdNonRootPeersPromotions
+             , "establishedNonRootPeers" .= numberOfEstablishedNonRootPeers
+             , "warmNonRootPeersDemotions" .= numberOfWarmNonRootPeersDemotions
+             , "warmNonRootPeersPromotions" .= numberOfWarmNonRootPeersPromotions
+             , "activeNonRootPeers" .= numberOfActiveNonRootPeers
+             , "activeNonRootPeersDemotions" .= numberOfActiveNonRootPeersDemotions
+
+             ]
+
+instance ToJSON (NoExtraPeers RemoteAddress) where
+  toJSON _ = Null
+  omitField _ = True
 
 dmqDiffusionTracers
   :: forall m.
@@ -167,9 +205,7 @@ dmqDiffusionTracers
                        NoExtraState
                        NoExtraDebugState
                        NoExtraFlags
-                       NoExtraPeers
-                       NoExtraCounters
-                       NoExtraTracer
+                       (NoExtraPeers RemoteAddress)
                        m
 dmqDiffusionTracers
     Configuration {

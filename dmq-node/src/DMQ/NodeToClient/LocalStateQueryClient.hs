@@ -10,6 +10,7 @@ module DMQ.NodeToClient.LocalStateQueryClient
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
+import Control.DeepSeq (force)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
@@ -17,6 +18,8 @@ import Control.Monad.Trans.Except
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
 import Data.Aeson (ToJSON (..), object, (.=))
 import Data.Aeson qualified as Aeson
+import Data.Functor ((<&>))
+import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict qualified as Map
 import Data.Proxy
 import Data.Void
@@ -24,9 +27,12 @@ import Data.Void
 import Cardano.Chain.Slotting (EpochSlots (..))
 import Cardano.Ledger.Api.State.Query (StakeSnapshots (..))
 import Cardano.Network.NodeToClient
+import Cardano.Network.PeerSelection (LedgerPeerSnapshot (..),
+           LedgerRelayAccessPoint (..), SingLedgerPeersKind (..))
 import Cardano.Slotting.EpochInfo.API
 import Cardano.Slotting.Slot (EpochNo)
 import Cardano.Slotting.Time
+
 import DMQ.Diffusion.NodeKernel
 import Ouroboros.Consensus.Cardano.Block
 import Ouroboros.Consensus.Cardano.Node
@@ -42,6 +48,10 @@ import Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import Ouroboros.Network.Block
 import Ouroboros.Network.Magic
 import Ouroboros.Network.Mux qualified as Mx
+import Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeersKind (..),
+           accumulateBigLedgerStake)
+import Ouroboros.Network.PeerSelection.LedgerPeers.Type (RawBlockHash)
+import Ouroboros.Network.Point (Block (..))
 import Ouroboros.Network.Protocol.LocalStateQuery.Client
 import Ouroboros.Network.Protocol.LocalStateQuery.Type
 
@@ -52,6 +62,7 @@ data TraceLocalStateQueryClient =
   | CurrentEpoch EpochNo
   | NextEpoch UTCTime NominalDiffTime
   | PastHorizon PastHorizonException
+  | LedgerPeersNotAvailable
 
 instance ToJSON TraceLocalStateQueryClient where
   toJSON = \case
@@ -71,6 +82,14 @@ instance ToJSON TraceLocalStateQueryClient where
       object [ "kind" .= Aeson.String "PastHorizon"
              , "error" .= show e
              ]
+    LedgerPeersNotAvailable ->
+      object [ "kind" .= Aeson.String "LedgerPeersNotAvailable" ]
+
+
+data QueryError = UnsupportedEra
+  deriving Show
+
+instance Exception QueryError where
 
 -- TODO generalize to handle ledger eras other than Conway
 -- | connects the dmq node to cardano node via local state query
@@ -81,10 +100,17 @@ cardanoClient
   :: forall block query point crypto m. (MonadDelay m, MonadSTM m, MonadThrow m, MonadTime m)
   => (block ~ CardanoBlock crypto, query ~ Query block, point ~ Point block)
   => Tracer m TraceLocalStateQueryClient
+  -> Bool -- ^ use ledger peers
   -> StakePools m
   -> StrictTVar m (Maybe UTCTime) -- ^ from node kernel
   -> LocalStateQueryClient (CardanoBlock crypto) (Point block) (Query block) m Void
-cardanoClient tracer StakePools { stakePoolsVar } nextEpochVar =
+cardanoClient tracer ledgerPeers
+              StakePools {
+                stakePoolsVar,
+                ledgerPeersVar,
+                ledgerBigPeersVar
+              }
+              nextEpochVar =
   LocalStateQueryClient (idle Nothing)
   where
     idle mSystemStart = do
@@ -107,6 +133,9 @@ cardanoClient tracer StakePools { stakePoolsVar } nextEpochVar =
              throwIO . userError $ "recvMsgFailure: " <> show failure
          }
 
+    wrappingMismatch :: forall err r.
+                        (r -> m (ClientStAcquired block point query m Void))
+                     -> ClientStQuerying block point query m Void (Either err r)
     wrappingMismatch k = ClientStQuerying $
       either (const . throwIO . userError $ "mismatch era info") k
 
@@ -132,67 +161,153 @@ cardanoClient tracer StakePools { stakePoolsVar } nextEpochVar =
             idle $ Just systemStart
         Right relativeTime -> do
           let nextEpoch = fromRelativeTime systemStart relativeTime
+          -- continue with stake snapshot query
+          pure $ queryCurrentEra systemStart nextEpoch
+
+
+    queryCurrentEra
+      :: SystemStart
+      -> UTCTime
+      -> ClientStAcquired
+           (CardanoBlock crypto)
+           (Point (CardanoBlock crypto))
+           (Query (CardanoBlock crypto))
+           m
+           Void
+    queryCurrentEra systemStart nextEpoch =
+        SendMsgQuery (BlockQuery (QueryHardFork GetCurrentEra))
+          $ ClientStQuerying $ \era -> queryStakeSnapshots systemStart nextEpoch era
+
+    -- query stake snapshot
+    queryStakeSnapshots
+      :: SystemStart
+      -> UTCTime
+      -> EraIndex (CardanoEras crypto)
+      -> m (ClientStAcquired
+             (CardanoBlock crypto)
+             (Point (CardanoBlock crypto))
+             (Query (CardanoBlock crypto))
+             m
+             Void)
+    queryStakeSnapshots systemStart nextEpoch era =
+        case era of
+          EraByron{}    -> throwIO UnsupportedEra
+          EraShelley{}  -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentShelley (GetStakeSnapshots Nothing)))
+                                  $ wrappingMismatch handleStakeSnapshots
+          EraAllegra{}  -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentAllegra (GetStakeSnapshots Nothing)))
+                                  $ wrappingMismatch handleStakeSnapshots
+          EraMary{}     -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentMary (GetStakeSnapshots Nothing)))
+                                  $ wrappingMismatch handleStakeSnapshots
+          EraAlonzo{}   -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentAlonzo (GetStakeSnapshots Nothing)))
+                                  $ wrappingMismatch handleStakeSnapshots
+          EraBabbage{}  -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentBabbage (GetStakeSnapshots Nothing)))
+                                  $ wrappingMismatch handleStakeSnapshots
+          EraConway{}   -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentConway (GetStakeSnapshots Nothing)))
+                                  $ wrappingMismatch handleStakeSnapshots
+          EraDijkstra{} -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentDijkstra (GetStakeSnapshots Nothing)))
+                                  $ wrappingMismatch handleStakeSnapshots
+      where
+        handleStakeSnapshots
+          :: StakeSnapshots
+          -> m (ClientStAcquired
+                  (CardanoBlock crypto)
+                  (Point (CardanoBlock crypto))
+                  (Query (CardanoBlock crypto))
+                  m
+                  Void)
+        handleStakeSnapshots StakeSnapshots { ssStakeSnapshots } = do
+          atomically do
+            writeTVar stakePoolsVar ssStakeSnapshots
+            writeTVar nextEpochVar $ Just nextEpoch
+          toNextEpoch <- diffUTCTime nextEpoch <$> getCurrentTime
+          traceWith tracer $ NextEpoch nextEpoch toNextEpoch
+          threadDelay $ min (max 1 $ realToFrac toNextEpoch) 86400 -- TODO fuzz this?
           pure $
-            SendMsgQuery (BlockQuery . QueryIfCurrentConway $ GetStakeSnapshots Nothing)
-            $ wrappingMismatch (handleStakeSnapshots systemStart nextEpoch)
+            if ledgerPeers
+            then -- continue with ledger peers query
+                 queryLedgerPeers systemStart toNextEpoch
+            else -- release and continue in the idle state
+            release systemStart toNextEpoch
 
-    handleStakeSnapshots systemStart nextEpoch StakeSnapshots { ssStakeSnapshots } =
-      pure $ SendMsgRelease do
-        atomically do
-          writeTVar stakePoolsVar ssStakeSnapshots
-          writeTVar nextEpochVar $ Just nextEpoch
-        toNextEpoch <- diffUTCTime nextEpoch <$> getCurrentTime
-        traceWith tracer $ NextEpoch nextEpoch toNextEpoch
-        threadDelay $ min (max 1 $ realToFrac toNextEpoch) 86400 -- TODO fuzz this?
-        idle $ Just systemStart
 
-      -- TODO uncomment once this functionality is integrated into cardano-node
-      -- pure $
-      --   SendMsgQuery (BlockQuery . QueryIfCurrentConway $ GetLedgerPeerSnapshot AllLedgerPeers)
-      --   $ wrappingMismatch handleLedgerPeers
-      -- where
-      --   handleLedgerPeers (SomeLedgerPeerSnapshot (LedgerAllPeerSnapshotV23 pt magic peers)) = do
-      --     let bigSrvRelays = force
-      --           [(accStake, (stake, NonEmpty.fromList relays'))
-      --           | (accStake, (stake, relays)) <- accumulateBigLedgerStake peers
-      --           , let relays' = NonEmpty.filter
-      --                             (\case
-      --                                 LedgerRelayAccessSRVDomain {} -> True
-      --                                 _ -> False
-      --                             )
-      --                             relays
-      --           , not (null relays')
-      --           ]
-      --         pt' = Point $ getPoint pt <&>
-      --                         \blk -> blk { blockPointSlot = maxBound }
-      --         srvRelays = force
-      --           [ (stake, NonEmpty.fromList relays')
-      --           | (stake, relays) <- peers
-      --           , let relays' = NonEmpty.filter
-      --                             (\case
-      --                                 LedgerRelayAccessSRVDomain {} -> True
-      --                                 _ -> False
-      --                             )
-      --                             relays
-      --           , not (null relays')
-      --           ]
-      --     atomically do
-      --       writeTMVar ledgerPeersVar $ LedgerAllPeerSnapshotV23 pt magic srvRelays
-      --       writeTVar  ledgerBigPeersVar . Just $! LedgerBigPeerSnapshotV23 pt' magic bigSrvRelays
-      --     pure $ SendMsgRelease do
-      --       threadDelay $ min (realToFrac toNextEpoch) 86400 -- TODO fuzz this?
-      --       idle $ Just systemStart
+    -- query ledger peer snapshot
+    queryLedgerPeers
+      :: SystemStart
+      -> NominalDiffTime
+      -> ClientStAcquired
+           (CardanoBlock crypto)
+           (Point (CardanoBlock crypto))
+           (Query (CardanoBlock crypto))
+           m
+           Void
+    queryLedgerPeers systemStart toNextEpoch =
+        SendMsgQuery (BlockQuery . QueryIfCurrentConway $ GetLedgerPeerSnapshot SingAllLedgerPeers)
+        $ wrappingMismatch handleLedgerPeers
+      where
+        handleLedgerPeers
+          :: LedgerPeerSnapshot AllLedgerPeers
+          -> m (ClientStAcquired
+                  (CardanoBlock crypto)
+                  (Point (CardanoBlock crypto))
+                  (Query (CardanoBlock crypto))
+                  m
+                  Void)
+        handleLedgerPeers (LedgerAllPeerSnapshotV23 pt magic peers) = do
+          let bigSrvRelays = force
+                [(accStake, (stake, NonEmpty.fromList relays'))
+                | (accStake, (stake, relays)) <- accumulateBigLedgerStake peers
+                , let relays' = NonEmpty.filter
+                                  (\case
+                                      LedgerRelayAccessSRVDomain {} -> True
+                                      _ -> False
+                                  )
+                                  relays
+                , not (null relays')
+                ]
+              pt' :: Point RawBlockHash
+              pt' = Point $ getPoint pt <&>
+                              \blk -> blk { blockPointSlot = maxBound }
+              srvRelays = force
+                [ (stake, NonEmpty.fromList relays')
+                | (stake, relays) <- peers
+                , let relays' = NonEmpty.filter
+                                  (\case
+                                      LedgerRelayAccessSRVDomain {} -> True
+                                      _ -> False
+                                  )
+                                  relays
+                , not (null relays')
+                ]
 
-      -- handleLedgerPeers _ = error "handleLedgerPeers: impossible!"
+          atomically do
+            writeTMVar ledgerPeersVar $ LedgerAllPeerSnapshotV23 pt magic srvRelays
+            writeTVar  ledgerBigPeersVar . Just $! LedgerBigPeerSnapshotV23 pt' magic bigSrvRelays
+
+          pure $ release systemStart toNextEpoch
+
+
+    -- release, continue the loop in `idle`
+    release :: SystemStart
+            -> NominalDiffTime
+            -> ClientStAcquired
+                 (CardanoBlock crypto)
+                 (Point (CardanoBlock crypto))
+                 (Query (CardanoBlock crypto))
+                 m
+                 Void
+    release systemStart toNextEpoch = SendMsgRelease do
+      threadDelay $ min (realToFrac toNextEpoch) 86400 -- TODO fuzz this?
+      idle $ Just systemStart
 
 
 connectToCardanoNode :: Tracer IO TraceLocalStateQueryClient
+                     -> Bool -- ^ use ledger peers
                      -> LocalSnocket
                      -> FilePath
                      -> NetworkMagic
                      -> NodeKernel crypto ntnAddr IO
                      -> IO (Either SomeException Void)
-connectToCardanoNode tracer localSnocket' snocketPath networkMagic nodeKernel =
+connectToCardanoNode tracer ledgerPeers localSnocket' snocketPath networkMagic nodeKernel =
   connectTo
    localSnocket'
    nullNetworkConnectTracers --debuggingNetworkConnectTracers
@@ -221,6 +336,7 @@ connectToCardanoNode tracer localSnocket' snocketPath networkMagic nodeKernel =
                          , StateIdle
                          , localStateQueryClientPeer
                            $ cardanoClient tracer
+                                           ledgerPeers
                                            (stakePools nodeKernel)
                                            (nextEpochVar nodeKernel)
                          )

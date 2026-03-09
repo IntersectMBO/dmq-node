@@ -53,8 +53,8 @@ diffusionArguments
   -> Tracer m (NtC.HandshakeTr ntcAddr)
   -> STM m [(PoolStake, NonEmpty LedgerRelayAccessPoint)]
   -> Diffusion.Arguments
-       NoExtraState NoExtraDebugState NoExtraFlags NoExtraPeers
-       NoExtraAPI NoExtraChurnArgs NoExtraCounters NoExtraTracer
+       NoExtraState NoExtraDebugState NoExtraFlags (NoExtraPeers RemoteAddress)
+       NoExtraAPI NoExtraChurnArgs
        IOException
        Resolver
        m
@@ -82,7 +82,7 @@ diffusionArguments handshakeNtNTracer
       , lpExtraAPI       = NoExtraAPI
       }
   , Diffusion.daEmptyExtraState           = NoExtraState
-  , Diffusion.daEmptyExtraCounters        = NoExtraCounters
+  , Diffusion.daEmptyExtraCounters        = Diffusion.NoExtraView
   , Diffusion.daExtraPeersAPI             = nullPublicExtraPeersAPI
   , Diffusion.daInstallSigUSR1Handler     = \_ _ -> pure ()
   , Diffusion.daPeerSelectionGovernorArgs =
@@ -101,8 +101,7 @@ diffusionArguments handshakeNtNTracer
           }
       , defaultExtraFlags = NoExtraFlags
       }
-  , Diffusion.daPeerSelectionStateToExtraCounters = const NoExtraCounters
-  , Diffusion.daToExtraPeers                      = const NoExtraPeers
+  , Diffusion.daToExtraPeers                      = const Diffusion.NoExtraPeers
   , Diffusion.daRequestPublicRootPeers            = Nothing
   , Diffusion.daPeerChurnGovernor                 = peerChurnGovernor
   , Diffusion.daExtraChurnArgs                    = NoExtraChurnArgs
