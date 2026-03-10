@@ -159,6 +159,7 @@ executable dmq-node
     bytestring,
     cardano-git-rev,
     contra-tracer >=0.1 && <0.3,
+    directory,
     dmq-node,
     io-classes:{io-classes, strict-stm},
     kes-agent-crypto,

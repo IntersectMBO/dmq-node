@@ -30,7 +30,7 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
-    - name: Checkout ouroboros-network repository
+    - name: Checkout dmq-node repository
       uses: actions/checkout@v6
 
       # we need nix to later build the spec documents
