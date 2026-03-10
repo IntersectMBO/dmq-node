@@ -50,6 +50,10 @@ let
           ghcOptions = [ "-Werror" ];
         }))
         {
+          # GHC-9.6.7 and 9.12.2 fail due to a GHC bug:
+          # https://gitlab.haskell.org/ghc/ghc/-/issues/25739
+          packages.ouroboros-network.doHaddock = false;
+          packages.cardano-diffusion.doHaddock = false;
           packages.dmq-node.components.tests.dmq-cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag pkgs.cddlc ];
           packages.dmq-node.components.tests.dmq-cddl.preCheck = "export HOME=`pwd`";
         }
