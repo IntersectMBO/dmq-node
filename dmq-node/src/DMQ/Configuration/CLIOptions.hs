@@ -29,6 +29,8 @@ parseCLIOptions =
           <> short 'p'
           <> metavar "Port Number"
           <> help "Port Number that the node will bind to"
+          <> value (unI $ dmqcPortNumber defaultConfiguration)
+          <> showDefault
           )
         )
     <*> optional (
@@ -36,6 +38,8 @@ parseCLIOptions =
           (  long "local-socket"
           <> metavar "FILENAME"
           <> help "Unix socket for node-to-client communication"
+          <> value (getFilePath . unI $ dmqcLocalAddress defaultConfiguration)
+          <> showDefault
           )
         )
     <*> optional (
@@ -44,6 +48,8 @@ parseCLIOptions =
           <> short 'c'
           <> metavar "FILENAME"
           <> help "Configuration file for DMQ Node"
+          <> value (unI $ dmqcConfigFile defaultConfiguration)
+          <> showDefault
           )
         )
     <*> optional (
@@ -52,6 +58,8 @@ parseCLIOptions =
           <> short 't'
           <> metavar "FILENAME"
           <> help "Topology file for DMQ Node"
+          <> value (unI $ dmqcTopologyFile defaultConfiguration)
+          <> showDefault
           )
         )
     <*> optional (
@@ -59,6 +67,8 @@ parseCLIOptions =
           (  long "cardano-node-socket"
           <> metavar "Cardano node socket path"
           <> help "Used for local connections to Cardano node"
+          <> value (unI $ dmqcCardanoNodeSocket defaultConfiguration)
+          <> showDefault
           )
         )
     <*> optional (
@@ -66,6 +76,8 @@ parseCLIOptions =
           (  long "cardano-network-magic"
           <> metavar "Cardano node network magic"
           <> help "The network magic of cardano-node client for local connections"
+          <> value (unNetworkMagic . unI $ dmqcCardanoNetworkMagic defaultConfiguration)
+          <> showDefault
           )
         )
     <*> optional (
@@ -73,6 +85,8 @@ parseCLIOptions =
           (  long "dmq-network-magic"
           <> metavar "dmq node network magic"
           <> help "The network magic of the dmq network"
+          <> value (unNetworkMagic . unI $ dmqcNetworkMagic defaultConfiguration)
+          <> showDefault
           )
         )
     <*> optional (

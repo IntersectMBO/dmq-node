@@ -67,7 +67,7 @@ main = toplevelExceptionHandler $ void . runDMQ =<< execParser opts
   where
     opts = info (parseCLIOptions <**> helper)
                 ( fullDesc
-                <> progDesc "Run the POC DMQ node"
+                <> progDesc "Run the DMQ-Node"
                 )
 
 runDMQ :: PartialConfig -> IO Void
