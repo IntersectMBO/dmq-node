@@ -244,7 +244,7 @@ defaultConfiguration = Configuration {
       dmqcCardanoNetworkMagic                        =
         I (NetworkMagic . unProtocolMagicId $ mainnetProtocolMagicId),
       dmqcPortNumber                                 = I 3_141,
-      dmqcConfigFile                                 = I "dmq.configuration.yaml",
+      dmqcConfigFile                                 = I "dmq.config.json",
       dmqcTopologyFile                               = I "dmq.topology.json",
       dmqcAcceptedConnectionsLimit                   = I defaultAcceptedConnectionsLimit,
       dmqcDiffusionMode                              = I InitiatorAndResponderDiffusionMode,
@@ -508,7 +508,7 @@ readConfigurationFileOrError
   -> IO PartialConfig
 readConfigurationFileOrError nc =
       readConfigurationFile nc
-  >>= either (\err -> error $ "DMQ.Topology.eeadConfigurationFile: "
+  >>= either (\err -> error $ "DMQ.Topology.readConfigurationFile: "
                            <> Text.unpack err)
              pure
 
