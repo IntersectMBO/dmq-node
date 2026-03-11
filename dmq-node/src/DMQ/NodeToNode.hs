@@ -60,7 +60,8 @@ import DMQ.NodeToNode.Version
 import DMQ.Policy qualified as Policy
 import DMQ.Protocol.SigSubmission.Codec (byteLimitsSigSubmission,
            codecSigSubmission, timeLimitsSigSubmission)
-import DMQ.Protocol.SigSubmission.Type (NumTxIdsToAck (..), SigSubmission)
+import DMQ.Protocol.SigSubmission.Type (NumTxIdsToAck (..), NumTxIdsToReq (..),
+           SigSubmission)
 import DMQ.Protocol.SigSubmission.Validate (SigValidationError)
 import DMQ.Protocol.SigSubmissionV2.Codec
 import DMQ.Protocol.SigSubmissionV2.Inbound
@@ -231,7 +232,7 @@ ntnApps
     , peerSharingTimeLimits
     , peerSharingSizeLimits
     }
-    sigDecisionPolicy
+    sigDecisionPolicy@TxDecisionPolicy { maxUnacknowledgedTxIds }
     =
     Apps {
       aSigSubmissionV1Client
@@ -307,7 +308,7 @@ ntnApps
             (if sigSubmissionOutboundTracer
                then WithEventType "SigSubmissionV1.Outbound" . Mx.WithBearer connId >$< tracer
                else nullTracer)
-            (NumTxIdsToAck . getNumIdsAck $ _MAX_SIGS_TO_ACK)
+            (NumTxIdsToAck . getNumTxIdsToReq $ maxUnacknowledgedTxIds)
             mempoolReader
             version
             controlMessage
@@ -332,7 +333,7 @@ ntnApps
              (if sigSubmissionOutboundTracer
                 then WithEventType "SigSubmissionV2.Outbound" . Mx.WithBearer connId >$< tracer
                 else nullTracer)
-             _MAX_SIGS_TO_ACK
+             (NumIdsAck . getNumTxIdsToReq $ maxUnacknowledgedTxIds)
              mempoolReader
              version
 
@@ -756,10 +757,6 @@ stdVersionDataNTN networkMagic diffusionMode peerSharing =
     , peerSharing
     , query = False
     }
-
--- TODO: choose wisely, is a protocol parameter.
-_MAX_SIGS_TO_ACK :: NumIdsAck
-_MAX_SIGS_TO_ACK = 20
 
 _SIG_SUBMISSION_INIT_DELAY :: TxSubmissionInitDelay
 _SIG_SUBMISSION_INIT_DELAY = NoTxSubmissionInitDelay
