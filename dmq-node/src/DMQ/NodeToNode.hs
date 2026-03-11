@@ -269,7 +269,7 @@ ntnApps
           $ \(peerSigAPI :: PeerTxAPI m SigId (Sig crypto)) ->
               runPipelinedAnnotatedPeerWithLimits
                 (if sigSubmissionServerProtocolTracer
-                   then WithEventType "SigSubmissionV2.Protocol.Server" . Mx.WithBearer connId >$< tracer
+                   then WithEventType "SigSubmissionV2.Protocol.Client" . Mx.WithBearer connId >$< tracer
                    else nullTracer)
                 sigSubmissionCodecV2
                 sigSubmissionSizeLimitsV2
@@ -321,7 +321,7 @@ ntnApps
     aSigSubmissionV2Server version ResponderContext { rcConnectionId = connId } channel =
        runAnnotatedPeerWithLimits
          (if sigSubmissionClientProtocolTracer
-           then WithEventType "SigSubmissionV2.Protocol.Client" . Mx.WithBearer connId >$< tracer
+           then WithEventType "SigSubmissionV2.Protocol.Server" . Mx.WithBearer connId >$< tracer
            else nullTracer)
          sigSubmissionCodecV2
          sigSubmissionSizeLimitsV2
