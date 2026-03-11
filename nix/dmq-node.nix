@@ -50,6 +50,25 @@ let
           ghcOptions = [ "-Werror" ];
         }))
         {
+          # GHC-9.12.2 fails due to a GHC bug:
+          # https://gitlab.haskell.org/ghc/ghc/-/issues/25739
+          packages.cardano-diffusion.doHaddock = lib.mkForce false;
+          packages.cardano-ledger-allegra.doHaddock = lib.mkForce false;
+          packages.cardano-ledger-alonzo.doHaddock = lib.mkForce false;
+          packages.cardano-ledger-api.doHaddock = lib.mkForce false;
+          packages.cardano-ledger-babbage.doHaddock = lib.mkForce false;
+          packages.cardano-ledger-binary.doHaddock = lib.mkForce false;
+          packages.cardano-ledger-conway.doHaddock = lib.mkForce false;
+          packages.cardano-ledger-core.doHaddock = lib.mkForce false;
+          packages.cardano-ledger-dijkstra.doHaddock = lib.mkForce false;
+          packages.cardano-ledger-mary.doHaddock = lib.mkForce false;
+          packages.cardano-ledger-shelley.doHaddock = lib.mkForce false;
+          packages.cardano-protocol-tpraos.doHaddock = lib.mkForce false;
+          packages.fs-api.doHaddock = lib.mkForce false;
+          packages.ouroboros-consensus.doHaddock = lib.mkForce false;
+          packages.ouroboros-network.doHaddock = lib.mkForce false;
+          packages.plutus-ledger-api.doHaddock = lib.mkForce false;
+
           packages.dmq-node.components.tests.dmq-cddl.build-tools = [ pkgs.cddl pkgs.cbor-diag pkgs.cddlc ];
           packages.dmq-node.components.tests.dmq-cddl.preCheck = "export HOME=`pwd`";
         }

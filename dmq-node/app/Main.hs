@@ -12,7 +12,7 @@ module Main where
 
 import Control.Concurrent.Class.MonadMVar
 import Control.Concurrent.Class.MonadSTM.Strict
-import Control.Monad (void, when)
+import Control.Monad (unless, void, when)
 import Control.Monad.Class.MonadThrow
 import Control.Tracer (Tracer (..), nullTracer, traceWith)
 
@@ -28,7 +28,8 @@ import Data.Text.IO qualified as Text
 import Data.Version (showVersion)
 import Data.Void (Void)
 import Options.Applicative
-import System.Exit (exitSuccess)
+import System.Directory qualified as Dir
+import System.Exit (die, exitSuccess)
 import System.IOManager (withIOManager)
 import System.Random qualified as Random
 
@@ -67,7 +68,7 @@ main = toplevelExceptionHandler $ void . runDMQ =<< execParser opts
   where
     opts = info (parseCLIOptions <**> helper)
                 ( fullDesc
-                <> progDesc "Run the POC DMQ node"
+                <> progDesc "Run the DMQ-Node"
                 )
 
 runDMQ :: PartialConfig -> IO Void
@@ -87,7 +88,7 @@ runDMQ commandLineConfig = do
           dmqcHandshakeTracer       = I handshakeTracer,
           dmqcValidationTracer      = I validationTracer,
           dmqcLocalHandshakeTracer  = I localHandshakeTracer,
-          dmqcCardanoNodeSocket     = I snocketPath,
+          dmqcCardanoNodeSocket     = I socketPath,
           dmqcVersion               = I version,
           dmqcLocalStateQueryTracer = I localStateQueryTracer,
           dmqcLedgerPeers           = I ledgerPeers
@@ -120,8 +121,11 @@ runDMQ commandLineConfig = do
       exitSuccess
 
     traceWith tracer (WithEventType "Configuration" dmqConfig)
+    Dir.doesFileExist socketPath >>= \a ->
+      unless a (die $ "CardanoNodeSocket " ++ show socketPath ++": file does not exist")
     nt <- readTopologyFileOrError topologyFile
     traceWith tracer (WithEventType "NetworkTopology" nt)
+
 
     stdGen <- Random.newStdGen
     let (psRng, policyRng) = Random.splitGen stdGen
@@ -136,7 +140,7 @@ runDMQ commandLineConfig = do
                                     else nullTracer)
                                  ledgerPeers
                                  localSnocket'
-                                 snocketPath
+                                 socketPath
 
       withNodeKernel @StandardCrypto
                      tracer

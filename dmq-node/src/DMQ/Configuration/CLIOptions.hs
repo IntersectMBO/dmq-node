@@ -2,6 +2,7 @@ module DMQ.Configuration.CLIOptions (parseCLIOptions) where
 
 import Data.Monoid (Last (..))
 import Options.Applicative
+import Options.Applicative.Help qualified as Help
 
 import DMQ.Configuration
 import Ouroboros.Network.Magic (NetworkMagic (..))
@@ -28,14 +29,18 @@ parseCLIOptions =
           (  long "port"
           <> short 'p'
           <> metavar "Port Number"
-          <> help "Port Number that the node will bind to"
+          <> helpWithDefault
+               (unI $ dmqcPortNumber defaultConfiguration)
+               "Port Number that the node will bind to"
           )
         )
     <*> optional (
           strOption
           (  long "local-socket"
           <> metavar "FILENAME"
-          <> help "Unix socket for node-to-client communication"
+          <> helpWithDefault
+              (getFilePath . unI $ dmqcLocalAddress defaultConfiguration)
+              "Unix socket for node-to-client communication"
           )
         )
     <*> optional (
@@ -43,7 +48,9 @@ parseCLIOptions =
           (  long "configuration-file"
           <> short 'c'
           <> metavar "FILENAME"
-          <> help "Configuration file for DMQ Node"
+          <> helpWithDefault
+               (unI $ dmqcConfigFile defaultConfiguration)
+               "Configuration file for DMQ Node"
           )
         )
     <*> optional (
@@ -51,28 +58,36 @@ parseCLIOptions =
           (  long "topology-file"
           <> short 't'
           <> metavar "FILENAME"
-          <> help "Topology file for DMQ Node"
+          <> helpWithDefault
+               (unI $ dmqcTopologyFile defaultConfiguration)
+               "Topology file for DMQ Node"
           )
         )
     <*> optional (
           strOption
           (  long "cardano-node-socket"
           <> metavar "Cardano node socket path"
-          <> help "Used for local connections to Cardano node"
+          <> helpWithDefault
+               (unI $ dmqcCardanoNodeSocket defaultConfiguration)
+               "Used for local connections to Cardano node"
           )
         )
     <*> optional (
           option auto
           (  long "cardano-network-magic"
           <> metavar "Cardano node network magic"
-          <> help "The network magic of cardano-node client for local connections"
+          <> helpWithDefault
+              (unNetworkMagic . unI $ dmqcCardanoNetworkMagic defaultConfiguration)
+              "The network magic of cardano-node client for local connections"
           )
         )
     <*> optional (
           option auto
           (  long "dmq-network-magic"
           <> metavar "dmq node network magic"
-          <> help "The network magic of the dmq network"
+          <> helpWithDefault
+              (unNetworkMagic . unI $ dmqcNetworkMagic defaultConfiguration)
+              "The network magic of the dmq network"
           )
         )
     <*> optional (
@@ -83,6 +98,16 @@ parseCLIOptions =
           )
         )
   where
+    -- NOTE: we cannot simply use `value <> showDefault`, because configuration
+    -- will always overwrite values provided by configuration file.
+    helpWithDefault :: Show a
+                    => a -> String -> Mod f a
+    helpWithDefault a helpText =
+      helpDoc . Just . Help.extractChunk $ Help.vcatChunks
+        [ Help.paragraph helpText
+        , Help.paragraph ("(default: " ++ show a ++ ")")
+        ]
+
     mkConfiguration ipv4 ipv6 portNumber localAddress
                     configFile topologyFile cardanoNodeSocket cardanoNetworkMagic dmqNetworkMagic
                     version =
