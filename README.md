@@ -1,3 +1,10 @@
+[![x86\_64-linux](https://img.shields.io/endpoint?url=https://ci.iog.io/job/IntersectMBO-dmq-node/main/x86_64-linux.required/shield&style=for-the-badge&label=x86_64-linux)](https://ci.iog.io/job/IntersectMBO-dmq-node/main/x86_64-linux.required)
+[![x86\_64-darwin](https://img.shields.io/endpoint?url=https://ci.iog.io/job/IntersectMBO-dmq-node/main/x86_64-darwin.required/shield&style=for-the-badge&label=x86_64-darwin)](https://ci.iog.io/job/IntersectMBO-dmq-node/main/x86_64-darwin.required)
+[![aarch64-darwin](https://img.shields.io/endpoint?url=https://ci.iog.io/job/IntersectMBO-dmq-node/main/aarch64-darwin.required/shield&style=for-the-badge&label=aarch64-linux)](https://ci.iog.io/job/IntersectMBO-dmq-node/main/aarch64-darwin.required)
+[![mingw64](https://img.shields.io/github/actions/workflow/status/intersectmbo/dmq-node/build.yml?branch=main&label=mingw64&style=for-the-badge)](https://github.com/intersectmbo/dmq-node/actions/workflows/build.yml)
+[![Haddocks](https://img.shields.io/github/actions/workflow/status/intersectmbo/dmq-node/github-page.yml?branch=main&label=Haddocks&style=for-the-badge)](https://dmq-node.cardano.intersectmbo.org/)
+[![Discord](https://img.shields.io/discord/1136727663583698984?style=for-the-badge&color=blue)](https://discord.com/channels/1136727663583698984/1239889324745429122)
+
 # Decentralized Message Queue
 
 The DMQ node allows for client peers to communicate efficiently by publishing
@@ -6,19 +13,12 @@ and consuming messages which are diffused over a P2P network to other nodes.
 This repository provides the `dmq-node` executable to participate in the DMQ
 network.
 
-The `dmq-node` is developed with respect to the [CIP#0137].
+The `dmq-node` is developed with respect to the [CIP#137].
 
 __NOTE__: This is still an early version of DMQ node, which comes with some
 quirks:
 
-* issue#6 - no support for ledger peers, which requires setting up static peers
-            using local roots.  We are aiming to add this feature for the
-            `cardano-node-10.7` release.
-* issue#13 - using `TxSubmission` mini-protocol for which roles are swapped,
-             e.g. server requests data, client servers the data.  This makes
-             configuration awekward, since your local roots specify who will get data from
-             you, rather than who you get data from.  We are working on a new
-             mini-protocol to address this.
+* [issue#6] - experimental support for ledger peers see [Ledger Peers](#ledger-peers) below.
 
 # Instructions
 
@@ -115,7 +115,7 @@ To use ledger peers, as `cardano-node` does there are additional requrements:
 
 * You need `cardano-node-10.7` or newer to support ledger peer snapshot query
   over `cardano-node`'s node-to-client protocol.
-* You need to configure `cardano-node` & `dmq-node` to use SRV records according to [CIP#0155]
+* You need to configure `cardano-node` & `dmq-node` to use SRV records according to [CIP#155]
 * You need to set `LedgerPeers: true` in the configuration file.
 
 Currently ledger peers are disabled by default, but in a near future we will
@@ -133,7 +133,7 @@ To enter a development shell with all dependencies available, use:
 To run the test suite, one can use:
 
 ``` bash
-> cabal test all
+> cabal run dmq-node:dmq-tests
 ```
 
 ### CDDL
@@ -158,7 +158,8 @@ The code of conduct is available [here][code-of-conduct].
 [code-of-conduct]: ./CODE_OF_CONDUCT.md
 [style-guide]: https://github.com/IntersectMBO/ouroboros-network/blob/main/docs/StyleGuide.md
 [musl]: https://musl.libc.org/
-[CIP#0137]: https://cips.cardano.org/cip/CIP-0137
-[CIP#0155]: https://cips.cardano.org/cip/CIP-0155
+[CIP#137]: https://cips.cardano.org/cip/CIP-0137
+[CIP#155]: https://cips.cardano.org/cip/CIP-0155
 [topology-file]: https://developers.cardano.org/docs/get-started/infrastructure/node/topology/
 [defaultConfiguration]: http://intersectmbo.github.io/dmq-node/dmq-node/src/DMQ.Configuration.html#defaultConfiguration
+[issue#6]: https://github.com/intersectMBO/dmq-node/issues/6

@@ -89,16 +89,10 @@ is very helpful to diagnose build time compiler errors.
 Any contributions should be well documented.  APIs should have well-written
 `haddocks`.  If a particular function expects a precondition to be satisfied it
 should be explicitly mentioned.  The inline documentation is published at
-
--- TODO link
-
-<https://ouroboros-network.cardano.intersectmbo.org>.  When writing haddocks
-it's always good to put oneself in the position of somebody who hasn't yet
+<https://dmq-node.cardano.intersectmbo.org>.  When writing haddocks it's always
+good to put oneself in the position of somebody who hasn't yet
 interacted with your code changes.  It's good to explain the key design choices
 as well as implementation-level comments.
-
-If changes would modify any existing design the contributor might be expected
-to be asked to also update the standalone documentation (written in `tex`).
 
 ## Changelogs
 
@@ -139,7 +133,7 @@ The last command should fail with an error that the current revision is not on
 the `master` or a `release/*` branch.  After running both commands, you will
 need to delete branch created in `cardano-haskell-packages`.
 
-### Release from master or release/* branch
+### Release from main or release/* branch
 
 * First run `./script/release-to-chap.sh -r` to see which changes can be
   published.
