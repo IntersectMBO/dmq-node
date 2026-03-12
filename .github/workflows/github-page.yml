@@ -30,8 +30,16 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
+    - name: Install pandoc
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pandoc
+
     - name: Checkout dmq-node repository
       uses: actions/checkout@v6
+
+    - name: Prologue
+      run: pandoc -f markdown -t haddock README.md -o README.haddock
 
       # we need nix to later build the spec documents
     - name: Install Nix
@@ -70,7 +78,7 @@ jobs:
 
     - name: Build documents
       run: |
-        cabal haddock-project --hackage all
+        cabal haddock-project --prologue=./README.haddock --hackage all
 
     - name: Upload artifacts
       uses: actions/upload-pages-artifact@v4
