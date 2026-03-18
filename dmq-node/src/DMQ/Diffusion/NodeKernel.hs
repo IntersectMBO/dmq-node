@@ -1,5 +1,7 @@
-{-# LANGUAGE DataKinds  #-}
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE RankNTypes            #-}
 
 module DMQ.Diffusion.NodeKernel
   ( NodeKernel (..)
@@ -10,105 +12,72 @@ module DMQ.Diffusion.NodeKernel
   , PoolId
   ) where
 
+import Control.Applicative (Alternative)
 import Control.Concurrent.Class.MonadMVar
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadAsync
+import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import Control.Tracer (Tracer, nullTracer)
+import Control.Tracer (Tracer (..), nullTracer)
 
 import Data.Aeson qualified as Aeson
 import Data.Function (on)
 import Data.Functor.Contravariant ((>$<))
 import Data.Hashable
-import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
+import Data.Proxy
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
 import Data.Set (Set)
 import Data.Set qualified as Set
 import Data.Time.Clock.POSIX (POSIXTime)
 import Data.Time.Clock.POSIX qualified as Time
-import Data.Void (Void)
-import Data.Word
+import Data.Void (Void, absurd)
 import System.Random (StdGen)
 import System.Random qualified as Random
 
-import Cardano.Ledger.Api.State.Query qualified as LedgerQuery
-import Cardano.Ledger.Shelley.API qualified as Ledger
+import Network.Mux qualified as Mx
 
-import Ouroboros.Network.BlockFetch (FetchClientRegistry,
-           newFetchClientRegistry)
-import Ouroboros.Network.ConnectionId (ConnectionId (..))
-import Ouroboros.Network.Magic (NetworkMagic (..))
+import Cardano.Chain.Slotting (EpochSlots (..))
+import Cardano.Network.NodeToClient qualified as Cardano.NtoC
+import Cardano.Protocol.Crypto qualified as Cardano (StandardCrypto)
+
+import Ouroboros.Consensus.Cardano.Node
+import Ouroboros.Consensus.Network.NodeToClient
+import Ouroboros.Consensus.Node.NetworkProtocolVersion
+import Ouroboros.Consensus.Node.ProtocolInfo
+import Ouroboros.Network.BlockFetch (newFetchClientRegistry)
+import Ouroboros.Network.Mux qualified as Mx
 import Ouroboros.Network.PeerSelection.Governor.Types
            (makePublicPeerSelectionStateVar)
 import Ouroboros.Network.PeerSelection.LedgerPeers (SomeLedgerPeerSnapshot)
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
-           LedgerPeersKind (..))
-import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry,
-           newPeerSharingAPI, newPeerSharingRegistry,
+import Ouroboros.Network.PeerSharing (newPeerSharingAPI, newPeerSharingRegistry,
            ps_POLICY_PEER_SHARE_MAX_PEERS, ps_POLICY_PEER_SHARE_STICKY_TIME)
+import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
+           noTimeLimitsHandshake)
+import Ouroboros.Network.Protocol.LocalStateQuery.Client
+import Ouroboros.Network.Protocol.LocalStateQuery.Type
+import Ouroboros.Network.Snocket (Snocket, localAddressFromPath)
+import Ouroboros.Network.Socket (ConnectToArgs (..),
+           HandshakeCallbacks (HandshakeCallbacks), connectToNode)
 import Ouroboros.Network.TxSubmission.Inbound.V2
 import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool (..),
            MempoolSeq (..), WithIndex (..))
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 
+import Cardano.Network.NodeToClient qualified as Cardano
 import DMQ.Configuration
+import DMQ.Diffusion.NodeKernel.Types
+import DMQ.NodeToClient.LocalStateQueryClient
 import DMQ.Policy qualified as Policy
 import DMQ.Protocol.SigSubmission.Type (Sig (sigExpiresAt, sigId), SigId)
 import DMQ.Tracer
+import Ouroboros.Consensus.Cardano.Block (CardanoBlock)
+import Ouroboros.Network.Handshake.Queryable (Queryable (..))
+import Ouroboros.Network.Protocol.Handshake (Acceptable (..))
 
-
-data NodeKernel crypto ntnAddr m =
-  NodeKernel {
-    -- | The fetch client registry, used for the keep alive clients.
-    fetchClientRegistry :: !(FetchClientRegistry (ConnectionId ntnAddr) () () m)
-
-    -- | Read the current peer sharing registry, used for interacting with
-    -- the PeerSharing protocol
-  , peerSharingRegistry :: !(PeerSharingRegistry ntnAddr m)
-  , peerSharingAPI      :: !(PeerSharingAPI ntnAddr StdGen m)
-  , mempool             :: !(Mempool m SigId (Sig crypto))
-  , sigChannelVar       :: !(TxChannelsVar m ntnAddr SigId (Sig crypto))
-  , sigMempoolSem       :: !(TxMempoolSem m)
-  , sigSharedTxStateVar :: !(SharedTxStateVar m ntnAddr SigId (Sig crypto))
-  , stakePools          :: !(StakePools m)
-  , nextEpochVar        :: !(StrictTVar m (Maybe UTCTime))
-  }
-
--- | Cardano pool id's are hashes of the cold verification key
---
-type PoolId = Ledger.KeyHash Ledger.StakePool
-
-data StakePools m = StakePools {
-    -- | contains map of cardano pool stake snapshot obtained
-    -- via local state query client
-    stakePoolsVar
-      :: !(StrictTVar m (Map PoolId LedgerQuery.StakeSnapshot))
-    -- | Acquire and update validation context for signature validation
-  , withPoolValidationCtx
-      :: forall a. (PoolValidationCtx -> (a, PoolValidationCtx)) ->  STM m a
-     -- | provides only those big peers which provide SRV endpoints
-     -- as otherwise those are cardano-nodes
-  , ledgerBigPeersVar
-      :: !(StrictTVar m (Maybe (LedgerPeerSnapshot BigLedgerPeers)))
-    -- | all ledger peers, restricted to srv endpoints
-  , ledgerPeersVar
-      :: !(StrictTMVar m (LedgerPeerSnapshot AllLedgerPeers))
-  }
-
-data PoolValidationCtx =
-  PoolValidationCtx {
-      vctxEpoch    :: !(Maybe UTCTime)
-      -- ^ UTC time of next epoch boundary for handling clock skew
-    , vctxStakeMap :: !(Map PoolId LedgerQuery.StakeSnapshot)
-      -- ^ for signature validation
-    , vctxOcertMap :: !(Map PoolId Word64)
-      -- ^ ocert counters to check monotonicity
-    }
-  deriving Show
 
 newNodeKernel :: forall crypto ntnAddr m.
                  ( MonadLabelledSTM m
@@ -172,32 +141,44 @@ newNodeKernel rng = do
 
 
 withNodeKernel :: forall crypto ntnAddr m a.
-                  ( MonadAsync       m
-                  , MonadFork        m
-                  , MonadDelay       m
-                  , MonadLabelledSTM m
-                  , MonadMask        m
-                  , MonadMVar        m
-                  , MonadTime        m
+                  ( Alternative   (STM m)
+                  , MonadAsync         m
+                  , MonadEvaluate      m
+                  , MonadFork          m
+                  , MonadDelay         m
+                  , MonadLabelledSTM   m
+                  , MonadMask          m
+                  , MonadMVar          m
+                  , Mx.MonadReadBuffer m
+                  , MonadST            m
+                  , MonadThrow    (STM m)
+                  , MonadTime          m
+                  , MonadTimer         m
                   , Ord ntnAddr
                   , Show ntnAddr
                   , Hashable ntnAddr
                   )
-               => (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
+               => Snocket m Cardano.LocalSocket LocalAddress
+               -> Mx.MakeBearer m Cardano.LocalSocket
+               -> (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
                -> Configuration
                -> StdGen
-               -> (NetworkMagic -> NodeKernel crypto ntnAddr m -> m (Either SomeException Void))
                -> (NodeKernel crypto ntnAddr m -> m a)
                -- ^ as soon as the callback exits the `mempoolWorker` and all
                -- decision logic threads will be killed
                -> m a
-withNodeKernel tracer
+withNodeKernel localSnocket
+               mkLocalBearer
+               tracer
                Configuration {
                  dmqcSigSubmissionLogicTracer = I sigSubmissionLogicTracer,
-                 dmqcCardanoNetworkMagic      = I networkMagic
+                 dmqcCardanoNetworkMagic      = I networkMagic,
+                 dmqcCardanoNodeSocket        = I cardanoNodeSocketPath,
+                 dmqcLocalStateQueryTracer    = I localStateQueryTracer,
+                 dmqcLedgerPeers              = I ledgerPeers
                }
                rng
-               mkStakePoolMonitor k = do
+               k = do
   nodeKernel@NodeKernel { mempool,
                           sigChannelVar,
                           sigSharedTxStateVar
@@ -214,11 +195,79 @@ withNodeKernel tracer
                 sigChannelVar
                 sigSharedTxStateVar)
             $ \sigLogicThread ->
-      withAsync (mkStakePoolMonitor networkMagic nodeKernel) \spmAid -> do
+      withAsync (connectToCardanoNode nodeKernel) \spmAid -> do
         link mempoolThread
         link sigLogicThread
         link spmAid
         k nodeKernel
+  where
+    connectToCardanoNode :: NodeKernel crypto ntnAddr m
+                         -> m (Either SomeException Void)
+    connectToCardanoNode nodeKernel =
+      fmap fn <$>
+      connectToNode
+        localSnocket
+        mkLocalBearer
+        ConnectToArgs {
+          ctaHandshakeCodec      = Cardano.nodeToClientHandshakeCodec,
+          ctaHandshakeTimeLimits = noTimeLimitsHandshake,
+          ctaVersionDataCodec    = cborTermVersionDataCodec Cardano.NtoC.nodeToClientCodecCBORTerm,
+          ctaConnectTracers      = Cardano.nullNetworkConnectTracers, --debuggingNetworkConnectTracers,
+          ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
+        }
+        (\_ -> return ())
+        (Cardano.combineVersions
+          [ Cardano.simpleSingletonVersions
+              version
+              Cardano.NodeToClientVersionData {
+                  Cardano.networkMagic
+                , Cardano.query = False
+              }
+              \_version ->
+                Mx.OuroborosApplication
+                  [ Mx.MiniProtocol
+                      { Mx.miniProtocolNum = Mx.MiniProtocolNum 7
+                      , Mx.miniProtocolStart = Mx.StartEagerly
+                      , Mx.miniProtocolLimits =
+                          Mx.MiniProtocolLimits
+                            { Mx.maximumIngressQueue = 0xffffffff
+                            }
+                      , Mx.miniProtocolRun =
+                          Mx.InitiatorProtocolOnly
+                            . Mx.mkMiniProtocolCbFromPeerSt
+                            . const
+                            $ ( nullTracer -- TODO: add tracer
+                              , cStateQueryCodec
+                              , StateIdle
+                              , localStateQueryClientPeer $
+                                cardanoLocalStateQueryClient
+                                  (if localStateQueryTracer
+                                   then WithEventType "LocalStateQuery" >$< tracer
+                                   else nullTracer)
+                                  ledgerPeers
+                                  (stakePools nodeKernel)
+                                  (nextEpochVar nodeKernel)
+                              )
+                      }
+                  ]
+          | version <- [minBound..maxBound]
+          , let -- NOTE: the query protocol is running using
+                -- `Cardano.StandardCrypto`, while `dmq-node` is using
+                -- `StandardCrypto` defined in `kes-agent-krypto`.  A priori
+                -- cryptography could differ but it shouldn't be a problem.  We
+                -- are querying
+                supportedVersionMap =
+                  supportedNodeToClientVersions (Proxy :: Proxy (CardanoBlock Cardano.StandardCrypto))
+                blk = supportedVersionMap Map.! version
+                Codecs {cStateQueryCodec} =
+                  clientCodecs (pClientInfoCodecConfig . protocolClientInfoCardano $ EpochSlots 21600)
+                  blk version
+          ])
+        Nothing
+        (localAddressFromPath cardanoNodeSocketPath)
+      where
+        fn :: forall x. Either x Void -> x
+        fn = either id absurd
 
 
 mempoolWorker :: forall crypto m.

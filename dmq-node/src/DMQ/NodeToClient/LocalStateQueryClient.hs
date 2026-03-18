@@ -5,8 +5,8 @@
 
 module DMQ.NodeToClient.LocalStateQueryClient
   ( TraceLocalStateQueryClient (..)
-  , cardanoClient
-  , connectToCardanoNode
+  , CardanoLocalStateQueryClient
+  , cardanoLocalStateQueryClient
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -15,42 +15,32 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Trans.Except
-import Control.Tracer (Tracer (..), nullTracer, traceWith)
+import Control.Tracer (Tracer (..), traceWith)
 import Data.Aeson (ToJSON (..), object, (.=))
 import Data.Aeson qualified as Aeson
 import Data.Functor ((<&>))
 import Data.List.NonEmpty qualified as NonEmpty
-import Data.Map.Strict qualified as Map
-import Data.Proxy
 import Data.Void
 
-import Cardano.Chain.Slotting (EpochSlots (..))
 import Cardano.Ledger.Api.State.Query (StakeSnapshots (..))
-import Cardano.Network.NodeToClient
 import Cardano.Network.PeerSelection (LedgerPeerSnapshot (..),
            LedgerRelayAccessPoint (..), SingLedgerPeersKind (..))
 import Cardano.Slotting.EpochInfo.API
 import Cardano.Slotting.Slot (EpochNo)
 import Cardano.Slotting.Time
 
-import DMQ.Diffusion.NodeKernel
+import DMQ.Diffusion.NodeKernel.Types (StakePools (..))
+
 import Ouroboros.Consensus.Cardano.Block
-import Ouroboros.Consensus.Cardano.Node
 import Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
 import Ouroboros.Consensus.HardFork.History.EpochInfo (interpreterToEpochInfo)
 import Ouroboros.Consensus.HardFork.History.Qry (PastHorizonException)
 import Ouroboros.Consensus.Ledger.Query (Query (..))
-import Ouroboros.Consensus.Network.NodeToClient
-import Ouroboros.Consensus.Node.NetworkProtocolVersion
-import Ouroboros.Consensus.Node.ProtocolInfo
 import Ouroboros.Consensus.Shelley.Ledger.Query
 import Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import Ouroboros.Network.Block
-import Ouroboros.Network.Magic
-import Ouroboros.Network.Mux qualified as Mx
 import Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeersKind (..),
-           accumulateBigLedgerStake)
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type (RawBlockHash)
+           RawBlockHash, accumulateBigLedgerStake)
 import Ouroboros.Network.Point (Block (..))
 import Ouroboros.Network.Protocol.LocalStateQuery.Client
 import Ouroboros.Network.Protocol.LocalStateQuery.Type
@@ -91,34 +81,65 @@ data QueryError = UnsupportedEra
 
 instance Exception QueryError where
 
--- TODO generalize to handle ledger eras other than Conway
--- | connects the dmq node to cardano node via local state query
--- and updates the node kernel with stake pool data necessary to perform message
--- validation
 --
-cardanoClient
-  :: forall block query point crypto m. (MonadDelay m, MonadSTM m, MonadThrow m, MonadTime m)
-  => (block ~ CardanoBlock crypto, query ~ Query block, point ~ Point block)
+-- Type aliases
+--
+
+-- | `LocalStateQuery` using `CardanoBlock`
+type CardanoLocalStateQueryClient crypto m a =
+   LocalStateQueryClient (CardanoBlock crypto)
+                         (Point (CardanoBlock crypto))
+                         (Query (CardanoBlock crypto)) m Void
+
+-- | `ClientStAcuiring` using `CardanoBlock`
+type CardanoClientStAcquiring crypto m a =
+    ClientStAcquiring (CardanoBlock crypto) (Point (CardanoBlock crypto)) (Query (CardanoBlock crypto)) m a
+
+-- | `ClientStAcuired` using `CardanoBlock`
+type CardanoClientStAcquired  crypto m a =
+    ClientStAcquired (CardanoBlock crypto) (Point (CardanoBlock crypto)) (Query (CardanoBlock crypto)) m a
+
+-- | `ClientStQuerying` using `CardanoBlock`
+type CardanoClientStQuerying crypto m a b =
+    ClientStQuerying (CardanoBlock crypto) (Point (CardanoBlock crypto)) (Query (CardanoBlock crypto)) m a b
+
+
+-- | Local state query client which queries cardano node for
+--
+-- * stake pool data (for signature validation)
+-- * ledger peers (for peer selection)
+--
+-- TODO generalize to handle ledger eras other than Conway.
+--
+cardanoLocalStateQueryClient
+  :: forall crypto m.
+     ( MonadDelay m
+     , MonadSTM m
+     , MonadThrow m
+     , MonadTime m
+     )
   => Tracer m TraceLocalStateQueryClient
   -> Bool -- ^ use ledger peers
   -> StakePools m
   -> StrictTVar m (Maybe UTCTime) -- ^ from node kernel
-  -> LocalStateQueryClient (CardanoBlock crypto) (Point block) (Query block) m Void
-cardanoClient tracer ledgerPeers
-              StakePools {
-                stakePoolsVar,
-                ledgerPeersVar,
-                ledgerBigPeersVar
-              }
-              nextEpochVar =
-  LocalStateQueryClient (idle Nothing)
+  -> CardanoLocalStateQueryClient crypto m Void
+cardanoLocalStateQueryClient
+    tracer ledgerPeers
+    StakePools {
+      stakePoolsVar,
+      ledgerPeersVar,
+      ledgerBigPeersVar
+    }
+    nextEpochVar
+    =
+    LocalStateQueryClient (idle Nothing)
   where
     idle mSystemStart = do
       traceWith tracer $ Acquiring mSystemStart
       -- FIXME: switched to volatiletip for prerelease testing purposes
       pure $ SendMsgAcquire VolatileTip {-ImmutableTip-} acquire
       where
-        acquire :: ClientStAcquiring block point query m Void
+        acquire :: CardanoClientStAcquiring crypto m Void
         acquire = ClientStAcquiring {
           recvMsgAcquired =
             let epochQry systemStart = pure $
@@ -134,8 +155,8 @@ cardanoClient tracer ledgerPeers
          }
 
     wrappingMismatch :: forall err r.
-                        (r -> m (ClientStAcquired block point query m Void))
-                     -> ClientStQuerying block point query m Void (Either err r)
+                        (r -> m (CardanoClientStAcquired crypto m Void))
+                     -> CardanoClientStQuerying crypto m Void (Either err r)
     wrappingMismatch k = ClientStQuerying $
       either (const . throwIO . userError $ "mismatch era info") k
 
@@ -168,12 +189,7 @@ cardanoClient tracer ledgerPeers
     queryCurrentEra
       :: SystemStart
       -> UTCTime
-      -> ClientStAcquired
-           (CardanoBlock crypto)
-           (Point (CardanoBlock crypto))
-           (Query (CardanoBlock crypto))
-           m
-           Void
+      -> CardanoClientStAcquired crypto m Void
     queryCurrentEra systemStart nextEpoch =
         SendMsgQuery (BlockQuery (QueryHardFork GetCurrentEra))
           $ ClientStQuerying $ \era -> queryStakeSnapshots systemStart nextEpoch era
@@ -183,12 +199,7 @@ cardanoClient tracer ledgerPeers
       :: SystemStart
       -> UTCTime
       -> EraIndex (CardanoEras crypto)
-      -> m (ClientStAcquired
-             (CardanoBlock crypto)
-             (Point (CardanoBlock crypto))
-             (Query (CardanoBlock crypto))
-             m
-             Void)
+      -> m (CardanoClientStAcquired crypto m Void)
     queryStakeSnapshots systemStart nextEpoch era =
         case era of
           EraByron{}    -> throwIO UnsupportedEra
@@ -209,12 +220,7 @@ cardanoClient tracer ledgerPeers
       where
         handleStakeSnapshots
           :: StakeSnapshots
-          -> m (ClientStAcquired
-                  (CardanoBlock crypto)
-                  (Point (CardanoBlock crypto))
-                  (Query (CardanoBlock crypto))
-                  m
-                  Void)
+          -> m (CardanoClientStAcquired crypto m Void)
         handleStakeSnapshots StakeSnapshots { ssStakeSnapshots } = do
           atomically do
             writeTVar stakePoolsVar ssStakeSnapshots
@@ -234,12 +240,7 @@ cardanoClient tracer ledgerPeers
     queryLedgerPeers
       :: SystemStart
       -> NominalDiffTime
-      -> ClientStAcquired
-           (CardanoBlock crypto)
-           (Point (CardanoBlock crypto))
-           (Query (CardanoBlock crypto))
-           m
-           Void
+      -> CardanoClientStAcquired crypto m Void
     queryLedgerPeers systemStart toNextEpoch =
         SendMsgQuery (BlockQuery . QueryIfCurrentConway $ GetLedgerPeerSnapshot SingAllLedgerPeers)
         $ wrappingMismatch handleLedgerPeers
@@ -289,63 +290,7 @@ cardanoClient tracer ledgerPeers
     -- release, continue the loop in `idle`
     release :: SystemStart
             -> NominalDiffTime
-            -> ClientStAcquired
-                 (CardanoBlock crypto)
-                 (Point (CardanoBlock crypto))
-                 (Query (CardanoBlock crypto))
-                 m
-                 Void
+            -> CardanoClientStAcquired crypto m Void
     release systemStart toNextEpoch = SendMsgRelease do
       threadDelay $ min (realToFrac toNextEpoch) 86400 -- TODO fuzz this?
       idle $ Just systemStart
-
-
-connectToCardanoNode :: Tracer IO TraceLocalStateQueryClient
-                     -> Bool -- ^ use ledger peers
-                     -> LocalSnocket
-                     -> FilePath
-                     -> NetworkMagic
-                     -> NodeKernel crypto ntnAddr IO
-                     -> IO (Either SomeException Void)
-connectToCardanoNode tracer ledgerPeers localSnocket' snocketPath networkMagic nodeKernel =
-  connectTo
-   localSnocket'
-   nullNetworkConnectTracers --debuggingNetworkConnectTracers
-   (combineVersions
-     [ simpleSingletonVersions
-         version
-         NodeToClientVersionData {
-             networkMagic
-           , query = False
-         }
-         \_version ->
-           Mx.OuroborosApplication
-             [ Mx.MiniProtocol
-                 { miniProtocolNum = Mx.MiniProtocolNum 7
-                 , miniProtocolStart = Mx.StartEagerly
-                 , miniProtocolLimits =
-                     Mx.MiniProtocolLimits
-                       { maximumIngressQueue = 0xffffffff
-                       }
-                 , miniProtocolRun =
-                     Mx.InitiatorProtocolOnly
-                       . Mx.mkMiniProtocolCbFromPeerSt
-                       . const
-                       $ ( nullTracer -- TODO: add tracer
-                         , cStateQueryCodec
-                         , StateIdle
-                         , localStateQueryClientPeer
-                           $ cardanoClient tracer
-                                           ledgerPeers
-                                           (stakePools nodeKernel)
-                                           (nextEpochVar nodeKernel)
-                         )
-                 }
-             ]
-     | version <- [minBound..maxBound]
-     , let supportedVersionMap = supportedNodeToClientVersions (Proxy :: Proxy (CardanoBlock StandardCrypto))
-           blk = supportedVersionMap Map.! version
-           Codecs {cStateQueryCodec} =
-             clientCodecs (pClientInfoCodecConfig . protocolClientInfoCardano $ EpochSlots 21600) blk version
-     ])
-   snocketPath
