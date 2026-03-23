@@ -2,6 +2,60 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-0.3.0.0'></a>
+## 0.3.0.0 -- 2026-03-23
+
+### Breaking
+
+- Using `KESPeriod` from `Cardano.Crypto.KES` instead of `SigKESPeriod`
+  newtype.  `KESPeriod` is used by `SigRaw` data type.
+- `SigKESSignature` holds `SigKES (KES crypto)` instead of a `ByteString`.
+- `SigColdKey` holds `VerKeyDSIGN` instead of a `ByteString`.
+- `ntnApps` constraints changed in order to use `sigValidate` function.
+
+- Removed KES evolution configuration & genesis file from the DMQ configuration.
+
+- Added `LocalMsgNotificationServerTracer` option (disabled by default)
+- `Sig`: improved instances `ToJSON` and `Show`
+- Refactored `validateSig`
+
+- `validateSig`: removed the hashing function for cold key from arguments, added required constraints ledger's `hashKey . VKey` usage instead
+
+- Have the cardano-network-magic cli option set the correct magic field
+- Add a dmq-network-magic cli option
+
+- Implemented `SigSubmissionV2` protocol
+- Added tests for the protocol codec
+- Added support for both V1 and V2 signature submission protocols in the node
+
+- Added `dmqLedgerPeers` option (off by default), which enabled ledger peers
+  obtained through Cardano `node-to-client` protocol.
+
+### Non-Breaking
+
+- Dependencies updated to `ouroboros-network` and `cardano-diffusion`.
+
+- `Sig` codec decodes KES signatures, and the cold key.
+- Added `DMQ.SigSubmission.Type.validateSig` and `SigValidationError`.
+
+- Update dependencies.
+
+- By default enabled the folling traces:
+  - `MuxTracer`
+  - `TraceChurnCounters`
+  - `LocalCOnnectionManagerTracer`
+  - `SigSubmissionLogicTracer`
+- Removed pre-commit-hook in nix shell
+- Added negative test cases from `prop_validateSig` QuickCheck property
+
+- improvements to local state query client tracing
+
+- For pre-release development and testing purposes, use volatile tip
+  in local state query client.
+
+- Added a lock to avoid race conditions between trace events.
+- Improved peer selection policy.
+
 <a id='changelog-0.2.0.0'></a>
 ## 0.2.0.0 -- 2025-09-29
 
