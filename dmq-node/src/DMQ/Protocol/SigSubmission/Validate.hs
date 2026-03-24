@@ -12,9 +12,14 @@
 
 -- | Encapsulates signature validation utilities leveraged by the mempool writer
 --
-module DMQ.Protocol.SigSubmission.Validate where
+module DMQ.Protocol.SigSubmission.Validate
+  ( SigValidationTrace (..)
+  , validateSig
+  , SigValidationException (..)
+  , SigValidationError (..)
+  , c_MAX_CLOCK_SKEW_SEC
+  ) where
 
-import Control.Exception (Exception (..))
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Except (Except)
 import Control.Monad.Except qualified as Except
@@ -26,9 +31,7 @@ import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromJust, isNothing)
-import Data.Text (Text)
 import Data.Typeable
-import Data.Word
 
 import Cardano.Crypto.DSIGN.Class qualified as DSIGN
 import Cardano.Crypto.KES.Class (KESAlgorithm (..))
@@ -40,48 +43,6 @@ import Cardano.Ledger.Keys qualified as Ledger
 
 import DMQ.Diffusion.NodeKernel (PoolValidationCtx (..))
 import DMQ.Protocol.SigSubmission.Type
-import Ouroboros.Network.Util.ShowProxy
-
-
-data SigValidationError =
-    InvalidKESSignature KESPeriod KESPeriod String
-  | InvalidSignatureOCERT
-      !Word64    -- OCert counter
-      !KESPeriod -- OCert KES period
-      !String    -- DSIGN error message
-  | InvalidOCertCounter
-      !Word64 -- last seen
-      !Word64 -- received
-  | KESBeforeStartOCERT KESPeriod KESPeriod
-  | KESAfterEndOCERT KESPeriod KESPeriod
-  | PoolNotEligible
-  | UnrecognizedPool
-  | NotInitialized
-  | ClockSkew
-  | SigDuplicate
-  | SigExpired
-  | SigResultOther Text
-  deriving (Eq, Show)
-
-instance ShowProxy SigValidationError where
-
-instance ToJSON SigValidationError where
-  toJSON SigDuplicate = String "duplicate"
-  toJSON SigExpired   = String "expired"
-  toJSON (SigResultOther txt) = object
-    [ "type" .= String "other"
-    , "reason" .= txt
-    ]
-  toJSON e = object
-    [ "type" .= String "invalid"
-    , "reason" .= show e
-    ]
-
-
-data SigValidationException = SigValidationException SigId SigValidationError
-  deriving Show
-
-instance Exception SigValidationException
 
 
 data SigValidationTrace = InvalidSignature SigId SigValidationError
