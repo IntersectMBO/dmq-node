@@ -13,10 +13,10 @@
 -- | Encapsulates signature validation utilities leveraged by the mempool writer
 --
 module DMQ.Protocol.SigSubmission.Validate
-  ( SigValidationTrace (..)
-  , validateSig
+  ( validateSig
   , SigValidationException (..)
   , SigValidationError (..)
+  , SigValidationTrace (..)
   , c_MAX_CLOCK_SKEW_SEC
   ) where
 
@@ -26,7 +26,6 @@ import Control.Monad.Except qualified as Except
 import Control.Monad.State.Strict (State, StateT (..))
 import Control.Monad.State.Strict qualified as State
 
-import Data.Aeson
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Map.Strict qualified as Map
@@ -43,17 +42,6 @@ import Cardano.Ledger.Keys qualified as Ledger
 
 import DMQ.Diffusion.NodeKernel (PoolValidationCtx (..))
 import DMQ.Protocol.SigSubmission.Type
-
-
-data SigValidationTrace = InvalidSignature SigId SigValidationError
-  deriving Show
-
-instance ToJSON SigValidationTrace where
-  toJSON (InvalidSignature sigid reason) = object
-    [ "type"   .= String "InvalidSignature"
-    , "sigid"  .= sigid
-    , "reason" .= reason
-    ]
 
 
 c_MAX_CLOCK_SKEW_SEC :: NominalDiffTime

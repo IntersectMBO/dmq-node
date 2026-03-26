@@ -63,12 +63,14 @@ library
     DMQ.Diffusion.Applications
     DMQ.Diffusion.Arguments
     DMQ.Diffusion.NodeKernel
+    DMQ.Diffusion.NodeKernel.Types
     DMQ.Diffusion.PeerSelection
     DMQ.Handlers.TopLevel
     DMQ.NodeToClient
     DMQ.NodeToClient.LocalMsgNotification
     DMQ.NodeToClient.LocalMsgSubmission
     DMQ.NodeToClient.LocalStateQueryClient
+    DMQ.NodeToClient.LocalStateQueryClient.Types
     DMQ.NodeToClient.Version
     DMQ.NodeToNode
     DMQ.NodeToNode.Version

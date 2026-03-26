@@ -11,6 +11,7 @@ module DMQ.NodeToNode.Version
   , nodeToNodeCodecCBORTerm
   , nodeToNodeVersionCodec
   , ntnDataFlow
+  , HandshakeTr
   ) where
 
 import Codec.CBOR.Term qualified as CBOR
@@ -20,14 +21,18 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 
+import Network.Mux.Trace qualified as Mx
+
 import Ouroboros.Network.CodecCBORTerm (CodecCBORTerm (..))
+import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
 import Ouroboros.Network.DiffusionMode
+import Ouroboros.Network.Driver.Simple (TraceSendRecv)
 import Ouroboros.Network.Handshake.Acceptable (Acceptable (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import Ouroboros.Network.Magic (NetworkMagic (..))
 import Ouroboros.Network.PeerSelection (PeerSharing (..))
-import Ouroboros.Network.Protocol.Handshake (Accept (..))
+import Ouroboros.Network.Protocol.Handshake (Accept (..), Handshake (..))
 
 import Ouroboros.Network.OrphanInstances ()
 
@@ -166,3 +171,7 @@ ntnDataFlow NodeToNodeVersionData { diffusionMode } =
   case diffusionMode of
     InitiatorAndResponderDiffusionMode -> Duplex
     InitiatorOnlyDiffusionMode         -> Unidirectional
+
+
+type HandshakeTr ntnAddr = Mx.WithBearer (ConnectionId ntnAddr) (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term))
+

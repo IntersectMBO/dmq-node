@@ -6,7 +6,6 @@
 module DMQ.NodeToClient
   ( module DMQ.NodeToClient.Version
   , Protocols (..)
-  , HandshakeTr
   , Apps
   , dmqCodecs
   , ntcApps
@@ -26,8 +25,6 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow
 import "contra-tracer" Control.Tracer (Tracer, nullTracer)
-
-import Codec.CBOR.Term qualified as CBOR
 
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 
@@ -54,15 +51,12 @@ import Ouroboros.Network.Handshake.Acceptable (Acceptable (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import Ouroboros.Network.Mux
 import Ouroboros.Network.OrphanInstances ()
-import Ouroboros.Network.Protocol.Handshake (Handshake, HandshakeArguments (..))
+import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
            codecHandshake, noTimeLimitsHandshake)
 import Ouroboros.Network.TxSubmission.Mempool.Reader
 import Ouroboros.Network.TxSubmission.Mempool.Simple
 import Ouroboros.Network.Util.ShowProxy
-
-
-type HandshakeTr ntcAddr = Mx.WithBearer (ConnectionId ntcAddr) (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term))
 
 ntcHandshakeArguments
   :: MonadST m

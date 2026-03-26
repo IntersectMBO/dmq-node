@@ -20,7 +20,6 @@ module DMQ.NodeToNode
   , dmqCodecs
   , LimitsAndTimeouts
   , dmqLimitsAndTimeouts
-  , HandshakeTr
   , ntnHandshakeArguments
   , stdVersionDataNTN
   ) where
@@ -39,7 +38,6 @@ import "contra-tracer" Control.Tracer (Tracer, nullTracer)
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
-import Codec.CBOR.Term qualified as CBOR
 import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor.Contravariant ((>$<))
@@ -56,14 +54,13 @@ import Network.TypedProtocol.Codec (AnnotatedCodec, Codec)
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 
 import DMQ.Configuration (Configuration)
-import DMQ.Diffusion.NodeKernel (NodeKernel (..))
+import DMQ.Diffusion.NodeKernel.Types (NodeKernel (..))
 import DMQ.NodeToNode.Version
 import DMQ.Policy qualified as Policy
 import DMQ.Protocol.SigSubmission.Codec (byteLimitsSigSubmission,
            codecSigSubmission, timeLimitsSigSubmission)
 import DMQ.Protocol.SigSubmission.Type (NumTxIdsToAck (..), NumTxIdsToReq (..),
-           SigSubmission)
-import DMQ.Protocol.SigSubmission.Validate (SigValidationError)
+           SigSubmission, SigValidationError)
 import DMQ.Protocol.SigSubmissionV2.Codec
 import DMQ.Protocol.SigSubmissionV2.Inbound
            (sigSubmissionV2InboundPeerPipelined)
@@ -81,7 +78,6 @@ import Ouroboros.Network.Context (ExpandedInitiatorContext (..),
 import Ouroboros.Network.DiffusionMode
 import Ouroboros.Network.Driver.Limits (runAnnotatedPeerWithLimits,
            runPeerWithLimits, runPipelinedAnnotatedPeerWithLimits)
-import Ouroboros.Network.Driver.Simple (TraceSendRecv)
 import Ouroboros.Network.Handshake.Acceptable (Acceptable (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import Ouroboros.Network.KeepAlive (KeepAliveInterval (..), keepAliveClient,
@@ -101,7 +97,7 @@ import Ouroboros.Network.TxSubmission.Mempool.Reader
 
 import Ouroboros.Network.OrphanInstances ()
 
-import Ouroboros.Network.Protocol.Handshake (Handshake, HandshakeArguments (..))
+import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
            codecHandshake, timeLimitsHandshake)
 import Ouroboros.Network.Protocol.KeepAlive.Client (keepAliveClientPeer)
@@ -686,8 +682,6 @@ dmqLimitsAndTimeouts =
     size :: BL.ByteString -> Word
     size = fromIntegral . BL.length
 
-
-type HandshakeTr ntnAddr = Mx.WithBearer (ConnectionId ntnAddr) (TraceSendRecv (Handshake NodeToNodeVersion CBOR.Term))
 
 ntnHandshakeArguments
   :: MonadST m

@@ -25,6 +25,7 @@ module DMQ.Protocol.SigSubmission.Type
   , module SigSubmission
   , POSIXTime
   , SigValidationError (..)
+  , SigValidationTrace (..)
   , SigValidationException (..)
     -- * Utilities
   , CBORBytes (..)
@@ -327,6 +328,14 @@ instance ToJSON SigValidationError where
     , "reason" .= show e
     ]
 
+data SigValidationTrace = InvalidSignature SigId SigValidationError
+  deriving Show
+instance ToJSON SigValidationTrace where
+  toJSON (InvalidSignature sigid reason) = object
+    [ "type"   .= String "InvalidSignature"
+    , "sigid"  .= sigid
+    , "reason" .= reason
+    ]
 
 data SigValidationException = SigValidationException SigId SigValidationError
   deriving Show

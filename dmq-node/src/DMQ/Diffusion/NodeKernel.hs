@@ -3,12 +3,8 @@
 {-# LANGUAGE RankNTypes     #-}
 
 module DMQ.Diffusion.NodeKernel
-  ( NodeKernel (..)
+  ( module DMQ.Diffusion.NodeKernel.Types
   , withNodeKernel
-  , PoolValidationCtx (..)
-  , StakePools (..)
-  , SomeLedgerPeerSnapshot
-  , PoolId
   ) where
 
 import Control.Concurrent.Class.MonadMVar
@@ -22,7 +18,6 @@ import "contra-tracer" Control.Tracer (Tracer, nullTracer)
 import Data.Function (on)
 import Data.Functor.Contravariant ((>$<))
 import Data.Hashable
-import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
@@ -31,24 +26,14 @@ import Data.Set qualified as Set
 import Data.Time.Clock.POSIX (POSIXTime)
 import Data.Time.Clock.POSIX qualified as Time
 import Data.Void (Void)
-import Data.Word
 import System.Random (StdGen)
 import System.Random qualified as Random
 
-import Cardano.Ledger.Api.State.Query qualified as LedgerQuery
-import Cardano.Ledger.Shelley.API qualified as Ledger
-
-import Ouroboros.Network.BlockFetch (FetchClientRegistry,
-           newFetchClientRegistry)
-import Ouroboros.Network.ConnectionId (ConnectionId (..))
+import Ouroboros.Network.BlockFetch (newFetchClientRegistry)
 import Ouroboros.Network.Magic (NetworkMagic (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
            (makePublicPeerSelectionStateVar)
-import Ouroboros.Network.PeerSelection.LedgerPeers (SomeLedgerPeerSnapshot)
-import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
-           LedgerPeersKind (..))
-import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry,
-           newPeerSharingAPI, newPeerSharingRegistry,
+import Ouroboros.Network.PeerSharing (newPeerSharingAPI, newPeerSharingRegistry,
            ps_POLICY_PEER_SHARE_MAX_PEERS, ps_POLICY_PEER_SHARE_STICKY_TIME)
 import Ouroboros.Network.TxSubmission.Inbound.V2
 import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool (..),
@@ -56,59 +41,10 @@ import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool (..),
 import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 
 import DMQ.Configuration
+import DMQ.Diffusion.NodeKernel.Types
 import DMQ.Policy qualified as Policy
 import DMQ.Protocol.SigSubmission.Type (Sig (sigExpiresAt, sigId), SigId)
 import DMQ.Tracer
-
-
-data NodeKernel crypto ntnAddr m =
-  NodeKernel {
-    -- | The fetch client registry, used for the keep alive clients.
-    fetchClientRegistry :: !(FetchClientRegistry (ConnectionId ntnAddr) () () m)
-
-    -- | Read the current peer sharing registry, used for interacting with
-    -- the PeerSharing protocol
-  , peerSharingRegistry :: !(PeerSharingRegistry ntnAddr m)
-  , peerSharingAPI      :: !(PeerSharingAPI ntnAddr StdGen m)
-  , mempool             :: !(Mempool m SigId (Sig crypto))
-  , sigChannelVar       :: !(TxChannelsVar m ntnAddr SigId (Sig crypto))
-  , sigMempoolSem       :: !(TxMempoolSem m)
-  , sigSharedTxStateVar :: !(SharedTxStateVar m ntnAddr SigId (Sig crypto))
-  , stakePools          :: !(StakePools m)
-  , nextEpochVar        :: !(StrictTVar m (Maybe UTCTime))
-  }
-
--- | Cardano pool id's are hashes of the cold verification key
---
-type PoolId = Ledger.KeyHash Ledger.StakePool
-
-data StakePools m = StakePools {
-    -- | contains map of cardano pool stake snapshot obtained
-    -- via local state query client
-    stakePoolsVar
-      :: !(StrictTVar m (Map PoolId LedgerQuery.StakeSnapshot))
-    -- | Acquire and update validation context for signature validation
-  , withPoolValidationCtx
-      :: forall a. (PoolValidationCtx -> (a, PoolValidationCtx)) ->  STM m a
-     -- | provides only those big peers which provide SRV endpoints
-     -- as otherwise those are cardano-nodes
-  , ledgerBigPeersVar
-      :: !(StrictTVar m (Maybe (LedgerPeerSnapshot BigLedgerPeers)))
-    -- | all ledger peers, restricted to srv endpoints
-  , ledgerPeersVar
-      :: !(StrictTMVar m (LedgerPeerSnapshot AllLedgerPeers))
-  }
-
-data PoolValidationCtx =
-  PoolValidationCtx {
-      vctxEpoch    :: !(Maybe UTCTime)
-      -- ^ UTC time of next epoch boundary for handling clock skew
-    , vctxStakeMap :: !(Map PoolId LedgerQuery.StakeSnapshot)
-      -- ^ for signature validation
-    , vctxOcertMap :: !(Map PoolId Word64)
-      -- ^ ocert counters to check monotonicity
-    }
-  deriving Show
 
 newNodeKernel :: forall crypto ntnAddr m.
                  ( MonadLabelledSTM m

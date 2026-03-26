@@ -11,6 +11,7 @@ module DMQ.NodeToClient.Version
   , stdVersionDataNTC
   , nodeToClientCodecCBORTerm
   , nodeToClientVersionCodec
+  , HandshakeTr
   ) where
 
 import Codec.CBOR.Term qualified as CBOR
@@ -23,11 +24,15 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import GHC.Generics (Generic)
 
+import Network.Mux.Trace qualified as Mx
+
 import Ouroboros.Network.CodecCBORTerm (CodecCBORTerm (..))
+import Ouroboros.Network.ConnectionId
+import Ouroboros.Network.Driver.Simple (TraceSendRecv)
 import Ouroboros.Network.Handshake.Acceptable (Acceptable (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import Ouroboros.Network.Magic (NetworkMagic (..))
-import Ouroboros.Network.Protocol.Handshake (Accept (..))
+import Ouroboros.Network.Protocol.Handshake (Accept (..), Handshake)
 
 
 data NodeToClientVersion =
@@ -128,3 +133,6 @@ stdVersionDataNTC networkMagic =
     { networkMagic
     , query        = False
     }
+
+
+type HandshakeTr ntcAddr = Mx.WithBearer (ConnectionId ntcAddr) (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term))
