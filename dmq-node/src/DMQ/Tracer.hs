@@ -9,7 +9,8 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module DMQ.Tracer
-  ( mkCardanoTracer
+  ( mkDMQTracers
+  , DMQDiffusionTracers
   , DMQTracers (..)
   , DMQStartupTrace (..)
   , NoExtraPeers (..)
@@ -28,6 +29,7 @@ import "contra-tracer" Control.Tracer
 
 import Data.Aeson
 import Data.Foldable qualified as Foldable
+import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Typeable (Typeable)
 
@@ -145,258 +147,284 @@ instance Logging.MetaTrace DMQStartupTrace where
   documentFor _ = Nothing
   allNamespaces = [ Logging.Namespace [] ["Trace"] ]
 
+type DMQDiffusionTracers m =
+    Diffusion.Tracers
+      RemoteAddress
+      NodeToNodeVersion
+      NodeToNodeVersionData
+      LocalAddress
+      NodeToClientVersion
+      NodeToClientVersionData
+      NoExtraState
+      NoExtraDebugState
+      NoExtraFlags
+      (NoExtraPeers RemoteAddress)
+      m
 
-mkCardanoTracer :: ( Show ntnAddr
-                   , Show ntcAddr
-                   , ToJSON ntnAddr
-                   , Typeable ntnAddr
-                   , Logging.LogFormatting ntnAddr
-                   , Logging.LogFormatting ntcAddr
-                   , Crypto crypto
-                   , Typeable crypto
-                   )
-                => FilePath
-                -> IO ( DMQTracers crypto ntnAddr ntcAddr IO
-                      , Diffusion.Tracers
-                          RemoteAddress
-                          NodeToNodeVersion
-                          NodeToNodeVersionData
-                          LocalAddress
-                          NodeToClientVersion
-                          NodeToClientVersionData
-                          NoExtraState
-                          NoExtraDebugState
-                          NoExtraFlags
-                          (NoExtraPeers RemoteAddress)
-                          IO
-                      )
-mkCardanoTracer dmqConfigFilePath = do
+
+-- | Create and configure `DMQTracers` and `DMQDiffusionTracers`.
+--
+mkDMQTracers
+  :: ( Show ntnAddr
+     , Show ntcAddr
+     , ToJSON ntnAddr
+     , Typeable ntnAddr
+     , Logging.LogFormatting ntnAddr
+     , Logging.LogFormatting ntcAddr
+     , Crypto crypto
+     , Typeable crypto
+     )
+  => FilePath
+  -> IO ( DMQTracers crypto ntnAddr ntcAddr IO
+        , DMQDiffusionTracers IO
+        )
+mkDMQTracers dmqConfigFilePath = do
   traceConfig <- Logging.readConfiguration dmqConfigFilePath
-  emptyConfigReflection <- Logging.emptyConfigReflection
+  configReflection <- Logging.emptyConfigReflection
   stdoutTrace <- Logging.standardTracer
   let trForward = mempty
   let mbTrEkg = Nothing
-  -- Make it a "contra-tracer" tracer for backward compatibility.
-  !dtMuxTracer <- Logging.mkCardanoTracer
+  !dtMuxTracer <- mkTracer traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "Mux", "Remote"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtMuxTracer]
-  !dtChannelTracer <- Logging.mkCardanoTracer
+
+  !dtChannelTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "Mux", "Remote", "Channel"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtChannelTracer]
-  !dtBearerTracer <- Logging.mkCardanoTracer
+
+  !dtBearerTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "Mux", "Remote", "Bearer"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtBearerTracer]
-  !dtHandshakeTracer <- Logging.mkCardanoTracer
+
+  !dtHandshakeTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "Handshake", "Remote"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtHandshakeTracer]
-  !dtLocalMuxTracer <- Logging.mkCardanoTracer
+
+  !dtLocalMuxTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "Mux", "Local"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtLocalMuxTracer]
-  !dtLocalChannelTracer <- Logging.mkCardanoTracer
+
+  !dtLocalChannelTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "Mux", "Local", "Channel"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtLocalChannelTracer]
-  !dtLocalBearerTracer <- Logging.mkCardanoTracer
+
+  !dtLocalBearerTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "Mux", "Local", "Bearer"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtLocalBearerTracer]
-  !dtLocalHandshakeTracer <- Logging.mkCardanoTracer
+
+  !dtLocalHandshakeTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "Handshake", "Local"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtLocalHandshakeTracer]
-  !dtDiffusionTracer <- Logging.mkCardanoTracer
+
+  !dtDiffusionTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Startup", "DiffusionInit"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtDiffusionTracer]
-  !dtTraceLocalRootPeersTracer  <- Logging.mkCardanoTracer
+
+  !dtTraceLocalRootPeersTracer  <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "Peers", "LocalRoot"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtTraceLocalRootPeersTracer]
-  !dtTracePublicRootPeersTracer  <- Logging.mkCardanoTracer
+
+  !dtTracePublicRootPeersTracer  <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "Peers", "PublicRoot"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtTracePublicRootPeersTracer]
-  !dtTraceLedgerPeersTracer <- Logging.mkCardanoTracer
+
+  !dtTraceLedgerPeersTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "Peers", "Ledger"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtTraceLedgerPeersTracer]
-  !dtTracePeerSelectionTracer <- Logging.mkCardanoTracer
+
+  !dtTracePeerSelectionTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "PeerSelection", "Selection"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtTracePeerSelectionTracer]
-  !dtDebugPeerSelectionTracer <- Logging.mkCardanoTracer
+
+  !dtDebugPeerSelectionTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "PeerSelection"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtDebugPeerSelectionTracer]
-  !dtTracePeerSelectionCounters <- Logging.mkCardanoTracer
+
+  !dtTracePeerSelectionCounters <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "PeerSelection"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtTracePeerSelectionCounters]
-  !dtPeerSelectionActionsTracer <- Logging.mkCardanoTracer
+
+  !dtPeerSelectionActionsTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "PeerSelection", "Actions"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtPeerSelectionActionsTracer]
-  !dtConnectionManagerTracer <- Logging.mkCardanoTracer
+
+  !dtConnectionManagerTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "ConnectionManager", "Remote"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtConnectionManagerTracer]
-  !dtConnectionManagerTransitionTracer <- Logging.mkCardanoTracer
+
+  !dtConnectionManagerTransitionTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "ConnectionManager", "Transition"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtConnectionManagerTransitionTracer]
-  !dtServerTracer <- Logging.mkCardanoTracer
+
+  !dtServerTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "Server", "Local"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtServerTracer]
-  !dtInboundGovernorTracer <- Logging.mkCardanoTracer
+
+  !dtInboundGovernorTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "InboundGovernor", "Remote"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtInboundGovernorTracer]
-  !dtInboundGovernorTransitionTracer <- Logging.mkCardanoTracer
+
+  !dtInboundGovernorTransitionTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "InboundGovernor", "Transition"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtInboundGovernorTransitionTracer]
-  !dtLocalConnectionManagerTracer <- Logging.mkCardanoTracer
+
+  !dtLocalConnectionManagerTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward Nothing -- never conflate metrics of the same name with those originating from `connectionManagerTr`
     ["Net", "ConnectionManager", "Local"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtLocalConnectionManagerTracer]
-  !dtLocalServerTracer <- Logging.mkCardanoTracer
+
+  !dtLocalServerTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "Server", "Local"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtLocalServerTracer]
-  !dtLocalInboundGovernorTracer <- Logging.mkCardanoTracer
+
+  !dtLocalInboundGovernorTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "InboundGovernor", "Local"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtLocalInboundGovernorTracer]
-  !dtDnsTracer <- Logging.mkCardanoTracer
+
+  !dtDnsTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "DNS"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dtDnsTracer]
-  let dmqDifussionTracers =
-        -- From `Cardano.Node.Tracing.Tracers`
-        -- Branch "ana/10.6-final-integration-mix"
-        Diffusion.Tracers {
-            Diffusion.dtMuxTracer                                  = Tracer $ Logging.traceWith dtMuxTracer,
-            Diffusion.dtChannelTracer                              = Tracer $ Logging.traceWith dtChannelTracer,
-            Diffusion.dtBearerTracer                               = Tracer $ Logging.traceWith dtBearerTracer,
-            Diffusion.dtHandshakeTracer                            = Tracer $ Logging.traceWith dtHandshakeTracer,
-            Diffusion.dtLocalMuxTracer                             = Tracer $ Logging.traceWith dtLocalMuxTracer,
-            Diffusion.dtLocalChannelTracer                         = Tracer $ Logging.traceWith dtLocalChannelTracer,
-            Diffusion.dtLocalBearerTracer                          = Tracer $ Logging.traceWith dtLocalBearerTracer,
-            Diffusion.dtLocalHandshakeTracer                       = Tracer $ Logging.traceWith dtLocalHandshakeTracer,
-            Diffusion.dtDiffusionTracer                            = Tracer $ Logging.traceWith dtDiffusionTracer,
-            Diffusion.dtTraceLocalRootPeersTracer                  = Tracer $ Logging.traceWith dtTraceLocalRootPeersTracer,
-            Diffusion.dtTracePublicRootPeersTracer                 = Tracer $ Logging.traceWith dtTracePublicRootPeersTracer,
-            Diffusion.dtTraceLedgerPeersTracer                     = Tracer $ Logging.traceWith dtTraceLedgerPeersTracer,
-            Diffusion.dtTracePeerSelectionTracer                   = Tracer $ Logging.traceWith dtTracePeerSelectionTracer,
-            Diffusion.dtDebugPeerSelectionTracer                   = Tracer $ Logging.traceWith dtDebugPeerSelectionTracer,
-            Diffusion.dtTracePeerSelectionCounters                 = Tracer $ Logging.traceWith dtTracePeerSelectionCounters,
-            Diffusion.dtPeerSelectionActionsTracer                 = Tracer $ Logging.traceWith dtPeerSelectionActionsTracer,
-            Diffusion.dtConnectionManagerTracer                    = Tracer $ Logging.traceWith dtConnectionManagerTracer,
-            Diffusion.dtConnectionManagerTransitionTracer          = Tracer $ Logging.traceWith dtConnectionManagerTransitionTracer,
-            Diffusion.dtServerTracer                               = Tracer $ Logging.traceWith dtServerTracer,
-            Diffusion.dtInboundGovernorTracer                      = Tracer $ Logging.traceWith dtInboundGovernorTracer,
-            Diffusion.dtInboundGovernorTransitionTracer            = Tracer $ Logging.traceWith dtInboundGovernorTransitionTracer,
-            Diffusion.dtLocalConnectionManagerTracer               = Tracer $ Logging.traceWith dtLocalConnectionManagerTracer,
-            Diffusion.dtLocalServerTracer                          = Tracer $ Logging.traceWith dtLocalServerTracer,
-            Diffusion.dtLocalInboundGovernorTracer                 = Tracer $ Logging.traceWith dtLocalInboundGovernorTracer,
-            Diffusion.dtDnsTracer                                  = Tracer $ Logging.traceWith dtDnsTracer
-          }
 
-  !sigSubmissionLogicTracer <- Logging.mkCardanoTracer
+  let dmqDifussionTracers = Diffusion.Tracers {
+        Diffusion.dtMuxTracer                         = Tracer $ Logging.traceWith dtMuxTracer,
+        Diffusion.dtChannelTracer                     = Tracer $ Logging.traceWith dtChannelTracer,
+        Diffusion.dtBearerTracer                      = Tracer $ Logging.traceWith dtBearerTracer,
+        Diffusion.dtHandshakeTracer                   = Tracer $ Logging.traceWith dtHandshakeTracer,
+        Diffusion.dtLocalMuxTracer                    = Tracer $ Logging.traceWith dtLocalMuxTracer,
+        Diffusion.dtLocalChannelTracer                = Tracer $ Logging.traceWith dtLocalChannelTracer,
+        Diffusion.dtLocalBearerTracer                 = Tracer $ Logging.traceWith dtLocalBearerTracer,
+        Diffusion.dtLocalHandshakeTracer              = Tracer $ Logging.traceWith dtLocalHandshakeTracer,
+        Diffusion.dtDiffusionTracer                   = Tracer $ Logging.traceWith dtDiffusionTracer,
+        Diffusion.dtTraceLocalRootPeersTracer         = Tracer $ Logging.traceWith dtTraceLocalRootPeersTracer,
+        Diffusion.dtTracePublicRootPeersTracer        = Tracer $ Logging.traceWith dtTracePublicRootPeersTracer,
+        Diffusion.dtTraceLedgerPeersTracer            = Tracer $ Logging.traceWith dtTraceLedgerPeersTracer,
+        Diffusion.dtTracePeerSelectionTracer          = Tracer $ Logging.traceWith dtTracePeerSelectionTracer,
+        Diffusion.dtDebugPeerSelectionTracer          = Tracer $ Logging.traceWith dtDebugPeerSelectionTracer,
+        Diffusion.dtTracePeerSelectionCounters        = Tracer $ Logging.traceWith dtTracePeerSelectionCounters,
+        Diffusion.dtPeerSelectionActionsTracer        = Tracer $ Logging.traceWith dtPeerSelectionActionsTracer,
+        Diffusion.dtConnectionManagerTracer           = Tracer $ Logging.traceWith dtConnectionManagerTracer,
+        Diffusion.dtConnectionManagerTransitionTracer = Tracer $ Logging.traceWith dtConnectionManagerTransitionTracer,
+        Diffusion.dtServerTracer                      = Tracer $ Logging.traceWith dtServerTracer,
+        Diffusion.dtInboundGovernorTracer             = Tracer $ Logging.traceWith dtInboundGovernorTracer,
+        Diffusion.dtInboundGovernorTransitionTracer   = Tracer $ Logging.traceWith dtInboundGovernorTransitionTracer,
+        Diffusion.dtLocalConnectionManagerTracer      = Tracer $ Logging.traceWith dtLocalConnectionManagerTracer,
+        Diffusion.dtLocalServerTracer                 = Tracer $ Logging.traceWith dtLocalServerTracer,
+        Diffusion.dtLocalInboundGovernorTracer        = Tracer $ Logging.traceWith dtLocalInboundGovernorTracer,
+        Diffusion.dtDnsTracer                         = Tracer $ Logging.traceWith dtDnsTracer
+      }
+
+  !sigSubmissionLogicTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "SigSubmission", "Logic"]
-  Logging.configureTracers emptyConfigReflection traceConfig [sigSubmissionLogicTracer]
 
-  !sigSubmissionLogicPeerTracer <- Logging.mkCardanoTracer
+  !sigSubmissionLogicPeerTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "SigSubmission", "Logic"]
-  Logging.configureTracers emptyConfigReflection traceConfig [sigSubmissionLogicPeerTracer]
 
-  !localMsgSubmissionProtocolTracer <- Logging.mkCardanoTracer
+  !localMsgSubmissionProtocolTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "Local", "SigSubmission", "Protocol"]
-  Logging.configureTracers emptyConfigReflection traceConfig [localMsgSubmissionProtocolTracer]
 
-  !localMsgSubmissionServerTracer <- Logging.mkCardanoTracer
+  !localMsgSubmissionServerTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "Local", "SigSubmission", "Server"]
-  Logging.configureTracers emptyConfigReflection traceConfig [localMsgSubmissionServerTracer]
 
-  !localMsgNotificationProtocolTracer <- Logging.mkCardanoTracer
+  !localMsgNotificationProtocolTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "Local", "MsgNotification", "Protocol"]
-  Logging.configureTracers emptyConfigReflection traceConfig [localMsgNotificationProtocolTracer]
 
-  !localMsgNotificationServerTracer <- Logging.mkCardanoTracer
+  !localMsgNotificationServerTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "Local", "MsgNotification", "Server"]
-  Logging.configureTracers emptyConfigReflection traceConfig [localMsgNotificationServerTracer]
 
-  !sigSubmissionV2ProtocolTracer <- Logging.mkCardanoTracer
+  !sigSubmissionV2ProtocolTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "SigSubmission", "V2", "Protocol"]
-  Logging.configureTracers emptyConfigReflection traceConfig [sigSubmissionV2ProtocolTracer]
 
-  !sigSubmissionInboundTracer <- Logging.mkCardanoTracer
+  !sigSubmissionInboundTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "SigSubmission", "Inbound"]
-  Logging.configureTracers emptyConfigReflection traceConfig [sigSubmissionInboundTracer]
 
-  !sigSubmissionV1ProtocolTracer <- Logging.mkCardanoTracer
+  !sigSubmissionV1ProtocolTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "SigSubmission", "V1", "Protocol"]
-  Logging.configureTracers emptyConfigReflection traceConfig [sigSubmissionV1ProtocolTracer]
 
-  !sigSubmissionOutboundV1Tracer <- Logging.mkCardanoTracer
+  !sigSubmissionOutboundV1Tracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "SigSubmission", "V1", "Outbound"]
-  Logging.configureTracers emptyConfigReflection traceConfig [sigSubmissionOutboundV1Tracer]
 
-  !sigSubmissionOutboundV2Tracer <- Logging.mkCardanoTracer
+  !sigSubmissionOutboundV2Tracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "SigSubmission", "V2", "Outbound"]
-  Logging.configureTracers emptyConfigReflection traceConfig [sigSubmissionOutboundV2Tracer]
 
-  !keepAliveProtocolTracer <- Logging.mkCardanoTracer
+  !keepAliveProtocolTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "KeepAlive", "Protocol"]
-  Logging.configureTracers emptyConfigReflection traceConfig [keepAliveProtocolTracer]
 
-  !peerSharingProtocolTracer <- Logging.mkCardanoTracer
+  !peerSharingProtocolTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "PeerShare", "Protocol"]
-  Logging.configureTracers emptyConfigReflection traceConfig [peerSharingProtocolTracer]
 
-  !dmqStartupTracer <- Logging.mkCardanoTracer
+  !dmqStartupTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Startup"]
-  Logging.configureTracers emptyConfigReflection traceConfig [dmqStartupTracer]
 
-  !localStateQueryClientTracer <- Logging.mkCardanoTracer
+  !localStateQueryClientTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "Local", "LocalStateQuery"]
-  Logging.configureTracers emptyConfigReflection traceConfig [localStateQueryClientTracer]
 
-  !sigValidationTracer <- Logging.mkCardanoTracer
+  !sigValidationTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "Sig", "Validation"]
-  Logging.configureTracers emptyConfigReflection traceConfig [sigValidationTracer]
 
-  !localSigValidationTracer <- Logging.mkCardanoTracer
+  !localSigValidationTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "Local", "Sig", "Validation"]
-  Logging.configureTracers emptyConfigReflection traceConfig [localSigValidationTracer]
 
-  !cardanoNodeHandshakeTracer <- Logging.mkCardanoTracer
+  !cardanoNodeHandshakeTracer <- mkTracer
+    traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "Local", "Cardano", "Handshake"]
-  Logging.configureTracers emptyConfigReflection traceConfig [cardanoNodeHandshakeTracer]
 
   let dmqTracers = DMQTracers {
         sigSubmissionLogicTracer           = Tracer $ Logging.traceWith sigSubmissionLogicTracer,
@@ -420,6 +448,24 @@ mkCardanoTracer dmqConfigFilePath = do
       }
 
   return (dmqTracers, dmqDifussionTracers)
+
+
+-- | Create and configure a tracer.
+--
+mkTracer :: Logging.LogFormatting a
+         => Logging.MetaTrace a
+         => Logging.TraceConfig
+         -> Logging.ConfigReflection
+         -> Logging.Trace IO Logging.FormattedMessage
+         -> Logging.Trace IO Logging.FormattedMessage
+         -> Maybe (Logging.Trace IO Logging.FormattedMessage)
+         -> [Text]
+         -> IO (Logging.Trace IO a)
+mkTracer traceConfig configReflection stdoutTrace trForward mbTrEkg as = do
+  tracer <- Logging.mkCardanoTracer stdoutTrace trForward mbTrEkg as
+  Logging.configureTracers configReflection traceConfig [tracer]
+  return tracer
+
 
 --------------------------------------------------------------------------------
 -- LocalTxSubmission Tracer

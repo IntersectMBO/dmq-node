@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE MultiWayIf               #-}
+{-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE OverloadedRecordDot      #-}
 {-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE PackageImports           #-}
@@ -49,7 +50,7 @@ import DMQ.NodeToNode (NodeToNodeVersion, dmqCodecs, dmqLimitsAndTimeouts,
 import DMQ.Policy qualified as Policy
 import DMQ.Protocol.SigSubmission.Type (Sig (..))
 import DMQ.Protocol.SigSubmission.Validate
-import DMQ.Tracer (DMQStartupTrace (..), DMQTracers (..), mkCardanoTracer)
+import DMQ.Tracer (DMQStartupTrace (..), DMQTracers (..), mkDMQTracers)
 import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.PeerSharing.Codec (decodeRemoteAddress,
@@ -89,7 +90,16 @@ runDMQ commandLineConfig = do
             `act`
             defaultConfiguration
 
-    (dmqTracers@DMQTracers { dmqStartupTracer }, dmqDiffusionTracers) <- mkCardanoTracer configFilePath
+    (   dmqTracers@DMQTracers {
+          dmqStartupTracer,
+          localStateQueryClientTracer,
+          sigValidationTracer,
+          localSigValidationTracer,
+          cardanoNodeHandshakeTracer
+        }
+      , dmqDiffusionTracers
+      )
+      <- mkDMQTracers configFilePath
 
     when version $ do
       let gitrev = $(gitRev)
@@ -122,7 +132,7 @@ runDMQ commandLineConfig = do
     withIOManager \iocp -> do
       let localSnocket'      = localSnocket iocp
           mkStakePoolMonitor = connectToCardanoNode
-                                 (localStateQueryClientTracer dmqTracers)
+                                 localStateQueryClientTracer
                                  ledgerPeers
                                  localSnocket'
                                  socketPath
@@ -146,7 +156,7 @@ runDMQ commandLineConfig = do
                                         withPoolValidationCtx (stakePools nodeKernel) (validateSig now sigs)
                                       )
                                       (traverse_ $ \(sigid, reason) -> do
-                                        traceWith (sigValidationTracer dmqTracers) $ InvalidSignature sigid reason
+                                        traceWith sigValidationTracer $ InvalidSignature sigid reason
                                         case reason of
                                           SigDuplicate      -> return ()
                                           SigExpired        -> return ()
@@ -175,7 +185,7 @@ runDMQ commandLineConfig = do
                                         withPoolValidationCtx (stakePools nodeKernel) (validateSig now sigs)
                                       )
                                       (traverse_ $ \(sigid, reason) ->
-                                         traceWith (localSigValidationTracer dmqTracers) $ InvalidSignature sigid reason
+                                         traceWith localSigValidationTracer $ InvalidSignature sigid reason
                                       )
                                       (mempool nodeKernel)
                in NtC.ntcApps dmqTracers dmqConfig
@@ -183,7 +193,7 @@ runDMQ commandLineConfig = do
                               NtC.dmqCodecs
             dmqDiffusionArguments =
               diffusionArguments nullTracer
-                                 (cardanoNodeHandshakeTracer dmqTracers)
+                                 cardanoNodeHandshakeTracer
                                  $ maybe [] out <$> tryReadTMVar nodeKernel.stakePools.ledgerPeersVar
               where
                 out :: LedgerPeerSnapshot AllLedgerPeers
