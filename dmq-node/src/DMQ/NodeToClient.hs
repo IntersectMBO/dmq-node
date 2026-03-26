@@ -13,7 +13,6 @@ module DMQ.NodeToClient
   , responders
   ) where
 
-import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy (ByteString)
 import Data.Functor ((<&>))
 import Data.Functor.Contravariant ((>$<))
@@ -128,22 +127,24 @@ _ntc_MAX_SIGS_TO_ACK = 1000
 -- | Construct applications for the node-to-client protocols
 --
 ntcApps
-  :: forall crypto idx ntcAddr m.
+  :: forall crypto idx ntnAddr ntcAddr m.
      ( MonadEvaluate m
      , MonadThrow m
      , MonadThread m
      , MonadSTM m
-     , Crypto crypto
-     , Aeson.ToJSON ntcAddr
      , ShowProxy (Sig crypto)
      )
-  => (Tracer m WithEventType)
+  => DMQTracers crypto ntnAddr ntcAddr m
   -> Configuration
   -> TxSubmissionMempoolReader SigId (Sig crypto) idx m
   -> TxSubmissionMempoolWriter SigId (Sig crypto) idx m SigValidationError
   -> Codecs crypto m
   -> Apps ntcAddr m ()
-ntcApps tracer
+ntcApps DMQTracers { localMsgSubmissionProtocolTracer,
+                     localMsgSubmissionServerTracer,
+                     localMsgNotificationProtocolTracer,
+                     localMsgNotificationServerTracer
+                   }
         _
         mempoolReader
         TxSubmissionMempoolWriter { mempoolAddTxs }
@@ -156,13 +157,13 @@ ntcApps tracer
     aLocalMsgSubmission _version ResponderContext { rcConnectionId = connId } channel = do
       labelThisThread "LocalMsgSubmission.Server"
       runAnnotatedPeer
-        (WithEventType (DMQ "LocalMsgSubmission.Protocol.Server") . Mx.WithBearer connId >$< tracer)
+        (Mx.WithBearer connId >$< localMsgSubmissionProtocolTracer)
         msgSubmissionCodec
         channel
         (localMsgSubmissionServerPeer $
           localMsgSubmissionServer
             sigId
-            (WithEventType (DMQ "LocalMsgSubmission.Server") . Mx.WithBearer connId >$< tracer)
+            (Mx.WithBearer connId >$< localMsgSubmissionServerTracer)
             (\sig -> mempoolAddTxs [sig] <&> \case
                       (sigId:_, _) -> Right sigId
                       (_, (sigId, err):_) -> Left (sigId, err)
@@ -173,13 +174,13 @@ ntcApps tracer
     aLocalMsgNotification _version ResponderContext { rcConnectionId = connId } channel = do
       labelThisThread "LocalMsgNotification.Server"
       runAnnotatedPeer
-        (WithEventType (DMQ "LocalMsgNotification.Protocol.Server") . Mx.WithBearer connId >$< tracer)
+        (Mx.WithBearer connId >$< localMsgNotificationProtocolTracer)
         msgNotificationCodec
         channel
         (localMsgNotificationServerPeer $
           localMsgNotificationServer
             sigId
-            (WithEventType (DMQ "LocalMsgNotification.Server") . Mx.WithBearer connId >$< tracer)
+            (Mx.WithBearer connId >$< localMsgNotificationServerTracer)
             (pure ()) _ntc_MAX_SIGS_TO_ACK mempoolReader)
 
 

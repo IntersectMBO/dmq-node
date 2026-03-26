@@ -1,6 +1,5 @@
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE LambdaCase               #-}
-{-# LANGUAGE OverloadedStrings        #-}
 {-# LANGUAGE PackageImports           #-}
 {-# LANGUAGE TypeOperators            #-}
 
@@ -17,8 +16,6 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Trans.Except
 import "contra-tracer" Control.Tracer (Tracer, nullTracer, traceWith)
-import Data.Aeson (ToJSON (..), object, (.=))
-import Data.Aeson qualified as Aeson
 import Data.Functor ((<&>))
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map.Strict qualified as Map
@@ -31,7 +28,6 @@ import Cardano.Network.NodeToClient
 import Cardano.Network.PeerSelection (LedgerPeerSnapshot (..),
            LedgerRelayAccessPoint (..), SingLedgerPeersKind (..))
 import Cardano.Slotting.EpochInfo.API
-import Cardano.Slotting.Slot (EpochNo)
 import Cardano.Slotting.Time
 
 import DMQ.Diffusion.NodeKernel
@@ -39,7 +35,6 @@ import Ouroboros.Consensus.Cardano.Block
 import Ouroboros.Consensus.Cardano.Node
 import Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
 import Ouroboros.Consensus.HardFork.History.EpochInfo (interpreterToEpochInfo)
-import Ouroboros.Consensus.HardFork.History.Qry (PastHorizonException)
 import Ouroboros.Consensus.Ledger.Query (Query (..))
 import Ouroboros.Consensus.Network.NodeToClient
 import Ouroboros.Consensus.Node.NetworkProtocolVersion
@@ -56,36 +51,7 @@ import Ouroboros.Network.Point (Block (..))
 import Ouroboros.Network.Protocol.LocalStateQuery.Client
 import Ouroboros.Network.Protocol.LocalStateQuery.Type
 
--- | Trace type
---
-data TraceLocalStateQueryClient =
-    Acquiring (Maybe SystemStart)
-  | CurrentEpoch EpochNo
-  | NextEpoch UTCTime NominalDiffTime
-  | PastHorizon PastHorizonException
-  | LedgerPeersNotAvailable
-
-instance ToJSON TraceLocalStateQueryClient where
-  toJSON = \case
-    Acquiring mSystemStart ->
-      object [ "kind" .= Aeson.String "Acquiring"
-             , "systemStart" .= show mSystemStart
-             ]
-    CurrentEpoch epoch ->
-      object [ "kind" .= Aeson.String "CurrentEpoch"
-             , "remoteEpoch" .= show epoch
-             ]
-    NextEpoch ne timer ->
-      object [ "kind" .= Aeson.String "NextEpoch"
-             , "remoteTime" .= show ne
-             , "countdown" .= show timer ]
-    PastHorizon e ->
-      object [ "kind" .= Aeson.String "PastHorizon"
-             , "error" .= show e
-             ]
-    LedgerPeersNotAvailable ->
-      object [ "kind" .= Aeson.String "LedgerPeersNotAvailable" ]
-
+import DMQ.NodeToClient.LocalStateQueryClient.Types
 
 data QueryError = UnsupportedEra
   deriving Show

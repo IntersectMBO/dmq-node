@@ -13,10 +13,9 @@ import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
-import "contra-tracer" Control.Tracer (Tracer, nullTracer)
+import "contra-tracer" Control.Tracer (nullTracer)
 
 import Data.Function (on)
-import Data.Functor.Contravariant ((>$<))
 import Data.Hashable
 import Data.Map.Strict qualified as Map
 import Data.Sequence (Seq)
@@ -107,7 +106,7 @@ newNodeKernel rng = do
                   }
 
 
-withNodeKernel :: forall crypto ntnAddr m a.
+withNodeKernel :: forall crypto ntnAddr ntcAddr m a.
                   ( MonadAsync       m
                   , MonadFork        m
                   , MonadDelay       m
@@ -116,10 +115,9 @@ withNodeKernel :: forall crypto ntnAddr m a.
                   , MonadMVar        m
                   , MonadTime        m
                   , Ord ntnAddr
-                  , Show ntnAddr
                   , Hashable ntnAddr
                   )
-               => Tracer m WithEventType
+               => DMQTracers crypto ntnAddr ntcAddr m
                -> Configuration
                -> StdGen
                -> (NetworkMagic -> NodeKernel crypto ntnAddr m -> m (Either SomeException Void))
@@ -127,7 +125,7 @@ withNodeKernel :: forall crypto ntnAddr m a.
                -- ^ as soon as the callback exits the `mempoolWorker` and all
                -- decision logic threads will be killed
                -> m a
-withNodeKernel tracer
+withNodeKernel DMQTracers { sigSubmissionLogicTracer }
                Configuration {
                  dmqcCardanoNetworkMagic = I networkMagic
                }
@@ -141,7 +139,7 @@ withNodeKernel tracer
   withAsync (mempoolWorker mempool)
           $ \mempoolThread ->
     withAsync (decisionLogicThreads
-                (WithEventType (DMQ "SigSubmission.Logic") >$< tracer)
+                sigSubmissionLogicTracer
                 nullTracer
                 Policy.sigDecisionPolicy
                 sigChannelVar

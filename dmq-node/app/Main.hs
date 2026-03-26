@@ -14,12 +14,11 @@ module Main where
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad (unless, void, when)
 import Control.Monad.Class.MonadThrow
-import "contra-tracer" Control.Tracer (traceWith)
+import "contra-tracer" Control.Tracer (nullTracer, traceWith)
 
 import Data.Act
 import Data.ByteString.Lazy qualified as BSL
 import Data.Foldable (traverse_)
-import Data.Functor.Contravariant ((>$<))
 import Data.List.NonEmpty (NonEmpty)
 import Data.Maybe (maybeToList)
 import Data.Text qualified as Text
@@ -50,8 +49,7 @@ import DMQ.NodeToNode (NodeToNodeVersion, dmqCodecs, dmqLimitsAndTimeouts,
 import DMQ.Policy qualified as Policy
 import DMQ.Protocol.SigSubmission.Type (Sig (..))
 import DMQ.Protocol.SigSubmission.Validate
-import DMQ.Tracer (EventType (DMQ), WithEventType (WithEventType),
-           mkCardanoTracer)
+import DMQ.Tracer (DMQStartupTrace (..), DMQTracers (..), mkCardanoTracer)
 import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type
 import Ouroboros.Network.PeerSelection.PeerSharing.Codec (decodeRemoteAddress,
@@ -81,7 +79,8 @@ runDMQ commandLineConfig = do
     config' <- readConfigurationFileOrError configFilePath
     -- combine default configuration, configuration file and command line
     -- options
-    let dmqConfig@Configuration {
+    let dmqConfig :: Configuration
+        dmqConfig@Configuration {
           dmqcTopologyFile          = I topologyFile,
           dmqcCardanoNodeSocket     = I socketPath,
           dmqcVersion               = I version,
@@ -90,7 +89,7 @@ runDMQ commandLineConfig = do
             `act`
             defaultConfiguration
 
-    (tracer, dmqDiffusionTracers) <- mkCardanoTracer configFilePath
+    (dmqTracers@DMQTracers { dmqStartupTracer }, dmqDiffusionTracers) <- mkCardanoTracer configFilePath
 
     when version $ do
       let gitrev = $(gitRev)
@@ -109,12 +108,11 @@ runDMQ commandLineConfig = do
           ]
       exitSuccess
 
-    traceWith tracer (WithEventType (DMQ "Configuration") dmqConfig)
+    traceWith dmqStartupTracer (DMQConfiguration dmqConfig)
     Dir.doesFileExist socketPath >>= \a ->
       unless a (die $ "CardanoNodeSocket " ++ show socketPath ++": file does not exist")
     nt <- readTopologyFileOrError topologyFile
-    traceWith tracer (WithEventType (DMQ "NetworkTopology") nt)
-
+    traceWith dmqStartupTracer (DMQTopology nt)
 
     stdGen <- Random.newStdGen
     let (psRng, policyRng) = Random.splitGen stdGen
@@ -124,13 +122,13 @@ runDMQ commandLineConfig = do
     withIOManager \iocp -> do
       let localSnocket'      = localSnocket iocp
           mkStakePoolMonitor = connectToCardanoNode
-                                 (WithEventType (DMQ "LocalStateQuery") >$< tracer)
+                                 (localStateQueryClientTracer dmqTracers)
                                  ledgerPeers
                                  localSnocket'
                                  socketPath
 
       withNodeKernel @StandardCrypto
-                     tracer
+                     dmqTracers
                      dmqConfig
                      psRng
                      mkStakePoolMonitor $ \nodeKernel -> do
@@ -140,7 +138,6 @@ runDMQ commandLineConfig = do
         let sigSize :: Sig StandardCrypto -> SizeInBytes
             sigSize = fromIntegral . BSL.length . sigRawBytes
             mempoolReader = Mempool.getReader sigId sigSize (mempool nodeKernel)
-            ntnValidationTracer = (WithEventType (DMQ "NtC Validation") >$< tracer)
             dmqNtNApps =
               let ntnMempoolWriter =
                     Mempool.getWriter SigDuplicate
@@ -149,7 +146,7 @@ runDMQ commandLineConfig = do
                                         withPoolValidationCtx (stakePools nodeKernel) (validateSig now sigs)
                                       )
                                       (traverse_ $ \(sigid, reason) -> do
-                                        traceWith ntnValidationTracer $ InvalidSignature sigid reason
+                                        traceWith (sigValidationTracer dmqTracers) $ InvalidSignature sigid reason
                                         case reason of
                                           SigDuplicate      -> return ()
                                           SigExpired        -> return ()
@@ -159,7 +156,7 @@ runDMQ commandLineConfig = do
                                           err               -> throwIO (SigValidationException sigid err)
                                       )
                                       (mempool nodeKernel)
-               in ntnApps tracer
+               in ntnApps dmqTracers
                           dmqConfig
                           mempoolReader
                           ntnMempoolWriter
@@ -170,7 +167,6 @@ runDMQ commandLineConfig = do
                              (decodeRemoteAddress (maxBound @NodeToNodeVersion)))
                           dmqLimitsAndTimeouts
                           Policy.sigDecisionPolicy
-            ntcValidationTracer = (WithEventType (DMQ "NtC Validation") >$< tracer)
             dmqNtCApps =
               let ntcMempoolWriter =
                     Mempool.getWriter SigDuplicate
@@ -179,15 +175,15 @@ runDMQ commandLineConfig = do
                                         withPoolValidationCtx (stakePools nodeKernel) (validateSig now sigs)
                                       )
                                       (traverse_ $ \(sigid, reason) ->
-                                         traceWith ntcValidationTracer $ InvalidSignature sigid reason
+                                         traceWith (localSigValidationTracer dmqTracers) $ InvalidSignature sigid reason
                                       )
                                       (mempool nodeKernel)
-               in NtC.ntcApps tracer dmqConfig
+               in NtC.ntcApps dmqTracers dmqConfig
                               mempoolReader ntcMempoolWriter
                               NtC.dmqCodecs
             dmqDiffusionArguments =
-              diffusionArguments (WithEventType (DMQ "Handshake") >$< tracer)
-                                 (WithEventType (DMQ "LocalHandshake") >$< tracer)
+              diffusionArguments nullTracer
+                                 (cardanoNodeHandshakeTracer dmqTracers)
                                  $ maybe [] out <$> tryReadTMVar nodeKernel.stakePools.ledgerPeersVar
               where
                 out :: LedgerPeerSnapshot AllLedgerPeers

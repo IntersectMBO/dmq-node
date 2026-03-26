@@ -99,7 +99,6 @@ library
     acts,
     acts-generic,
     aeson >=2.1.1.0 && <3,
-    aeson-pretty,
     base >=4.14 && <4.23,
     base16-bytestring,
     bytestring >=0.10 && <0.13,

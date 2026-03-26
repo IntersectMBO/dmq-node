@@ -51,6 +51,7 @@ import Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm, VerKeyDSIGN)
 import Cardano.Crypto.KES.Class (KESAlgorithm (..))
 import Cardano.KESAgent.KES.Crypto as KES
 import Cardano.KESAgent.KES.OCert (KESPeriod (..), OCert (..))
+import Cardano.Logging qualified as Logging
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type as SigSubmission hiding
            (TxSubmission2)
@@ -330,12 +331,21 @@ instance ToJSON SigValidationError where
 
 data SigValidationTrace = InvalidSignature SigId SigValidationError
   deriving Show
-instance ToJSON SigValidationTrace where
-  toJSON (InvalidSignature sigid reason) = object
+
+instance Logging.LogFormatting SigValidationTrace where
+  forMachine _dtal (InvalidSignature sigid reason) = mconcat
     [ "type"   .= String "InvalidSignature"
     , "sigid"  .= sigid
     , "reason" .= reason
     ]
+
+instance Logging.MetaTrace SigValidationTrace where
+  namespaceFor InvalidSignature{} = Logging.Namespace [] ["SigValidation"]
+  severityFor _ (Just InvalidSignature{}) = Just Logging.Error
+  severityFor _ Nothing                   = Nothing
+  documentFor _ = Nothing
+  allNamespaces = [ Logging.Namespace [] ["SigValidation"] ]
+
 
 data SigValidationException = SigValidationException SigId SigValidationError
   deriving Show

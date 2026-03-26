@@ -4,6 +4,7 @@
 module DMQ.NodeToClient.LocalMsgNotification
   ( localMsgNotificationServer
   , LocalMsgNotificationProtocolError (..)
+  , TraceMessageNotificationServer (..)
   ) where
 
 import Control.Concurrent.Class.MonadSTM
