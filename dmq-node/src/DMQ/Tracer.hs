@@ -12,6 +12,7 @@ module DMQ.Tracer
   ( mkDMQTracers
   , DMQDiffusionTracers
   , DMQTracers (..)
+  , PrometheusConfig
   , DMQStartupTrace (..)
   , NoExtraPeers (..)
   , NoExtraState (..)
@@ -29,12 +30,16 @@ import "contra-tracer" Control.Tracer
 
 import Data.Aeson
 import Data.Foldable qualified as Foldable
+import Data.Map.Strict qualified as Map
+import Data.Maybe (listToMaybe)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Typeable (Typeable)
+import System.Metrics qualified as EKG
 
 import Network.Mux.Trace qualified as Mx
 import Network.Mux.Tracing ()
+import Network.Socket (HostName, PortNumber)
 import Network.TypedProtocol.Codec (AnyMessage (..))
 
 import Ouroboros.Network.Tracing ()
@@ -66,6 +71,7 @@ import Ouroboros.Network.TxSubmission.Outbound (TraceTxSubmissionOutbound)
 import Cardano.KESAgent.KES.Crypto (Crypto)
 import Cardano.Logging (Namespace (..))
 import Cardano.Logging qualified as Logging
+import Cardano.Logging.Prometheus.TCPServer qualified as Logging
 
 import DMQ.Configuration
 import DMQ.NodeToClient.LocalMsgNotification qualified as LMN
@@ -129,6 +135,7 @@ data DMQTracers crypto ntnAddr ntcAddr m = DMQTracers {
 data DMQStartupTrace
   = DMQConfiguration Configuration
   | DMQTopology (NetworkTopology NoExtraConfig NoExtraFlags)
+  | DMQPrometheus Logging.TracePrometheusSimple
 
 
 instance Logging.LogFormatting DMQStartupTrace where
@@ -140,12 +147,19 @@ instance Logging.LogFormatting DMQStartupTrace where
     mconcat [ "kind" .= String "Topology"
             , "topology" .= topology
             ]
+  forMachine dtal (DMQPrometheus msg) = Logging.forMachine dtal msg
+
 instance Logging.MetaTrace DMQStartupTrace where
-  namespaceFor DMQConfiguration{} = Logging.Namespace [] ["DMQ", "Configuration"]
-  namespaceFor DMQTopology{} = Logging.Namespace [] ["DMQ", "Topology"]
+  namespaceFor DMQConfiguration{} = Logging.Namespace [] ["Configuration"]
+  namespaceFor DMQTopology{}      = Logging.Namespace [] ["Topology"]
+  namespaceFor DMQPrometheus {}   = Logging.Namespace [] ["Prometheus"]
   severityFor _ _ = Just Logging.Info
   documentFor _ = Nothing
-  allNamespaces = [ Logging.Namespace [] ["Trace"] ]
+  allNamespaces =
+    [ Logging.Namespace [] ["Configuration"]
+    , Logging.Namespace [] ["Topology"]
+    , Logging.Namespace [] ["Prometheus"]
+    ]
 
 type DMQDiffusionTracers m =
     Diffusion.Tracers
@@ -161,6 +175,7 @@ type DMQDiffusionTracers m =
       (NoExtraPeers RemoteAddress)
       m
 
+type PrometheusConfig = Maybe (Bool, Maybe HostName, PortNumber)
 
 -- | Create and configure `DMQTracers` and `DMQDiffusionTracers`.
 --
@@ -174,16 +189,21 @@ mkDMQTracers
      , Crypto crypto
      , Typeable crypto
      )
-  => FilePath
+  => EKG.Store
+  -> FilePath
   -> IO ( DMQTracers crypto ntnAddr ntcAddr IO
         , DMQDiffusionTracers IO
+        , PrometheusConfig
         )
-mkDMQTracers dmqConfigFilePath = do
+mkDMQTracers ekgStore dmqConfigFilePath = do
   traceConfig <- Logging.readConfiguration dmqConfigFilePath
+  ekgTrace <- Logging.ekgTracer traceConfig ekgStore
+
   configReflection <- Logging.emptyConfigReflection
   stdoutTrace <- Logging.standardTracer
   let trForward = mempty
-  let mbTrEkg = Nothing
+      mbTrEkg = Just ekgTrace
+
   !dtMuxTracer <- mkTracer traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Net", "Mux", "Remote"]
@@ -401,7 +421,7 @@ mkDMQTracers dmqConfigFilePath = do
     stdoutTrace trForward mbTrEkg
     ["Net", "PeerShare", "Protocol"]
 
-  !dmqStartupTracer <- mkTracer
+  !dmqStartupTracer' <- mkTracer
     traceConfig configReflection
     stdoutTrace trForward mbTrEkg
     ["Startup"]
@@ -440,14 +460,24 @@ mkDMQTracers dmqConfigFilePath = do
         sigSubmissionOutboundV2Tracer      = Tracer $ Logging.traceWith sigSubmissionOutboundV2Tracer,
         keepAliveProtocolTracer            = Tracer $ Logging.traceWith keepAliveProtocolTracer,
         peerSharingProtocolTracer          = Tracer $ Logging.traceWith peerSharingProtocolTracer,
-        dmqStartupTracer                   = Tracer $ Logging.traceWith dmqStartupTracer,
+        dmqStartupTracer                   = Tracer $ Logging.traceWith dmqStartupTracer',
         localStateQueryClientTracer        = Tracer $ Logging.traceWith localStateQueryClientTracer,
         sigValidationTracer                = Tracer $ Logging.traceWith sigValidationTracer,
         localSigValidationTracer           = Tracer $ Logging.traceWith localSigValidationTracer,
         cardanoNodeHandshakeTracer         = Tracer $ Logging.traceWith cardanoNodeHandshakeTracer
       }
 
-  return (dmqTracers, dmqDifussionTracers)
+  -- This backend can only be used globally, i.e. will always apply to the namespace root.
+  -- Multiple definitions, especially with differing ports, are considered a *misconfiguration*.
+  let prometheusConfig :: PrometheusConfig
+      prometheusConfig =
+        listToMaybe [ (noSuff, mHost, portNo)
+                    | options <- Map.elems (Logging.tcOptions traceConfig)
+                    , Logging.ConfBackend backends <- options
+                    , Logging.PrometheusSimple noSuff mHost portNo <- backends
+                    ]
+
+  return (dmqTracers, dmqDifussionTracers, prometheusConfig)
 
 
 -- | Create and configure a tracer.

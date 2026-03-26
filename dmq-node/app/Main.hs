@@ -14,12 +14,14 @@ module Main where
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad (unless, void, when)
+import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
 import "contra-tracer" Control.Tracer (nullTracer, traceWith)
 
 import Data.Act
 import Data.ByteString.Lazy qualified as BSL
 import Data.Foldable (traverse_)
+import Data.Functor.Contravariant ((>$<))
 import Data.List.NonEmpty (NonEmpty)
 import Data.Maybe (maybeToList)
 import Data.Text qualified as Text
@@ -30,10 +32,12 @@ import Options.Applicative
 import System.Directory qualified as Dir
 import System.Exit (die, exitSuccess)
 import System.IOManager (withIOManager)
+import System.Metrics qualified as EKG
 import System.Random qualified as Random
 
 import Cardano.Git.Rev (gitRev)
 import Cardano.KESAgent.Protocols.StandardCrypto (StandardCrypto)
+import Cardano.Logging.Prometheus.TCPServer qualified as Prometheus
 
 import DMQ.Configuration
 import DMQ.Configuration.CLIOptions (parseCLIOptions)
@@ -76,6 +80,9 @@ runDMQ commandLineConfig = do
                        $ dmqcConfigFile commandLineConfig
                    `act` dmqcConfigFile defaultConfiguration
 
+    ekgStore <- EKG.newStore
+    EKG.registerGcMetrics ekgStore
+
     -- read & parse configuration file
     config' <- readConfigurationFileOrError configFilePath
     -- combine default configuration, configuration file and command line
@@ -98,8 +105,18 @@ runDMQ commandLineConfig = do
           cardanoNodeHandshakeTracer
         }
       , dmqDiffusionTracers
+      , prometheusConfig
       )
-      <- mkDMQTracers configFilePath
+      <- mkDMQTracers ekgStore configFilePath
+
+    case prometheusConfig of
+      Nothing -> return ()
+      Just ps ->
+        -- morally it belongs to `NodeKernel`, but it runs in `IO`, not `m`.
+        Prometheus.runPrometheusSimple
+          (DMQPrometheus >$< dmqStartupTracer)
+          ekgStore ps
+          >>= link
 
     when version $ do
       let gitrev = $(gitRev)
