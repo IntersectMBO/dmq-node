@@ -1,12 +1,14 @@
 {-# LANGUAGE DataKinds         #-}
-{-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module DMQ.Configuration.Topology where
+module DMQ.Configuration.Topology
+  ( readTopologyFileOrError
+  , NoExtraFlags (..)
+  , NoExtraConfig (..)
+  ) where
 
 import Control.Exception (Exception (..), IOException, try)
 import Data.Aeson
@@ -15,14 +17,16 @@ import Data.ByteString.Lazy qualified as LBS
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Ouroboros.Network.Diffusion.Topology (NetworkTopology (..))
+import Ouroboros.Network.Diffusion.Types (NoExtraFlags (..))
 import Ouroboros.Network.OrphanInstances (localRootPeersGroupsFromJSON,
            networkTopologyFromJSON, networkTopologyToJSON)
 import System.Exit (die)
 
+-- TODO: move `NoExtraConfig` and the `ToJSON NoExtraFlags` to
+-- `ouroboros-network`.
+
 data NoExtraConfig = NoExtraConfig
   deriving Show
-data NoExtraFlags  = NoExtraFlags
-  deriving (Eq, Show)
 
 instance ToJSON NoExtraFlags where
   toJSON _ = Null

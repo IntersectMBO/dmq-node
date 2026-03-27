@@ -9,7 +9,6 @@ module DMQ.Diffusion.Arguments
   , NoExtraPeers (..)
   , NoExtraState (..)
   , NoExtraDebugState (..)
-  , NoExtraCounters (..)
   , NoExtraFlags (..)
   , NoExtraConfig (..)
   , NoExtraAPI (..)

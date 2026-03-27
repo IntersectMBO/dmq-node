@@ -14,15 +14,13 @@ module DMQ.Tracer
   , DMQTracers (..)
   , PrometheusConfig
   , DMQStartupTrace (..)
-  , NoExtraPeers (..)
-  , NoExtraState (..)
-  , NoExtraDebugState (..)
-  , NoExtraCounters (..)
-  , NoExtraFlags (..)
+  , Diffusion.NoExtraPeers (..)
+  , Diffusion.NoExtraState (..)
+  , Diffusion.NoExtraDebugState (..)
+  , Diffusion.NoExtraFlags (..)
   , NoExtraConfig (..)
   , NoExtraAPI (..)
   , NoExtraChurnArgs (..)
-  , NoExtraTracer (..)
   ) where
 
 import Codec.CBOR.Term (Term)
@@ -47,7 +45,6 @@ import Ouroboros.Network.Tracing.PeerSelection ()
 import Ouroboros.Network.Tracing.TxSubmission ()
 
 import Ouroboros.Network.ConnectionId
-import Ouroboros.Network.Diffusion (NoExtraPeers (..))
 import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.Diffusion.Topology (NetworkTopology)
 import Ouroboros.Network.Driver (TraceSendRecv)
@@ -134,7 +131,7 @@ data DMQTracers crypto ntnAddr ntcAddr m = DMQTracers {
 
 data DMQStartupTrace
   = DMQConfiguration Configuration
-  | DMQTopology (NetworkTopology NoExtraConfig NoExtraFlags)
+  | DMQTopology (NetworkTopology NoExtraConfig Diffusion.NoExtraFlags)
   | DMQPrometheus Logging.TracePrometheusSimple
 
 
@@ -169,10 +166,10 @@ type DMQDiffusionTracers m =
       LocalAddress
       NodeToClientVersion
       NodeToClientVersionData
-      NoExtraState
-      NoExtraDebugState
-      NoExtraFlags
-      (NoExtraPeers RemoteAddress)
+      Diffusion.NoExtraState
+      Diffusion.NoExtraDebugState
+      Diffusion.NoExtraFlags
+      (Diffusion.NoExtraPeers RemoteAddress)
       m
 
 type PrometheusConfig = Maybe (Bool, Maybe HostName, PortNumber)
@@ -975,28 +972,18 @@ instance Logging.MetaTrace (AnyMessage (PS.PeerSharing addr)) where
 instance ToJSON Term where
   toJSON term = String (Text.pack . show $ term)
 
-instance ToJSON (PublicRootPeers (NoExtraPeers RemoteAddress) RemoteAddress) where
+instance ToJSON (PublicRootPeers (Diffusion.NoExtraPeers RemoteAddress) RemoteAddress) where
   toJSON prp =
     object [ "kind"              .= String "PublicRootPeers"
            , "ledgerPeers"       .= PublicRootPeers.getLedgerPeers prp
            , "bigLedgerPeers"    .= PublicRootPeers.getBigLedgerPeers prp
            ]
 
-data NoExtraState      = NoExtraState
-data NoExtraCounters   = NoExtraCounters   deriving Eq
-data NoExtraDebugState = NoExtraDebugState
-instance ToJSON NoExtraDebugState where
+-- TODO: move to this instance, `NoExtraChurnArgs` and `NoExtraAPI` to
+-- `Ouroboros.Network.Diffusion.Types`.
+
+instance ToJSON Diffusion.NoExtraDebugState where
   toJSON _ = Null
   omitField _ = True
 data NoExtraChurnArgs  = NoExtraChurnArgs
 data NoExtraAPI        = NoExtraAPI
-data NoExtraTracer     = NoExtraTracer
-instance Show NoExtraState where
-  show _ = ""
-instance Show NoExtraDebugState where
-  show _ = ""
-instance Show NoExtraTracer where
-  show _ = ""
-instance ToJSON NoExtraTracer where
-  toJSON _ = Null
-  omitField _ = True
