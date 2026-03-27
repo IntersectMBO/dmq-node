@@ -24,27 +24,34 @@ module DMQ.Protocol.SigSubmission.Type
   , SigSubmission
   , module SigSubmission
   , POSIXTime
+  , SigValidationError (..)
+  , SigValidationTrace (..)
+  , SigValidationException (..)
     -- * Utilities
   , CBORBytes (..)
     -- * Re-exports from `kes-agent`
   , KESPeriod (..)
   ) where
 
+import Control.Exception (Exception (..))
 import Data.Aeson
 import Data.ByteString (ByteString)
 import Data.ByteString.Base16 as BS.Base16
 import Data.ByteString.Base16.Lazy as LBS.Base16
 import Data.ByteString.Lazy qualified as LBS
 import Data.ByteString.Lazy.Char8 qualified as LBS.Char8
+import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
 import Data.Time.Clock.POSIX (POSIXTime)
 import Data.Typeable
+import Data.Word (Word64)
 
 import Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm, VerKeyDSIGN)
 import Cardano.Crypto.KES.Class (KESAlgorithm (..))
 import Cardano.KESAgent.KES.Crypto as KES
 import Cardano.KESAgent.KES.OCert (KESPeriod (..), OCert (..))
+import Cardano.Logging qualified as Logging
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type as SigSubmission hiding
            (TxSubmission2)
@@ -286,6 +293,64 @@ instance Typeable crypto => ShowProxy (Sig crypto) where
 
 
 type SigSubmission crypto = TxSubmission2.TxSubmission2 SigId (Sig crypto)
+
+
+data SigValidationError =
+    InvalidKESSignature KESPeriod KESPeriod String
+  | InvalidSignatureOCERT
+      !Word64    -- OCert counter
+      !KESPeriod -- OCert KES period
+      !String    -- DSIGN error message
+  | InvalidOCertCounter
+      !Word64 -- last seen
+      !Word64 -- received
+  | KESBeforeStartOCERT KESPeriod KESPeriod
+  | KESAfterEndOCERT KESPeriod KESPeriod
+  | PoolNotEligible
+  | UnrecognizedPool
+  | NotInitialized
+  | ClockSkew
+  | SigDuplicate
+  | SigExpired
+  | SigResultOther Text
+  deriving (Eq, Show)
+
+instance ShowProxy SigValidationError where
+
+instance ToJSON SigValidationError where
+  toJSON SigDuplicate = String "duplicate"
+  toJSON SigExpired   = String "expired"
+  toJSON (SigResultOther txt) = object
+    [ "type" .= String "other"
+    , "reason" .= txt
+    ]
+  toJSON e = object
+    [ "type" .= String "invalid"
+    , "reason" .= show e
+    ]
+
+data SigValidationTrace = InvalidSignature SigId SigValidationError
+  deriving Show
+
+instance Logging.LogFormatting SigValidationTrace where
+  forMachine _dtal (InvalidSignature sigid reason) = mconcat
+    [ "type"   .= String "InvalidSignature"
+    , "sigid"  .= sigid
+    , "reason" .= reason
+    ]
+
+instance Logging.MetaTrace SigValidationTrace where
+  namespaceFor InvalidSignature{} = Logging.Namespace [] ["SigValidation"]
+  severityFor _ (Just InvalidSignature{}) = Just Logging.Error
+  severityFor _ Nothing                   = Nothing
+  documentFor _ = Nothing
+  allNamespaces = [ Logging.Namespace [] ["SigValidation"] ]
+
+
+data SigValidationException = SigValidationException SigId SigValidationError
+  deriving Show
+
+instance Exception SigValidationException
 
 
 --

@@ -84,106 +84,52 @@ import DMQ.Configuration.Topology (NoExtraConfig (..), NoExtraFlags (..))
 data Configuration' f =
   Configuration {
     -- | Path from which the `Configuration` is read.
-    dmqcConfigFile                               :: f FilePath,
+    dmqcConfigFile                        :: f FilePath,
 
     -- | Network magic for the DMQ network
-    dmqcNetworkMagic                             :: f NetworkMagic,
+    dmqcNetworkMagic                      :: f NetworkMagic,
     -- | Network magic for local connections to a cardano-node
-    dmqcCardanoNetworkMagic                      :: f NetworkMagic,
+    dmqcCardanoNetworkMagic               :: f NetworkMagic,
 
     -- | IPv4 address to bind to for `node-to-node` communication.
-    dmqcIPv4                                     :: f (Maybe IPv4),
+    dmqcIPv4                              :: f (Maybe IPv4),
     -- | IPv6 address to bind to for `node-to-node` communication.
-    dmqcIPv6                                     :: f (Maybe IPv6),
+    dmqcIPv6                              :: f (Maybe IPv6),
     -- | Port number for `node-to-node` DMQ communication.
-    dmqcPortNumber                               :: f PortNumber,
+    dmqcPortNumber                        :: f PortNumber,
     -- | Local socket address for `node-to-client` DMQ communication.
-    dmqcLocalAddress                             :: f LocalAddress,
+    dmqcLocalAddress                      :: f LocalAddress,
     -- | Topology file path.
-    dmqcTopologyFile                             :: f FilePath,
+    dmqcTopologyFile                      :: f FilePath,
     -- | Path to the `cardano-node` socket.
-    dmqcCardanoNodeSocket                        :: f FilePath,
+    dmqcCardanoNodeSocket                 :: f FilePath,
 
-    dmqcAcceptedConnectionsLimit                 :: f AcceptedConnectionsLimit,
+    dmqcAcceptedConnectionsLimit          :: f AcceptedConnectionsLimit,
     -- | Diffusion mode for `node-to-node` communication.
-    dmqcDiffusionMode                            :: f DiffusionMode,
+    dmqcDiffusionMode                     :: f DiffusionMode,
     -- | Node-to-node inbound connection idle timeout.
-    dmqcProtocolIdleTimeout                      :: f DiffTime,
+    dmqcProtocolIdleTimeout               :: f DiffTime,
     -- | Churn interval for peer selection.
-    dmqcChurnInterval                            :: f DiffTime,
+    dmqcChurnInterval                     :: f DiffTime,
     -- | Peer sharing setting.
-    dmqcPeerSharing                              :: f PeerSharing,
+    dmqcPeerSharing                       :: f PeerSharing,
     -- | Ledger peers are hidden behind a flag.
-    dmqcLedgerPeers                              :: f Bool,
+    dmqcLedgerPeers                       :: f Bool,
 
     --
     -- Peer Selection Targets
     --
 
-    dmqcTargetOfRootPeers                        :: f Int,
-    dmqcTargetOfKnownPeers                       :: f Int,
-    dmqcTargetOfEstablishedPeers                 :: f Int,
-    dmqcTargetOfActivePeers                      :: f Int,
-    dmqcTargetOfKnownBigLedgerPeers              :: f Int,
-    dmqcTargetOfEstablishedBigLedgerPeers        :: f Int,
-    dmqcTargetOfActiveBigLedgerPeers             :: f Int,
-
-    --
-    -- Tracers & logging
-    --
-    dmqcPrettyLog                                :: f Bool,
-
-    dmqcMuxTracer                                :: f Bool,
-    dmqcChannelTracer                            :: f Bool,
-    dmqcBearerTracer                             :: f Bool,
-    dmqcHandshakeTracer                          :: f Bool,
-    dmqcLocalMuxTracer                           :: f Bool,
-    dmqcLocalChannelTracer                       :: f Bool,
-    dmqcLocalBearerTracer                        :: f Bool,
-    dmqcLocalHandshakeTracer                     :: f Bool,
-    dmqcDiffusionTracer                          :: f Bool,
-    dmqcTraceLocalRootPeersTracer                :: f Bool,
-    dmqcTracePublicRootPeersTracer               :: f Bool,
-    dmqcTraceLedgerPeersTracer                   :: f Bool,
-    dmqcTracePeerSelectionTracer                 :: f Bool,
-    dmqcDebugPeerSelectionTracer                 :: f Bool,
-    dmqcTracePeerSelectionCounters               :: f Bool,
-    dmqcPeerSelectionActionsTracer               :: f Bool,
-    dmqcConnectionManagerTracer                  :: f Bool,
-    dmqcConnectionManagerTransitionTracer        :: f Bool,
-    dmqcServerTracer                             :: f Bool,
-    dmqcInboundGovernorTracer                    :: f Bool,
-    dmqcInboundGovernorTransitionTracer          :: f Bool,
-    dmqcLocalConnectionManagerTracer             :: f Bool,
-    dmqcLocalServerTracer                        :: f Bool,
-    dmqcLocalInboundGovernorTracer               :: f Bool,
-    dmqcDnsTracer                                :: f Bool,
-    dmqcValidationTracer                         :: f Bool,
-
-    -- low level verbose traces which trace protocol messages
-    -- TODO: pref
-    dmqcSigSubmissionClientProtocolTracer        :: f Bool,
-    dmqcSigSubmissionServerProtocolTracer        :: f Bool,
-    dmqcKeepAliveClientProtocolTracer            :: f Bool,
-    dmqcKeepAliveServerProtocolTracer            :: f Bool,
-    dmqcPeerSharingClientProtocolTracer          :: f Bool,
-    dmqcPeerSharingServerProtocolTracer          :: f Bool,
-    dmqcLocalMsgSubmissionServerProtocolTracer   :: f Bool,
-    dmqcLocalMsgNotificationServerProtocolTracer :: f Bool,
-
-    --
-    -- Application tracers
-    --
-
-    dmqcSigSubmissionLogicTracer                 :: f Bool,
-    dmqcSigSubmissionOutboundTracer              :: f Bool,
-    dmqcSigSubmissionInboundTracer               :: f Bool,
-    dmqcLocalMsgSubmissionServerTracer           :: f Bool,
-    dmqcLocalMsgNotificationServerTracer         :: f Bool,
-    dmqcLocalStateQueryTracer                    :: f Bool,
+    dmqcTargetOfRootPeers                 :: f Int,
+    dmqcTargetOfKnownPeers                :: f Int,
+    dmqcTargetOfEstablishedPeers          :: f Int,
+    dmqcTargetOfActivePeers               :: f Int,
+    dmqcTargetOfKnownBigLedgerPeers       :: f Int,
+    dmqcTargetOfEstablishedBigLedgerPeers :: f Int,
+    dmqcTargetOfActiveBigLedgerPeers      :: f Int,
 
     -- | CLI only option to show version and exit.
-    dmqcVersion                                  :: f Bool
+    dmqcVersion                           :: f Bool
   }
   deriving Generic
 
@@ -237,75 +183,32 @@ type PartialConfig = Configuration' Last
 --
 defaultConfiguration :: Configuration
 defaultConfiguration = Configuration {
-      dmqcIPv4                                       = I Nothing,
-      dmqcIPv6                                       = I Nothing,
-      dmqcLocalAddress                               = I (LocalAddress "dmq-node.socket"),
-      dmqcNetworkMagic                               = I NetworkMagic { unNetworkMagic = 3_141_592 },
-      dmqcCardanoNetworkMagic                        =
+      dmqcIPv4                              = I Nothing,
+      dmqcIPv6                              = I Nothing,
+      dmqcLocalAddress                      = I (LocalAddress "dmq-node.socket"),
+      dmqcNetworkMagic                      = I NetworkMagic { unNetworkMagic = 3_141_592 },
+      dmqcCardanoNetworkMagic               =
         I (NetworkMagic . unProtocolMagicId $ mainnetProtocolMagicId),
-      dmqcPortNumber                                 = I 3_141,
-      dmqcConfigFile                                 = I "dmq.config.json",
-      dmqcTopologyFile                               = I "dmq.topology.json",
-      dmqcAcceptedConnectionsLimit                   = I defaultAcceptedConnectionsLimit,
-      dmqcDiffusionMode                              = I InitiatorAndResponderDiffusionMode,
-      dmqcCardanoNodeSocket                          = I "cardano-node.socket",
-      dmqcTargetOfRootPeers                          = I targetNumberOfRootPeers,
-      dmqcTargetOfKnownPeers                         = I targetNumberOfKnownPeers,
-      dmqcTargetOfEstablishedPeers                   = I targetNumberOfEstablishedPeers,
-      dmqcTargetOfActivePeers                        = I targetNumberOfActivePeers,
-      dmqcTargetOfKnownBigLedgerPeers                = I targetNumberOfKnownBigLedgerPeers,
-      dmqcTargetOfEstablishedBigLedgerPeers          = I targetNumberOfEstablishedBigLedgerPeers,
-      dmqcTargetOfActiveBigLedgerPeers               = I targetNumberOfActiveBigLedgerPeers,
-      dmqcProtocolIdleTimeout                        = I defaultProtocolIdleTimeout,
-      dmqcChurnInterval                              = I defaultDeadlineChurnInterval,
-      dmqcPeerSharing                                = I PeerSharingEnabled,
-      dmqcLedgerPeers                                = I False,
-      dmqcPrettyLog                                  = I False,
-      dmqcMuxTracer                                  = I True,
-      dmqcChannelTracer                              = I False,
-      dmqcBearerTracer                               = I False,
-      dmqcHandshakeTracer                            = I True,
-      dmqcLocalMuxTracer                             = I True,
-      dmqcLocalChannelTracer                         = I False,
-      dmqcLocalBearerTracer                          = I False,
-      dmqcLocalHandshakeTracer                       = I True,
-      dmqcDiffusionTracer                            = I True,
-      dmqcTraceLocalRootPeersTracer                  = I False,
-      dmqcTracePublicRootPeersTracer                 = I False,
-      dmqcTraceLedgerPeersTracer                     = I False,
-      dmqcTracePeerSelectionTracer                   = I True,
-      dmqcDebugPeerSelectionTracer                   = I False,
-      dmqcTracePeerSelectionCounters                 = I True,
-      dmqcPeerSelectionActionsTracer                 = I False,
-      dmqcConnectionManagerTracer                    = I True,
-      dmqcConnectionManagerTransitionTracer          = I False,
-      dmqcServerTracer                               = I True,
-      dmqcInboundGovernorTracer                      = I True,
-      dmqcInboundGovernorTransitionTracer            = I False,
-      dmqcLocalConnectionManagerTracer               = I True,
-      dmqcLocalServerTracer                          = I False,
-      dmqcLocalInboundGovernorTracer                 = I False,
-      dmqcDnsTracer                                  = I False,
-      dmqcValidationTracer                           = I True,
-
-      dmqcSigSubmissionClientProtocolTracer          = I False,
-      dmqcSigSubmissionServerProtocolTracer          = I False,
-      dmqcKeepAliveClientProtocolTracer              = I False,
-      dmqcKeepAliveServerProtocolTracer              = I False,
-      dmqcPeerSharingClientProtocolTracer            = I False,
-      dmqcPeerSharingServerProtocolTracer            = I False,
-      dmqcLocalMsgSubmissionServerProtocolTracer     = I True,
-      dmqcLocalMsgNotificationServerProtocolTracer   = I True,
-
-      dmqcSigSubmissionOutboundTracer                = I False,
-      dmqcSigSubmissionInboundTracer                 = I True,
-      dmqcSigSubmissionLogicTracer                   = I True,
-      dmqcLocalMsgSubmissionServerTracer             = I True,
-      dmqcLocalMsgNotificationServerTracer           = I False,
-      dmqcLocalStateQueryTracer                      = I True,
+      dmqcPortNumber                        = I 3_141,
+      dmqcConfigFile                        = I "dmq.config.json",
+      dmqcTopologyFile                      = I "dmq.topology.json",
+      dmqcAcceptedConnectionsLimit          = I defaultAcceptedConnectionsLimit,
+      dmqcDiffusionMode                     = I InitiatorAndResponderDiffusionMode,
+      dmqcCardanoNodeSocket                 = I "cardano-node.socket",
+      dmqcTargetOfRootPeers                 = I targetNumberOfRootPeers,
+      dmqcTargetOfKnownPeers                = I targetNumberOfKnownPeers,
+      dmqcTargetOfEstablishedPeers          = I targetNumberOfEstablishedPeers,
+      dmqcTargetOfActivePeers               = I targetNumberOfActivePeers,
+      dmqcTargetOfKnownBigLedgerPeers       = I targetNumberOfKnownBigLedgerPeers,
+      dmqcTargetOfEstablishedBigLedgerPeers = I targetNumberOfEstablishedBigLedgerPeers,
+      dmqcTargetOfActiveBigLedgerPeers      = I targetNumberOfActiveBigLedgerPeers,
+      dmqcProtocolIdleTimeout               = I defaultProtocolIdleTimeout,
+      dmqcChurnInterval                     = I defaultDeadlineChurnInterval,
+      dmqcPeerSharing                       = I PeerSharingEnabled,
+      dmqcLedgerPeers                       = I False,
 
       -- CLI only options
-      dmqcVersion                                    = I False
+      dmqcVersion                           = I False
     }
   where
     PeerSelectionTargets {
@@ -354,51 +257,6 @@ instance FromJSON PartialConfig where
       dmqcProtocolIdleTimeout <- Last <$> v .:? "ProtocolIdleTimeout"
       dmqcChurnInterval <- Last <$> v .:? "ChurnInterval"
 
-      dmqcPrettyLog <- Last <$> v .:? "PrettyLog"
-
-      dmqcMuxTracer                                  <- Last <$> v .:? "MuxTracer"
-      dmqcChannelTracer                              <- Last <$> v .:? "ChannelTracer"
-      dmqcBearerTracer                               <- Last <$> v .:? "BearerTracer"
-      dmqcHandshakeTracer                            <- Last <$> v .:? "HandshakeTracer"
-      dmqcLocalMuxTracer                             <- Last <$> v .:? "LocalMuxTracer"
-      dmqcLocalChannelTracer                         <- Last <$> v .:? "LocalChannelTracer"
-      dmqcLocalBearerTracer                          <- Last <$> v .:? "LocalBearerTracer"
-      dmqcLocalHandshakeTracer                       <- Last <$> v .:? "LocalHandshakeTracer"
-      dmqcDiffusionTracer                            <- Last <$> v .:? "DiffusionTracer"
-      dmqcTraceLocalRootPeersTracer                  <- Last <$> v .:? "LocalRootPeersTracer"
-      dmqcTracePublicRootPeersTracer                 <- Last <$> v .:? "PublicRootPeersTracer"
-      dmqcTraceLedgerPeersTracer                     <- Last <$> v .:? "LedgerPeersTracer"
-      dmqcTracePeerSelectionTracer                   <- Last <$> v .:? "PeerSelectionTracer"
-      dmqcDebugPeerSelectionTracer                   <- Last <$> v .:? "DebugPeerSelectionTracer"
-      dmqcTracePeerSelectionCounters                 <- Last <$> v .:? "PeerSelectionCounters"
-      dmqcPeerSelectionActionsTracer                 <- Last <$> v .:? "PeerSelectionActionsTracer"
-      dmqcConnectionManagerTracer                    <- Last <$> v .:? "ConnectionManagerTracer"
-      dmqcConnectionManagerTransitionTracer          <- Last <$> v .:? "ConnectionManagerTransitionTracer"
-      dmqcServerTracer                               <- Last <$> v .:? "ServerTracer"
-      dmqcInboundGovernorTracer                      <- Last <$> v .:? "InboundGovernorTracer"
-      dmqcInboundGovernorTransitionTracer            <- Last <$> v .:? "InboundGovernorTransitionTracer"
-      dmqcLocalConnectionManagerTracer               <- Last <$> v .:? "LocalConnectionManagerTracer"
-      dmqcLocalServerTracer                          <- Last <$> v .:? "LocalServerTracer"
-      dmqcLocalInboundGovernorTracer                 <- Last <$> v .:? "LocalInboundGovernorTracer"
-      dmqcDnsTracer                                  <- Last <$> v .:? "DnsTracer"
-      dmqcValidationTracer                           <- Last <$> v .:? "ValidationTracer"
-
-      dmqcSigSubmissionClientProtocolTracer          <- Last <$> v .:? "SigSubmissionClientProtocolTracer"
-      dmqcSigSubmissionServerProtocolTracer          <- Last <$> v .:? "SigSubmissionServerProtocolTracer"
-      dmqcKeepAliveClientProtocolTracer              <- Last <$> v .:? "KeepAliveServerProtocolTracer"
-      dmqcKeepAliveServerProtocolTracer              <- Last <$> v .:? "KeepAliveClientProtocolTracer"
-      dmqcPeerSharingClientProtocolTracer            <- Last <$> v .:? "PeerSharingServerProtocolTracer"
-      dmqcPeerSharingServerProtocolTracer            <- Last <$> v .:? "PeerSharingClientProtocolTracer"
-      dmqcLocalMsgSubmissionServerProtocolTracer     <- Last <$> v .:? "LocalMsgSubmissionServerProtocolracer"
-      dmqcLocalMsgNotificationServerProtocolTracer   <- Last <$> v .:? "LocalMsgNotificationServerProtocolracer"
-
-      dmqcSigSubmissionOutboundTracer                <- Last <$> v .:? "SigSubmissionOutboundTracer"
-      dmqcSigSubmissionInboundTracer                 <- Last <$> v .:? "SigSubmissionInboundTracer"
-      dmqcSigSubmissionLogicTracer                   <- Last <$> v .:? "SigSubmissionLogicTracer"
-      dmqcLocalMsgSubmissionServerTracer             <- Last <$> v .:? "LocalMsgSubmissionServerTracer"
-      dmqcLocalMsgNotificationServerTracer           <- Last <$> v .:? "LocalMsgNotificationServerTracer"
-      dmqcLocalStateQueryTracer                      <- Last <$> v .:? "LocalStateQueryTracer"
-
       pure $
         Configuration
           { dmqcIPv4                = Last dmqcIPv4
@@ -413,67 +271,28 @@ instance FromJSON PartialConfig where
 --
 instance ToJSON Configuration where
   toJSON Configuration {..} =
-    object [ "IPv4"                                       .= (show <$> unI dmqcIPv4)
-           , "IPv6"                                       .= (show <$> unI dmqcIPv6)
-           , "PortNumber"                                 .= unI dmqcPortNumber
-           , "LocalAddress"                               .= unI dmqcLocalAddress
-           , "ConfigFile"                                 .= unI dmqcConfigFile
-           , "CardanoNodeSocket"                          .= unI dmqcCardanoNodeSocket
-           , "TopologyFile"                               .= unI dmqcTopologyFile
-           , "AcceptedConnectionsLimit"                   .= unI dmqcAcceptedConnectionsLimit
-           , "DiffusionMode"                              .= unI dmqcDiffusionMode
-           , "TargetOfRootPeers"                          .= unI dmqcTargetOfRootPeers
-           , "TargetOfKnownPeers"                         .= unI dmqcTargetOfKnownPeers
-           , "TargetOfEstablishedPeers"                   .= unI dmqcTargetOfEstablishedPeers
-           , "TargetOfActivePeers"                        .= unI dmqcTargetOfActivePeers
-           , "TargetOfKnownBigLedgerPeers"                .= unI dmqcTargetOfKnownBigLedgerPeers
-           , "TargetOfEstablishedBigLedgerPeers"          .= unI dmqcTargetOfEstablishedBigLedgerPeers
-           , "TargetOfActiveBigLedgerPeers"               .= unI dmqcTargetOfActiveBigLedgerPeers
-           , "ProtocolIdleTimeout"                        .= unI dmqcProtocolIdleTimeout
-           , "ChurnInterval"                              .= unI dmqcChurnInterval
-           , "LedgerPeers"                                .= unI dmqcLedgerPeers
-           , "PeerSharing"                                .= unI dmqcPeerSharing
-           , "NetworkMagic"                               .= unNetworkMagic (unI dmqcNetworkMagic)
-           , "CardanoNetworkMagic"                        .= unNetworkMagic (unI dmqcCardanoNetworkMagic)
-           , "PrettyLog"                                  .= unI dmqcPrettyLog
-           , "MuxTracer"                                  .= unI dmqcMuxTracer
-           , "ChannelTracer"                              .= unI dmqcChannelTracer
-           , "BearerTracer"                               .= unI dmqcBearerTracer
-           , "HandshakeTracer"                            .= unI dmqcHandshakeTracer
-           , "LocalMuxTracer"                             .= unI dmqcLocalMuxTracer
-           , "LocalChannelTracer"                         .= unI dmqcLocalChannelTracer
-           , "LocalBearerTracer"                          .= unI dmqcLocalBearerTracer
-           , "LocalHandshakeTracer"                       .= unI dmqcLocalHandshakeTracer
-           , "DiffusionTracer"                            .= unI dmqcDiffusionTracer
-           , "LocalRootPeersTracer"                       .= unI dmqcTraceLocalRootPeersTracer
-           , "PublicRootPeersTracer"                      .= unI dmqcTracePublicRootPeersTracer
-           , "LedgerPeersTracer"                          .= unI dmqcTraceLedgerPeersTracer
-           , "PeerSelectionTracer"                        .= unI dmqcTracePeerSelectionTracer
-           , "DebugPeerSelectionTracer"                   .= unI dmqcDebugPeerSelectionTracer
-           , "PeerSelectionCounters"                      .= unI dmqcTracePeerSelectionCounters
-           , "PeerSelectionActionsTracer"                 .= unI dmqcPeerSelectionActionsTracer
-           , "ConnectionManagerTracer"                    .= unI dmqcConnectionManagerTracer
-           , "ConnectionManagerTransitionTracer"          .= unI dmqcConnectionManagerTransitionTracer
-           , "ServerTracer"                               .= unI dmqcServerTracer
-           , "InboundGovernorTracer"                      .= unI dmqcInboundGovernorTracer
-           , "InboundGovernorTransitionTracer"            .= unI dmqcInboundGovernorTransitionTracer
-           , "LocalConnectionManagerTracer"               .= unI dmqcLocalConnectionManagerTracer
-           , "LocalServerTracer"                          .= unI dmqcLocalServerTracer
-           , "LocalInboundGovernorTracer"                 .= unI dmqcLocalInboundGovernorTracer
-           , "DnsTracer"                                  .= unI dmqcDnsTracer
-           , "ValidationTracer"                           .= unI dmqcValidationTracer
-           , "SigSubmissionClientProtocolTracer"          .= unI dmqcSigSubmissionClientProtocolTracer
-           , "SigSubmissionServerProtocolTracer"          .= unI dmqcSigSubmissionServerProtocolTracer
-           , "KeepAliveClientProtocolTracer"              .= unI dmqcKeepAliveClientProtocolTracer
-           , "KeepAliveServerProtocolTracer"              .= unI dmqcKeepAliveServerProtocolTracer
-           , "PeerSharingClientProtocolTracer"            .= unI dmqcPeerSharingClientProtocolTracer
-           , "PeerSharingServerProtocolTracer"            .= unI dmqcPeerSharingServerProtocolTracer
-           , "LocalMsgSubmissionServerProtocolTracer"     .= unI dmqcLocalMsgSubmissionServerProtocolTracer
-           , "LocalMsgNotificationServerProtocolTracer"   .= unI dmqcLocalMsgNotificationServerProtocolTracer
-           , "SigSubmissionOutboundTracer"                .= unI dmqcSigSubmissionOutboundTracer
-           , "SigSubmissionInboundTracer"                 .= unI dmqcSigSubmissionInboundTracer
-           , "SigSubmissionLogicTracer"                   .= unI dmqcSigSubmissionLogicTracer
-           , "LocalStateQueryTracer"                      .= unI dmqcLocalStateQueryTracer
+    object [ "IPv4"                              .= (show <$> unI dmqcIPv4)
+           , "IPv6"                              .= (show <$> unI dmqcIPv6)
+           , "PortNumber"                        .= unI dmqcPortNumber
+           , "LocalAddress"                      .= unI dmqcLocalAddress
+           , "ConfigFile"                        .= unI dmqcConfigFile
+           , "CardanoNodeSocket"                 .= unI dmqcCardanoNodeSocket
+           , "TopologyFile"                      .= unI dmqcTopologyFile
+           , "AcceptedConnectionsLimit"          .= unI dmqcAcceptedConnectionsLimit
+           , "DiffusionMode"                     .= unI dmqcDiffusionMode
+           , "TargetOfRootPeers"                 .= unI dmqcTargetOfRootPeers
+           , "TargetOfKnownPeers"                .= unI dmqcTargetOfKnownPeers
+           , "TargetOfEstablishedPeers"          .= unI dmqcTargetOfEstablishedPeers
+           , "TargetOfActivePeers"               .= unI dmqcTargetOfActivePeers
+           , "TargetOfKnownBigLedgerPeers"       .= unI dmqcTargetOfKnownBigLedgerPeers
+           , "TargetOfEstablishedBigLedgerPeers" .= unI dmqcTargetOfEstablishedBigLedgerPeers
+           , "TargetOfActiveBigLedgerPeers"      .= unI dmqcTargetOfActiveBigLedgerPeers
+           , "ProtocolIdleTimeout"               .= unI dmqcProtocolIdleTimeout
+           , "ChurnInterval"                     .= unI dmqcChurnInterval
+           , "LedgerPeers"                       .= unI dmqcLedgerPeers
+           , "PeerSharing"                       .= unI dmqcPeerSharing
+           , "NetworkMagic"                      .= unNetworkMagic (unI dmqcNetworkMagic)
+           , "CardanoNetworkMagic"               .= unNetworkMagic (unI dmqcCardanoNetworkMagic)
            ]
 
 -- | Read the `DMQConfiguration` from the specified file.

@@ -1,11 +1,11 @@
 {-# LANGUAGE DataKinds        #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE PackageImports   #-}
 {-# LANGUAGE RankNTypes       #-}
 
 module DMQ.NodeToClient
   ( module DMQ.NodeToClient.Version
   , Protocols (..)
-  , HandshakeTr
   , Apps
   , dmqCodecs
   , ntcApps
@@ -13,7 +13,6 @@ module DMQ.NodeToClient
   , responders
   ) where
 
-import Data.Aeson qualified as Aeson
 import Data.ByteString.Lazy (ByteString)
 import Data.Functor ((<&>))
 import Data.Functor.Contravariant ((>$<))
@@ -24,9 +23,7 @@ import Control.Concurrent.Class.MonadSTM
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow
-import Control.Tracer (Tracer, nullTracer)
-
-import Codec.CBOR.Term qualified as CBOR
+import "contra-tracer" Control.Tracer (Tracer, nullTracer)
 
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 
@@ -53,15 +50,12 @@ import Ouroboros.Network.Handshake.Acceptable (Acceptable (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import Ouroboros.Network.Mux
 import Ouroboros.Network.OrphanInstances ()
-import Ouroboros.Network.Protocol.Handshake (Handshake, HandshakeArguments (..))
+import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
            codecHandshake, noTimeLimitsHandshake)
 import Ouroboros.Network.TxSubmission.Mempool.Reader
 import Ouroboros.Network.TxSubmission.Mempool.Simple
 import Ouroboros.Network.Util.ShowProxy
-
-
-type HandshakeTr ntcAddr = Mx.WithBearer (ConnectionId ntcAddr) (TraceSendRecv (Handshake NodeToClientVersion CBOR.Term))
 
 ntcHandshakeArguments
   :: MonadST m
@@ -133,27 +127,25 @@ _ntc_MAX_SIGS_TO_ACK = 1000
 -- | Construct applications for the node-to-client protocols
 --
 ntcApps
-  :: forall crypto idx ntcAddr m.
+  :: forall crypto idx ntnAddr ntcAddr m.
      ( MonadEvaluate m
      , MonadThrow m
      , MonadThread m
      , MonadSTM m
-     , Crypto crypto
-     , Aeson.ToJSON ntcAddr
      , ShowProxy (Sig crypto)
      )
-  => (forall ev. Aeson.ToJSON ev => Tracer m (WithEventType ev))
+  => DMQTracers crypto ntnAddr ntcAddr m
   -> Configuration
   -> TxSubmissionMempoolReader SigId (Sig crypto) idx m
   -> TxSubmissionMempoolWriter SigId (Sig crypto) idx m SigValidationError
   -> Codecs crypto m
   -> Apps ntcAddr m ()
-ntcApps tracer
-        Configuration { dmqcLocalMsgSubmissionServerProtocolTracer   = I localMsgSubmissionServerProtocolTracer,
-                        dmqcLocalMsgNotificationServerProtocolTracer = I localMsgNotificationServerProtocolTracer,
-                        dmqcLocalMsgSubmissionServerTracer           = I localMsgSubmissionServerTracer,
-                        dmqcLocalMsgNotificationServerTracer         = I localMsgNotificationServerTracer
-                      }
+ntcApps DMQTracers { localMsgSubmissionProtocolTracer,
+                     localMsgSubmissionServerTracer,
+                     localMsgNotificationProtocolTracer,
+                     localMsgNotificationServerTracer
+                   }
+        _
         mempoolReader
         TxSubmissionMempoolWriter { mempoolAddTxs }
         Codecs { msgSubmissionCodec, msgNotificationCodec } =
@@ -165,17 +157,13 @@ ntcApps tracer
     aLocalMsgSubmission _version ResponderContext { rcConnectionId = connId } channel = do
       labelThisThread "LocalMsgSubmission.Server"
       runAnnotatedPeer
-        (if localMsgSubmissionServerProtocolTracer
-           then WithEventType "LocalMsgSubmission.Protocol.Server" . Mx.WithBearer connId >$< tracer
-           else nullTracer)
+        (Mx.WithBearer connId >$< localMsgSubmissionProtocolTracer)
         msgSubmissionCodec
         channel
         (localMsgSubmissionServerPeer $
           localMsgSubmissionServer
             sigId
-            (if localMsgSubmissionServerTracer
-               then WithEventType "LocalMsgSubmission.Server" . Mx.WithBearer connId >$< tracer
-               else nullTracer)
+            (Mx.WithBearer connId >$< localMsgSubmissionServerTracer)
             (\sig -> mempoolAddTxs [sig] <&> \case
                       (sigId:_, _) -> Right sigId
                       (_, (sigId, err):_) -> Left (sigId, err)
@@ -186,18 +174,13 @@ ntcApps tracer
     aLocalMsgNotification _version ResponderContext { rcConnectionId = connId } channel = do
       labelThisThread "LocalMsgNotification.Server"
       runAnnotatedPeer
-        (if localMsgNotificationServerProtocolTracer
-           then WithEventType "LocalMsgNotification.Protocol.Server" . Mx.WithBearer connId >$< tracer
-           else nullTracer)
+        (Mx.WithBearer connId >$< localMsgNotificationProtocolTracer)
         msgNotificationCodec
         channel
         (localMsgNotificationServerPeer $
           localMsgNotificationServer
             sigId
-            (if localMsgNotificationServerTracer
-                then WithEventType "LocalMsgNotification.Server" . Mx.WithBearer connId >$< tracer
-                else nullTracer
-            )
+            (Mx.WithBearer connId >$< localMsgNotificationServerTracer)
             (pure ()) _ntc_MAX_SIGS_TO_ACK mempoolReader)
 
 

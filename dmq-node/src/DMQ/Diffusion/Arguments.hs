@@ -2,13 +2,13 @@
 {-# LANGUAGE KindSignatures    #-}
 {-# LANGUAGE NamedFieldPuns    #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PackageImports    #-}
 
 module DMQ.Diffusion.Arguments
   ( diffusionArguments
   , NoExtraPeers (..)
   , NoExtraState (..)
   , NoExtraDebugState (..)
-  , NoExtraCounters (..)
   , NoExtraFlags (..)
   , NoExtraConfig (..)
   , NoExtraAPI (..)
@@ -21,7 +21,7 @@ import Control.Exception (IOException)
 import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow (MonadCatch)
 import Control.Monad.Class.MonadTimer.SI (MonadDelay, MonadTimer)
-import Control.Tracer (Tracer)
+import "contra-tracer" Control.Tracer (Tracer)
 import Data.List.NonEmpty (NonEmpty)
 import Network.DNS (Resolver)
 import Network.Socket (Socket)

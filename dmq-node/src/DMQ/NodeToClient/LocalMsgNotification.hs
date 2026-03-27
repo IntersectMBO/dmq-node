@@ -1,13 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PackageImports    #-}
 
 module DMQ.NodeToClient.LocalMsgNotification
   ( localMsgNotificationServer
   , LocalMsgNotificationProtocolError (..)
+  , TraceMessageNotificationServer (..)
   ) where
 
 import Control.Concurrent.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
-import Control.Tracer
+import "contra-tracer" Control.Tracer (Tracer, traceWith)
 import Data.Aeson ((.=))
 import Data.Aeson qualified as Aeson
 import Data.List.NonEmpty qualified as NonEmpty

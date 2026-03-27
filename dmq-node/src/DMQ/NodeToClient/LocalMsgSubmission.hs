@@ -1,5 +1,7 @@
 {-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE PackageImports       #-}
 {-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -7,13 +9,16 @@
 module DMQ.NodeToClient.LocalMsgSubmission where
 
 import Control.Monad.Class.MonadThrow
-import Control.Tracer
+import "contra-tracer" Control.Tracer (Tracer, traceWith)
 import Data.Aeson (ToJSON (..), object, (.=))
 import Data.Aeson qualified as Aeson
 import Data.Typeable
 
+import Cardano.Logging qualified as Logging
+
 import DMQ.Protocol.LocalMsgSubmission.Server
 import DMQ.Protocol.LocalMsgSubmission.Type
+import DMQ.Protocol.SigSubmission.Type (Sig, SigId)
 
 -- | Local transaction submission server, for adding txs to the 'Mempool'
 --
@@ -56,6 +61,39 @@ data TraceLocalMsgSubmission msg msgid =
 deriving instance
      (Show msg, Show msgid)
   => Show (TraceLocalMsgSubmission msg msgid)
+
+instance Logging.LogFormatting (TraceLocalMsgSubmission (Sig crypto) SigId) where
+  forMachine _ (TraceReceivedMsg sigid) =
+    mconcat [ "kind" .= Aeson.String "TraceReceivedMsg"
+            , "sigid" .= sigid
+            ]
+  forMachine _ (TraceSubmitFailure sigid err) =
+    mconcat [ "kind" .= Aeson.String "TraceSubmitFailure"
+            , "sigid" .= sigid
+            , "error" .= show err
+            ]
+  forMachine _ (TraceSubmitAccept sigid) =
+    mconcat [ "kind" .= Aeson.String "TraceSubmitAccept"
+            , "sigid" .= sigid
+            ]
+
+instance Logging.MetaTrace (TraceLocalMsgSubmission (Sig crypto) SigId) where
+  namespaceFor TraceReceivedMsg {} = Logging.Namespace [] ["TraceReceivedMsg"]
+  namespaceFor TraceSubmitFailure {} = Logging.Namespace [] ["TraceSubmitFailure"]
+  namespaceFor TraceSubmitAccept {} = Logging.Namespace [] ["TraceSubmitAccept"]
+
+  severityFor _ (Just TraceReceivedMsg {})   = Just Logging.Debug
+  severityFor _ (Just TraceSubmitFailure {}) = Just Logging.Warning
+  severityFor _ (Just TraceSubmitAccept {})  = Just Logging.Info
+  severityFor _ Nothing                      = Nothing
+
+  documentFor _ = Nothing
+
+  allNamespaces = [
+      Logging.Namespace [] ["TraceReceivedMsg"]
+    , Logging.Namespace [] ["TraceSubmitFailure"]
+    , Logging.Namespace [] ["TraceSubmitAccept"]
+    ]
 
 
 

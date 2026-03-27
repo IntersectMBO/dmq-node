@@ -4,6 +4,7 @@
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
+{-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module DMQ.SigSubmissionV2.Inbound
@@ -20,7 +21,7 @@ import Control.Exception (assert)
 import Control.Monad (unless, when)
 import Control.Monad.Class.MonadAsync (MonadAsync (..))
 import Control.Monad.Class.MonadThrow
-import Control.Tracer (Tracer, traceWith)
+import "contra-tracer" Control.Tracer (Tracer, traceWith)
 
 import Network.TypedProtocol
 
