@@ -2,6 +2,20 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-0.4.0.0'></a>
+## 0.4.0.0 -- 2026-03-30
+
+### Breaking
+
+- Integration with `trace-dispatcher`.  Removed tracing configuration options
+  from `Configuration`, `trace-dispatcher` configuration is used instead.
+- Added EKG counters and a prometheus server.
+
+### Non-Breaking
+
+- Replaced `NoExtraPeers`, `NoExtraState`, `NoExtraDebugState`, `NoExtraFlags` with types from `ouroboros-network`.
+- Removed unused types `NoExtraTracer`, `NoExtraCounters`.
+
 <a id='changelog-0.3.0.0'></a>
 ## 0.3.0.0 -- 2026-03-23
 
