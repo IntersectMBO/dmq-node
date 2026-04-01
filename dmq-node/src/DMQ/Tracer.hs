@@ -174,6 +174,29 @@ type DMQDiffusionTracers m =
 
 type PrometheusConfig = Maybe (Bool, Maybe HostName, PortNumber)
 
+-- | Make a default configuration option for a top level namespace.
+--
+-- * severity `Info`
+-- * backend `Stdout MachineFormat`
+--
+-- NOTE: no prometheus, since we'd need to pick a port number for it.
+--
+mkDefaultConfig :: [Logging.ConfigOption] -> [Logging.ConfigOption]
+mkDefaultConfig cfg =
+  cfg
+  ++
+  case filter (\opt -> case opt of
+                  Logging.ConfSeverity{} -> True
+                  _                      -> False ) cfg of
+    [] -> [Logging.ConfSeverity (Logging.SeverityF (Just Logging.Info))]
+    _  -> []
+  ++
+  case filter (\opt -> case opt of
+                  Logging.ConfBackend{} -> True
+                  _                     -> False) cfg of
+   [] -> [Logging.ConfBackend [Logging.Stdout Logging.MachineFormat]]
+   _  -> []
+
 -- | Create and configure `DMQTracers` and `DMQDiffusionTracers`.
 --
 mkDMQTracers
@@ -193,7 +216,20 @@ mkDMQTracers
         , PrometheusConfig
         )
 mkDMQTracers ekgStore dmqConfigFilePath = do
-  traceConfig <- Logging.readConfiguration dmqConfigFilePath
+  exist <- doesFileExist dmqConfigFilePath
+  traceConfig' <-
+    if exist
+      then Logging.readConfiguration dmqConfigFilePath
+      else return Logging.emptyTraceConfig
+  let traceConfig = traceConfig'
+        { Logging.tcOptions =
+          Map.alter
+            (\case
+               Just a  -> Just (mkDefaultConfig a)
+               Nothing -> Just (mkDefaultConfig []))
+            mempty
+            (Logging.tcOptions traceConfig')
+        }
   ekgTrace <- Logging.ekgTracer traceConfig ekgStore
 
   configReflection <- Logging.emptyConfigReflection
