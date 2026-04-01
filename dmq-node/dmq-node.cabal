@@ -165,7 +165,7 @@ executable dmq-node
     directory,
     dmq-node,
     ekg-core,
-    io-classes:{io-classes, strict-stm},
+    io-classes:{io-classes, si-timers, strict-stm},
     kes-agent-crypto,
     optparse-applicative,
     ouroboros-network:{ouroboros-network, api, framework},

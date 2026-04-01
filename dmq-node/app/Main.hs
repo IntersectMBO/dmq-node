@@ -16,6 +16,7 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad (unless, void, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTimer.SI
 import "contra-tracer" Control.Tracer (nullTracer, traceWith)
 
 import Data.Act
@@ -135,6 +136,7 @@ runDMQ commandLineConfig = do
     case config' of
       Left e   -> traceWith dmqStartupTracer (DMQConfigurationError e)
                -- TODO: flush `dmqStartupTracer`
+               >> threadDelay 0.01
                >> die (Text.unpack e)
       Right {} -> traceWith dmqStartupTracer (DMQConfiguration dmqConfig)
 
@@ -142,10 +144,12 @@ runDMQ commandLineConfig = do
       unless a $ do
         traceWith dmqStartupTracer (DMQCardanoNodeSocketError socketPath)
         -- TODO: flush `dmqStartupTracer`
+        threadDelay 0.01
         die $ "CardanoNodeSocket " ++ show socketPath ++": file does not exist"
     nt <- readTopologyFile topologyFile >>= \case
       Left e -> traceWith dmqStartupTracer (DMQTopologyError e)
              -- TODO: flush `dmqStartupTracer`
+             >> threadDelay 0.01
              >> die (Text.unpack e)
       Right a -> traceWith dmqStartupTracer (DMQTopology a)
               >> return a
