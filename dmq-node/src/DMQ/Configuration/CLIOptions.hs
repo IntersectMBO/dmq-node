@@ -28,10 +28,10 @@ parseCLIOptions =
           option auto
           (  long "port"
           <> short 'p'
-          <> metavar "Port Number"
+          <> metavar "PORT_NUMBER"
           <> helpWithDefault
                (unI $ dmqcPortNumber defaultConfiguration)
-               "Port Number that the node will bind to"
+               "Port number that the node will bind to"
           )
         )
     <*> optional (
@@ -66,7 +66,7 @@ parseCLIOptions =
     <*> optional (
           strOption
           (  long "cardano-node-socket"
-          <> metavar "Cardano node socket path"
+          <> metavar "FILENAME"
           <> helpWithDefault
                (unI $ dmqcCardanoNodeSocket defaultConfiguration)
                "Used for local connections to Cardano node"
@@ -75,7 +75,7 @@ parseCLIOptions =
     <*> optional (
           option auto
           (  long "cardano-network-magic"
-          <> metavar "Cardano node network magic"
+          <> metavar "CARDANO_NETWORK_MAGIC"
           <> helpWithDefault
               (unNetworkMagic . unI $ dmqcCardanoNetworkMagic defaultConfiguration)
               "The network magic of cardano-node client for local connections"
@@ -84,7 +84,7 @@ parseCLIOptions =
     <*> optional (
           option auto
           (  long "dmq-network-magic"
-          <> metavar "dmq node network magic"
+          <> metavar "DMQ_NETWORK_MAGIC"
           <> helpWithDefault
               (unNetworkMagic . unI $ dmqcNetworkMagic defaultConfiguration)
               "The network magic of the dmq network"
