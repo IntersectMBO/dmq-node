@@ -16,10 +16,12 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad (unless, void, when)
 import Control.Monad.Class.MonadAsync
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTimer.SI
 import "contra-tracer" Control.Tracer (nullTracer, traceWith)
 
 import Data.Act
 import Data.ByteString.Lazy qualified as BSL
+import Data.Either (fromRight)
 import Data.Foldable (traverse_)
 import Data.Functor.Contravariant ((>$<))
 import Data.List.NonEmpty (NonEmpty)
@@ -41,7 +43,7 @@ import Cardano.Logging.Prometheus.TCPServer qualified as Prometheus
 
 import DMQ.Configuration
 import DMQ.Configuration.CLIOptions (parseCLIOptions)
-import DMQ.Configuration.Topology (readTopologyFileOrError)
+import DMQ.Configuration.Topology (readTopologyFile)
 import DMQ.Diffusion.Applications (diffusionApplications)
 import DMQ.Diffusion.Arguments
 import DMQ.Diffusion.NodeKernel
@@ -84,7 +86,7 @@ runDMQ commandLineConfig = do
     EKG.registerGcMetrics ekgStore
 
     -- read & parse configuration file
-    config' <- readConfigurationFileOrError configFilePath
+    config' <- readConfigurationFile configFilePath
     -- combine default configuration, configuration file and command line
     -- options
     let dmqConfig :: Configuration
@@ -93,33 +95,16 @@ runDMQ commandLineConfig = do
           dmqcCardanoNodeSocket     = I socketPath,
           dmqcVersion               = I version,
           dmqcLedgerPeers           = I ledgerPeers
-        } = config' <> commandLineConfig
+        } =     fromRight mempty config'
+             <> commandLineConfig
             `act`
             defaultConfiguration
 
-    (   dmqTracers@DMQTracers {
-          dmqStartupTracer,
-          localStateQueryClientTracer,
-          sigValidationTracer,
-          localSigValidationTracer,
-          cardanoNodeHandshakeTracer
-        }
-      , dmqDiffusionTracers
-      , prometheusConfig
-      )
-      <- mkDMQTracers ekgStore configFilePath
-
-    case prometheusConfig of
-      Nothing -> return ()
-      Just ps ->
-        -- morally it belongs to `NodeKernel`, but it runs in `IO`, not `m`.
-        Prometheus.runPrometheusSimple
-          (DMQPrometheus >$< dmqStartupTracer)
-          ekgStore ps
-          >>= link
-
     when version $ do
-      let gitrev = $(gitRev)
+      let gitrev :: Text.Text
+          gitrev = $(gitRev)
+
+          cleanGitRev :: Maybe Text.Text
           cleanGitRev = if | Text.take 6 (Text.drop 7 gitrev) == "-dirty"
                            -- short dirty revision
                            -> Just $ Text.take (6 + 7) gitrev
@@ -135,11 +120,49 @@ runDMQ commandLineConfig = do
           ]
       exitSuccess
 
-    traceWith dmqStartupTracer (DMQConfiguration dmqConfig)
+    (   dmqTracers@DMQTracers {
+          dmqStartupTracer,
+          localStateQueryClientTracer,
+          sigValidationTracer,
+          localSigValidationTracer,
+          cardanoNodeHandshakeTracer
+        }
+      , dmqDiffusionTracers
+      , prometheusConfig
+      )
+      <- mkDMQTracers ekgStore configFilePath
+
+
+    case config' of
+      Left e   -> traceWith dmqStartupTracer (DMQConfigurationError e)
+               -- TODO: flush `dmqStartupTracer`
+               >> threadDelay 0.01
+               >> die (Text.unpack e)
+      Right {} -> traceWith dmqStartupTracer (DMQConfiguration dmqConfig)
+
     Dir.doesFileExist socketPath >>= \a ->
-      unless a (die $ "CardanoNodeSocket " ++ show socketPath ++": file does not exist")
-    nt <- readTopologyFileOrError topologyFile
-    traceWith dmqStartupTracer (DMQTopology nt)
+      unless a $ do
+        traceWith dmqStartupTracer (DMQCardanoNodeSocketError socketPath)
+        -- TODO: flush `dmqStartupTracer`
+        threadDelay 0.01
+        die $ "CardanoNodeSocket " ++ show socketPath ++": file does not exist"
+    nt <- readTopologyFile topologyFile >>= \case
+      Left e -> traceWith dmqStartupTracer (DMQTopologyError e)
+             -- TODO: flush `dmqStartupTracer`
+             >> threadDelay 0.01
+             >> die (Text.unpack e)
+      Right a -> traceWith dmqStartupTracer (DMQTopology a)
+              >> return a
+
+    -- start prometheus after we know we have valid configuration
+    case prometheusConfig of
+      Nothing -> return ()
+      Just ps ->
+        -- morally it belongs to `NodeKernel`, but it runs in `IO`, not `m`.
+        Prometheus.runPrometheusSimple
+          (DMQPrometheus >$< dmqStartupTracer)
+          ekgStore ps
+          >>= link
 
     stdGen <- Random.newStdGen
     let (psRng, policyRng) = Random.splitGen stdGen

@@ -1,6 +1,6 @@
 cabal-version: 3.4
 name: dmq-node
-version: 0.4.0.0
+version: 0.4.1.0
 synopsis: Decentralised Message Queue Node
 description:
   Decentralised Message Queue Node based on Cardano Diffusion
@@ -116,6 +116,7 @@ library
     containers >=0.5 && <0.8,
     contra-tracer >=0.1 && <0.3,
     deepseq >=1.0 && <1.6,
+    directory,
     dns >=1.0 && <4.3,
     ekg-core,
     generic-data,
@@ -164,7 +165,7 @@ executable dmq-node
     directory,
     dmq-node,
     ekg-core,
-    io-classes:{io-classes, strict-stm},
+    io-classes:{io-classes, si-timers, strict-stm},
     kes-agent-crypto,
     optparse-applicative,
     ouroboros-network:{ouroboros-network, api, framework},

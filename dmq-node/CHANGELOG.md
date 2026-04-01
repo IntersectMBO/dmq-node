@@ -2,6 +2,17 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-0.4.1.0'></a>
+## 0.4.1.0 -- 2026-04-01
+
+### Non-Breaking
+
+- Default options for tracing configuration:
+  - default severity `Info`
+  - default backend `Stdout MachineFormat`
+  - no prometheus
+- Fixed `--version` flag
+
 <a id='changelog-0.4.0.0'></a>
 ## 0.4.0.0 -- 2026-03-30
 

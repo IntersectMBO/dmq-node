@@ -6,6 +6,7 @@
 
 module DMQ.Configuration.Topology
   ( readTopologyFileOrError
+  , readTopologyFile
   , NoExtraFlags (..)
   , NoExtraConfig (..)
   ) where

@@ -33,6 +33,7 @@ import Data.Maybe (listToMaybe)
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.Typeable (Typeable)
+import System.Directory (doesFileExist)
 import System.Metrics qualified as EKG
 
 import Network.Mux.Trace qualified as Mx
@@ -131,7 +132,10 @@ data DMQTracers crypto ntnAddr ntcAddr m = DMQTracers {
 
 data DMQStartupTrace
   = DMQConfiguration Configuration
+  | DMQConfigurationError Text
+  | DMQCardanoNodeSocketError FilePath
   | DMQTopology (NetworkTopology NoExtraConfig Diffusion.NoExtraFlags)
+  | DMQTopologyError Text
   | DMQPrometheus Logging.TracePrometheusSimple
 
 
@@ -140,21 +144,42 @@ instance Logging.LogFormatting DMQStartupTrace where
     mconcat [ "kind" .= String "Configuration"
             , "config" .= config
             ]
+  forMachine _dtal (DMQConfigurationError e) =
+    mconcat [ "kind" .= String "ConfigurationError"
+            , "error" .= e
+            ]
+  forMachine _dtal (DMQCardanoNodeSocketError filePath) =
+    mconcat [ "kind" .= String "ConfigurationError"
+            , "msg" .= String "cardano node socket does not exist"
+            , "filePath" .= filePath
+            ]
   forMachine _dtal (DMQTopology topology) =
     mconcat [ "kind" .= String "Topology"
             , "topology" .= topology
             ]
+  forMachine _dtal (DMQTopologyError e) =
+    mconcat [ "kind" .= String "TopologyError"
+            , "error" .= e
+            ]
   forMachine dtal (DMQPrometheus msg) = Logging.forMachine dtal msg
 
 instance Logging.MetaTrace DMQStartupTrace where
-  namespaceFor DMQConfiguration{} = Logging.Namespace [] ["Configuration"]
-  namespaceFor DMQTopology{}      = Logging.Namespace [] ["Topology"]
-  namespaceFor DMQPrometheus {}   = Logging.Namespace [] ["Prometheus"]
-  severityFor _ _ = Just Logging.Info
+  namespaceFor DMQConfiguration{}          = Logging.Namespace [] ["Configuration"]
+  namespaceFor DMQConfigurationError{}     = Logging.Namespace [] ["Configuration", "Error"]
+  namespaceFor DMQCardanoNodeSocketError{} = Logging.Namespace [] ["Configuration", "Error"]
+  namespaceFor DMQTopology{}               = Logging.Namespace [] ["Topology"]
+  namespaceFor DMQTopologyError{}          = Logging.Namespace [] ["Topology", "Error"]
+  namespaceFor DMQPrometheus {}            = Logging.Namespace [] ["Prometheus"]
+  severityFor _ (Just DMQConfigurationError{})     = Just Logging.Critical
+  severityFor _ (Just DMQCardanoNodeSocketError{}) = Just Logging.Critical
+  severityFor _ (Just DMQTopologyError{})          = Just Logging.Critical
+  severityFor _ _                                  = Just Logging.Info
   documentFor _ = Nothing
   allNamespaces =
     [ Logging.Namespace [] ["Configuration"]
+    , Logging.Namespace [] ["Configuration", "Error"]
     , Logging.Namespace [] ["Topology"]
+    , Logging.Namespace [] ["Topology", "Error"]
     , Logging.Namespace [] ["Prometheus"]
     ]
 
@@ -173,6 +198,29 @@ type DMQDiffusionTracers m =
       m
 
 type PrometheusConfig = Maybe (Bool, Maybe HostName, PortNumber)
+
+-- | Make a default configuration option for a top level namespace.
+--
+-- * severity `Info`
+-- * backend `Stdout MachineFormat`
+--
+-- NOTE: no prometheus, since we'd need to pick a port number for it.
+--
+mkDefaultConfig :: [Logging.ConfigOption] -> [Logging.ConfigOption]
+mkDefaultConfig cfg =
+  cfg
+  ++
+  case filter (\opt -> case opt of
+                  Logging.ConfSeverity{} -> True
+                  _                      -> False ) cfg of
+    [] -> [Logging.ConfSeverity (Logging.SeverityF (Just Logging.Info))]
+    _  -> []
+  ++
+  case filter (\opt -> case opt of
+                  Logging.ConfBackend{} -> True
+                  _                     -> False) cfg of
+   [] -> [Logging.ConfBackend [Logging.Stdout Logging.MachineFormat]]
+   _  -> []
 
 -- | Create and configure `DMQTracers` and `DMQDiffusionTracers`.
 --
@@ -193,7 +241,20 @@ mkDMQTracers
         , PrometheusConfig
         )
 mkDMQTracers ekgStore dmqConfigFilePath = do
-  traceConfig <- Logging.readConfiguration dmqConfigFilePath
+  exist <- doesFileExist dmqConfigFilePath
+  traceConfig' <-
+    if exist
+      then Logging.readConfiguration dmqConfigFilePath
+      else return Logging.emptyTraceConfig
+  let traceConfig = traceConfig'
+        { Logging.tcOptions =
+          Map.alter
+            (\case
+               Just a  -> Just (mkDefaultConfig a)
+               Nothing -> Just (mkDefaultConfig []))
+            mempty
+            (Logging.tcOptions traceConfig')
+        }
   ekgTrace <- Logging.ekgTracer traceConfig ekgStore
 
   configReflection <- Logging.emptyConfigReflection

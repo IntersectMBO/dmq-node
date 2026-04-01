@@ -121,6 +121,34 @@ To use ledger peers, as `cardano-node` does there are additional requrements:
 Currently ledger peers are disabled by default, but in a near future we will
 enable them by default.
 
+### Tracing
+
+`dmq-node` is using `trace-dispatcher` framework for logging (i.e. the same as
+the new tracing system for `cardano-node`).
+
+### Configuration example
+
+Note: it requires `cardano-node-10.7.x` for `LedgerPeers`, if you're running it
+against an earlier `cardano-node` turn the option off.
+
+The `Prometheus` requires a different port number than `cardano-node`'s
+`Prometheus`.
+
+```json
+{ "LedgerPeers": true,
+  "CardanoNodeSocket": "/var/run/cardano-node.socket",
+  "TraceOptions": {
+    "": {
+      "backends": [
+        "Stdout MachineFormat",
+        "PrometheusSimple suffix 127.0.0.1 12800"
+      ],
+      "severity": "Info"
+    }
+  }
+}
+```
+
 ## Developing with Nix
 
 To enter a development shell with all dependencies available, use:
