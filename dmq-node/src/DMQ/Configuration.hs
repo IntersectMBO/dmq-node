@@ -23,6 +23,7 @@ module DMQ.Configuration
   , PartialConfig
   , Configuration
   , I (..)
+  , readConfigurationFile
   , readConfigurationFileOrError
   , mkDiffusionConfiguration
   , defaultConfiguration

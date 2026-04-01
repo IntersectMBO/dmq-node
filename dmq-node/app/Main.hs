@@ -20,6 +20,7 @@ import "contra-tracer" Control.Tracer (nullTracer, traceWith)
 
 import Data.Act
 import Data.ByteString.Lazy qualified as BSL
+import Data.Either (fromRight)
 import Data.Foldable (traverse_)
 import Data.Functor.Contravariant ((>$<))
 import Data.List.NonEmpty (NonEmpty)
@@ -84,7 +85,7 @@ runDMQ commandLineConfig = do
     EKG.registerGcMetrics ekgStore
 
     -- read & parse configuration file
-    config' <- readConfigurationFileOrError configFilePath
+    config' <- readConfigurationFile configFilePath
     -- combine default configuration, configuration file and command line
     -- options
     let dmqConfig :: Configuration
@@ -93,9 +94,30 @@ runDMQ commandLineConfig = do
           dmqcCardanoNodeSocket     = I socketPath,
           dmqcVersion               = I version,
           dmqcLedgerPeers           = I ledgerPeers
-        } = config' <> commandLineConfig
+        } =     fromRight mempty config'
+             <> commandLineConfig
             `act`
             defaultConfiguration
+
+    when version $ do
+      let gitrev :: Text.Text
+          gitrev = $(gitRev)
+
+          cleanGitRev :: Maybe Text.Text
+          cleanGitRev = if | Text.take 6 (Text.drop 7 gitrev) == "-dirty"
+                           -- short dirty revision
+                           -> Just $ Text.take (6 + 7) gitrev
+                           | Text.all (== '0') gitrev
+                           -- no git revision available
+                           -> Nothing
+                           | otherwise
+                           -> Just gitrev
+      Text.putStr $ Text.unlines $
+          "dmq-node version: " <> Text.pack (showVersion Meta.version)
+        : [ "git revision: " <> rev
+          | rev <- maybeToList cleanGitRev
+          ]
+      exitSuccess
 
     (   dmqTracers@DMQTracers {
           dmqStartupTracer,
@@ -117,23 +139,6 @@ runDMQ commandLineConfig = do
           (DMQPrometheus >$< dmqStartupTracer)
           ekgStore ps
           >>= link
-
-    when version $ do
-      let gitrev = $(gitRev)
-          cleanGitRev = if | Text.take 6 (Text.drop 7 gitrev) == "-dirty"
-                           -- short dirty revision
-                           -> Just $ Text.take (6 + 7) gitrev
-                           | Text.all (== '0') gitrev
-                           -- no git revision available
-                           -> Nothing
-                           | otherwise
-                           -> Just gitrev
-      Text.putStr $ Text.unlines $
-          "dmq-node version: " <> Text.pack (showVersion Meta.version)
-        : [ "git revision: " <> rev
-          | rev <- maybeToList cleanGitRev
-          ]
-      exitSuccess
 
     traceWith dmqStartupTracer (DMQConfiguration dmqConfig)
     Dir.doesFileExist socketPath >>= \a ->
