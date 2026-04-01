@@ -42,7 +42,7 @@ import Cardano.Logging.Prometheus.TCPServer qualified as Prometheus
 
 import DMQ.Configuration
 import DMQ.Configuration.CLIOptions (parseCLIOptions)
-import DMQ.Configuration.Topology (readTopologyFileOrError)
+import DMQ.Configuration.Topology (readTopologyFile)
 import DMQ.Diffusion.Applications (diffusionApplications)
 import DMQ.Diffusion.Arguments
 import DMQ.Diffusion.NodeKernel
@@ -131,6 +131,26 @@ runDMQ commandLineConfig = do
       )
       <- mkDMQTracers ekgStore configFilePath
 
+
+    case config' of
+      Left e   -> traceWith dmqStartupTracer (DMQConfigurationError e)
+               -- TODO: flush `dmqStartupTracer`
+               >> die (Text.unpack e)
+      Right {} -> traceWith dmqStartupTracer (DMQConfiguration dmqConfig)
+
+    Dir.doesFileExist socketPath >>= \a ->
+      unless a $ do
+        traceWith dmqStartupTracer (DMQCardanoNodeSocketError socketPath)
+        -- TODO: flush `dmqStartupTracer`
+        die $ "CardanoNodeSocket " ++ show socketPath ++": file does not exist"
+    nt <- readTopologyFile topologyFile >>= \case
+      Left e -> traceWith dmqStartupTracer (DMQTopologyError e)
+             -- TODO: flush `dmqStartupTracer`
+             >> die (Text.unpack e)
+      Right a -> traceWith dmqStartupTracer (DMQTopology a)
+              >> return a
+
+    -- start prometheus after we know we have valid configuration
     case prometheusConfig of
       Nothing -> return ()
       Just ps ->
@@ -139,12 +159,6 @@ runDMQ commandLineConfig = do
           (DMQPrometheus >$< dmqStartupTracer)
           ekgStore ps
           >>= link
-
-    traceWith dmqStartupTracer (DMQConfiguration dmqConfig)
-    Dir.doesFileExist socketPath >>= \a ->
-      unless a (die $ "CardanoNodeSocket " ++ show socketPath ++": file does not exist")
-    nt <- readTopologyFileOrError topologyFile
-    traceWith dmqStartupTracer (DMQTopology nt)
 
     stdGen <- Random.newStdGen
     let (psRng, policyRng) = Random.splitGen stdGen

@@ -116,6 +116,7 @@ library
     containers >=0.5 && <0.8,
     contra-tracer >=0.1 && <0.3,
     deepseq >=1.0 && <1.6,
+    directory,
     dns >=1.0 && <4.3,
     ekg-core,
     generic-data,
