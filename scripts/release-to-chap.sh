@@ -96,7 +96,7 @@ else
     if [[ !(-d $dir) ]];then
       publish="$publish $name"
       if [[ $TEST == 0 ]];then
-        git --git-dir "$gitdir/.git" tag "$name-$version" $gitsha
+        git --git-dir "$gitdir/.git" tag "$version" $gitsha
       fi
     fi
   done
