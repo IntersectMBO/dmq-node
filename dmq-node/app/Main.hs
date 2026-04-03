@@ -50,7 +50,6 @@ import DMQ.Diffusion.NodeKernel
 import DMQ.Diffusion.PeerSelection (policy)
 import DMQ.Handlers.TopLevel (toplevelExceptionHandler)
 import DMQ.NodeToClient qualified as NtC
-import DMQ.NodeToClient.LocalStateQueryClient
 import DMQ.NodeToNode (NodeToNodeVersion, dmqCodecs, dmqLimitsAndTimeouts,
            ntnApps)
 import DMQ.Policy qualified as Policy
@@ -93,8 +92,7 @@ runDMQ commandLineConfig = do
         dmqConfig@Configuration {
           dmqcTopologyFile          = I topologyFile,
           dmqcCardanoNodeSocket     = I socketPath,
-          dmqcVersion               = I version,
-          dmqcLedgerPeers           = I ledgerPeers
+          dmqcVersion               = I version
         } =     fromRight mempty config'
              <> commandLineConfig
             `act`
@@ -122,7 +120,6 @@ runDMQ commandLineConfig = do
 
     (   dmqTracers@DMQTracers {
           dmqStartupTracer,
-          localStateQueryClientTracer,
           sigValidationTracer,
           localSigValidationTracer,
           cardanoNodeHandshakeTracer
@@ -170,18 +167,12 @@ runDMQ commandLineConfig = do
 
     -- TODO: this might not work, since `ouroboros-network` creates its own IO Completion Port.
     withIOManager \iocp -> do
-      let localSnocket'      = localSnocket iocp
-          mkStakePoolMonitor = connectToCardanoNode
-                                 localStateQueryClientTracer
-                                 ledgerPeers
-                                 localSnocket'
-                                 socketPath
-
       withNodeKernel @StandardCrypto
                      dmqTracers
+                     (localSnocket iocp)
+                     makeLocalBearer
                      dmqConfig
-                     psRng
-                     mkStakePoolMonitor $ \nodeKernel -> do
+                     psRng $ \nodeKernel -> do
         dmqDiffusionConfiguration <-
           mkDiffusionConfiguration dmqConfig nt nodeKernel.stakePools.ledgerBigPeersVar
 
