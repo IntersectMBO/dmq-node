@@ -2,6 +2,15 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-0.4.2.0'></a>
+## 0.4.2.0 -- 2026-04-07
+
+### Non-Breaking
+
+- Changed default prefix for prometheus counters to `dmq-node_` (previously no
+  prefix was added).  The prefix can be changed using
+  `TraceOptionMetricsPrefix` option in a configuration file.
+
 <a id='changelog-0.4.1.0'></a>
 ## 0.4.1.0 -- 2026-04-01
 

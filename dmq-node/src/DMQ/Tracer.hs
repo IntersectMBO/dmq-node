@@ -199,28 +199,6 @@ type DMQDiffusionTracers m =
 
 type PrometheusConfig = Maybe (Bool, Maybe HostName, PortNumber)
 
--- | Make a default configuration option for a top level namespace.
---
--- * severity `Info`
--- * backend `Stdout MachineFormat`
---
--- NOTE: no prometheus, since we'd need to pick a port number for it.
---
-mkDefaultConfig :: [Logging.ConfigOption] -> [Logging.ConfigOption]
-mkDefaultConfig cfg =
-  cfg
-  ++
-  case filter (\opt -> case opt of
-                  Logging.ConfSeverity{} -> True
-                  _                      -> False ) cfg of
-    [] -> [Logging.ConfSeverity (Logging.SeverityF (Just Logging.Info))]
-    _  -> []
-  ++
-  case filter (\opt -> case opt of
-                  Logging.ConfBackend{} -> True
-                  _                     -> False) cfg of
-   [] -> [Logging.ConfBackend [Logging.Stdout Logging.MachineFormat]]
-   _  -> []
 
 -- | Create and configure `DMQTracers` and `DMQDiffusionTracers`.
 --
@@ -242,19 +220,24 @@ mkDMQTracers
         )
 mkDMQTracers ekgStore dmqConfigFilePath = do
   exist <- doesFileExist dmqConfigFilePath
-  traceConfig' <-
+
+  traceConfig <-
     if exist
-      then Logging.readConfiguration dmqConfigFilePath
-      else return Logging.emptyTraceConfig
-  let traceConfig = traceConfig'
-        { Logging.tcOptions =
-          Map.alter
-            (\case
-               Just a  -> Just (mkDefaultConfig a)
-               Nothing -> Just (mkDefaultConfig []))
-            mempty
-            (Logging.tcOptions traceConfig')
-        }
+    then
+      Logging.readConfigurationWithFallbackAndDefault
+        Logging.Info
+        Logging.DNormal
+        (Logging.Stdout Logging.MachineFormat)
+        dmqConfigFilePath
+        Logging.emptyTraceConfig { Logging.tcMetricsPrefix = Just "dmq-node_" }
+    else
+      return
+        (Logging.mkConfigurationWithFallback
+          Logging.Info
+          Logging.DNormal
+          (Logging.Stdout Logging.MachineFormat)
+        ) { Logging.tcMetricsPrefix = Just "dmq-node_" }
+
   ekgTrace <- Logging.ekgTracer traceConfig ekgStore
 
   configReflection <- Logging.emptyConfigReflection

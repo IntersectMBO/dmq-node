@@ -149,6 +149,14 @@ The `Prometheus` requires a different port number than `cardano-node`'s
 }
 ```
 
+By default all counters are prefixed with `dmq-node_`, this can be changed with
+`TraceOptionMetricsPrefix` option in the configuration file, e.g.
+```json
+{
+  "TraceOptionMetricsPrefix": "dmq-aggregator"
+}
+```
+
 ## Developing with Nix
 
 To enter a development shell with all dependencies available, use:
