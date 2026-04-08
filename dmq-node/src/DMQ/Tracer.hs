@@ -200,6 +200,12 @@ type DMQDiffusionTracers m =
 type PrometheusConfig = Maybe (Bool, Maybe HostName, PortNumber)
 
 
+-- | Default metrics prefix, it is transformed into `dmq_node_` in `Prometheus`.
+--
+metricsPrefix :: Text
+metricsPrefix = "dmq_node."
+
+
 -- | Create and configure `DMQTracers` and `DMQDiffusionTracers`.
 --
 mkDMQTracers
@@ -229,14 +235,15 @@ mkDMQTracers ekgStore dmqConfigFilePath = do
         Logging.DNormal
         (Logging.Stdout Logging.MachineFormat)
         dmqConfigFilePath
-        Logging.emptyTraceConfig { Logging.tcMetricsPrefix = Just "dmq-node_" }
+        Logging.emptyTraceConfig
+        { Logging.tcMetricsPrefix = Just metricsPrefix }
     else
       return
         (Logging.mkConfigurationWithFallback
           Logging.Info
           Logging.DNormal
           (Logging.Stdout Logging.MachineFormat)
-        ) { Logging.tcMetricsPrefix = Just "dmq-node_" }
+        ) { Logging.tcMetricsPrefix = Just metricsPrefix }
 
   ekgTrace <- Logging.ekgTracer traceConfig ekgStore
 
