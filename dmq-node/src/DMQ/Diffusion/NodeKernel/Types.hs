@@ -26,6 +26,7 @@ import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry)
 import Ouroboros.Network.TxSubmission.Inbound.V2
 import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool (..))
 
+import DMQ.PeerSelection.PeerMetric (PeerMetrics)
 import DMQ.Protocol.SigSubmission.Type (Sig, SigId)
 
 
@@ -44,6 +45,7 @@ data NodeKernel crypto ntnAddr m =
   , sigSharedTxStateVar :: !(SharedTxStateVar m ntnAddr SigId (Sig crypto))
   , stakePools          :: !(StakePools m)
   , nextEpochVar        :: !(StrictTVar m (Maybe UTCTime))
+  , peerMetrics         :: !(PeerMetrics m SigId ntnAddr)
   }
 
 

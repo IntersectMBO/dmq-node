@@ -46,6 +46,7 @@ import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToReq (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2
 import Ouroboros.Network.Util.ShowProxy
 
+import DMQ.PeerSelection.PeerMetric qualified as PeerMetric
 import DMQ.Protocol.SigSubmissionV2.Codec (byteLimitsSigSubmissionV2,
            timeLimitsSigSubmissionV2)
 import DMQ.Protocol.SigSubmissionV2.Inbound
@@ -314,6 +315,7 @@ runSigSubmissionV2 tracer tracerSigLogic st0 sigDecisionPolicy = do
                                                   verboseTracer
                                                   (getMempoolWriter duplicateSigsVar inboundMempool)
                                                   api
+                                                  PeerMetric.nullMetrics
                                                   ctrlMsgSTM
                                   runPipelinedPeerWithLimits
                                     (("INBOUND " ++ show addr,) `contramap` verboseTracer)
