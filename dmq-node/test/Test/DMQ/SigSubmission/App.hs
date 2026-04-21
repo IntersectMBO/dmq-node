@@ -46,6 +46,8 @@ import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToReq (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2
 import Ouroboros.Network.Util.ShowProxy
 
+import DMQ.Diffusion.PeerSelection.PeerMetric qualified as PeerMetric
+import DMQ.Policy qualified as Policy
 import DMQ.Protocol.SigSubmissionV2.Codec (byteLimitsSigSubmissionV2,
            timeLimitsSigSubmissionV2)
 import DMQ.Protocol.SigSubmissionV2.Inbound
@@ -311,9 +313,11 @@ runSigSubmissionV2 tracer tracerSigLogic st0 sigDecisionPolicy = do
                                 getTxSize
                                 addr $ \(api :: PeerTxAPI m TxId (Tx TxId))-> do
                                   let inbound = sigSubmissionInbound
+                                                  Policy.peerMetricConfiguration
                                                   verboseTracer
                                                   (getMempoolWriter duplicateSigsVar inboundMempool)
                                                   api
+                                                  PeerMetric.nullMetrics
                                                   ctrlMsgSTM
                                   runPipelinedPeerWithLimits
                                     (("INBOUND " ++ show addr,) `contramap` verboseTracer)

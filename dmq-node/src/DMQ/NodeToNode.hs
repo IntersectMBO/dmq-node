@@ -40,6 +40,7 @@ import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Data.ByteString.Lazy qualified as BL
 import Data.Functor.Contravariant ((>$<))
+import Data.Functor.Identity (Identity (..))
 import Data.Hashable (Hashable)
 import Data.Typeable
 import Data.Void (Void)
@@ -54,6 +55,7 @@ import Cardano.KESAgent.KES.Crypto (Crypto (..))
 
 import DMQ.Configuration (Configuration)
 import DMQ.Diffusion.NodeKernel.Types (NodeKernel (..))
+import DMQ.Diffusion.PeerSelection.PeerMetric qualified as PeerMetric
 import DMQ.NodeToNode.Version
 import DMQ.Policy qualified as Policy
 import DMQ.Protocol.SigSubmission.Codec (byteLimitsSigSubmission,
@@ -207,6 +209,7 @@ ntnApps
     , sigChannelVar
     , sigMempoolSem
     , sigSharedTxStateVar
+    , peerMetric
     }
     Codecs {
       sigSubmissionCodecV1
@@ -247,6 +250,12 @@ ntnApps
                              eicConnectionId   = connId,
                              eicControlMessage = controlMessage
                            } channel =
+        let reportPeerMetrics =
+                PeerMetric.hoist (Mx.TraceLabelPeer (remoteAddress connId) . runIdentity)
+              . PeerMetric.reportMetric
+                Policy.peerMetricConfiguration
+              $ peerMetric
+        in
         withPeer
           (Mx.WithBearer connId >$< sigSubmissionLogicPeerTracer)
           sigChannelVar
@@ -257,7 +266,7 @@ ntnApps
           mempoolWriter
           sigSize
           (remoteAddress connId)
-          $ \(peerSigAPI :: PeerTxAPI m SigId (Sig crypto)) ->
+          ( \(peerSigAPI :: PeerTxAPI m SigId (Sig crypto)) ->
               runPipelinedAnnotatedPeerWithLimits
                 (Mx.WithBearer connId >$< sigSubmissionV2ProtocolTracer)
                 sigSubmissionCodecV2
@@ -269,7 +278,12 @@ ntnApps
                     (Mx.WithBearer connId >$< sigSubmissionInboundTracer)
                     mempoolWriter
                     peerSigAPI
+                    reportPeerMetrics
                     controlMessage
+          )
+        `finally`
+        -- Remove the peer from `PeerMetric`.
+        PeerMetric.erasePeer (remoteAddress connId) peerMetric
 
     aSigSubmissionV1Client
       :: NodeToNodeVersion
