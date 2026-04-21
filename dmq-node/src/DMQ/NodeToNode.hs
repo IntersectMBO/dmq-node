@@ -33,13 +33,15 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
-import "contra-tracer" Control.Tracer (Tracer, nullTracer)
+import "contra-tracer" Control.Tracer (Tracer, nullTracer, traceWith)
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
 import Data.ByteString.Lazy qualified as BL
+import Data.Foldable (traverse_)
 import Data.Functor.Contravariant ((>$<))
+import Data.Functor.Identity (Identity (..))
 import Data.Hashable (Hashable)
 import Data.Typeable
 import Data.Void (Void)
@@ -55,6 +57,8 @@ import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import DMQ.Configuration (Configuration)
 import DMQ.Diffusion.NodeKernel.Types (NodeKernel (..))
 import DMQ.NodeToNode.Version
+import DMQ.PeerSelection.PeerMetric (ReportPeerMetrics' (..))
+import DMQ.PeerSelection.PeerMetric qualified as PeerMetric
 import DMQ.Policy qualified as Policy
 import DMQ.Protocol.SigSubmission.Codec (byteLimitsSigSubmission,
            codecSigSubmission, timeLimitsSigSubmission)
@@ -207,6 +211,7 @@ ntnApps
     , sigChannelVar
     , sigMempoolSem
     , sigSharedTxStateVar
+    , peerMetrics
     }
     Codecs {
       sigSubmissionCodecV1
@@ -247,6 +252,26 @@ ntnApps
                              eicConnectionId   = connId,
                              eicControlMessage = controlMessage
                            } channel =
+        let reportPeerMetrics@ReportPeerMetrics { reportSig } =
+                PeerMetric.hoist (Mx.TraceLabelPeer (remoteAddress connId) . runIdentity)
+              . PeerMetric.reportMetric
+                Policy.peerMetricsConfiguration
+              $ peerMetrics
+
+            -- Modified mempool writer which reports signatures to `PeerMetric`.
+            mempoolWriter' = mempoolWriter
+              { mempoolAddTxs = \sigs -> do
+                  res@(validSigIds, invalidSigIds) <- mempoolAddTxs mempoolWriter sigs
+                  atomically $ do
+                    traverse_ (\sigid ->
+                                traceWith reportSig $ Identity (sigid, PeerMetric.Valid))
+                              validSigIds
+                    traverse_ (\(sigid, _) ->
+                                traceWith reportSig $ Identity (sigid, PeerMetric.NotValidOrNotReceived))
+                              invalidSigIds
+                  return res
+              }
+        in
         withPeer
           (Mx.WithBearer connId >$< sigSubmissionLogicPeerTracer)
           sigChannelVar
@@ -254,10 +279,10 @@ ntnApps
           sigDecisionPolicy
           sigSharedTxStateVar
           mempoolReader
-          mempoolWriter
+          mempoolWriter'
           sigSize
           (remoteAddress connId)
-          $ \(peerSigAPI :: PeerTxAPI m SigId (Sig crypto)) ->
+          ( \(peerSigAPI :: PeerTxAPI m SigId (Sig crypto)) ->
               runPipelinedAnnotatedPeerWithLimits
                 (Mx.WithBearer connId >$< sigSubmissionV2ProtocolTracer)
                 sigSubmissionCodecV2
@@ -267,9 +292,14 @@ ntnApps
                 $ sigSubmissionV2InboundPeerPipelined
                 $ sigSubmissionInbound
                     (Mx.WithBearer connId >$< sigSubmissionInboundTracer)
-                    mempoolWriter
+                    mempoolWriter'
                     peerSigAPI
+                    reportPeerMetrics
                     controlMessage
+          )
+        `finally`
+        -- Remove the peer from `PeerMetric`.
+        PeerMetric.erasePeer (remoteAddress connId) peerMetrics
 
     aSigSubmissionV1Client
       :: NodeToNodeVersion

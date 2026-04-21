@@ -5,18 +5,23 @@ import Data.List (sortOn, unfoldr)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Word (Word32)
-import Ouroboros.Network.PeerSelection
 import System.Random (Random (..), StdGen, splitGen)
+
+import DMQ.PeerSelection.PeerMetric (PeerMetrics)
+import DMQ.PeerSelection.PeerMetric qualified as PeerMetric
+
+import Ouroboros.Network.PeerSelection hiding (PeerMetrics)
 
 -- | Trivial peer selection policy used as dummy value
 --
-policy :: forall peerAddr m.
+policy :: forall sigId peerAddr m.
           ( MonadSTM m
           , Ord peerAddr
           )
        => StrictTVar m StdGen
+       -> PeerMetrics m sigId peerAddr
        -> PeerSelectionPolicy peerAddr m
-policy rngVar =
+policy rngVar peerMetrics =
   PeerSelectionPolicy {
     policyPickKnownPeersForPeerShare = simplePromotionPolicy,
     policyPickColdPeersToPromote     = simplePromotionPolicy,
@@ -40,10 +45,11 @@ policy rngVar =
     hotDemotionPolicy :: PickPolicy peerAddr (STM m)
     hotDemotionPolicy _ _ _ available pickNum = do
       available' <- addRand rngVar available (,)
+      scores <- PeerMetric.announciness peerMetrics
       return $ Set.fromList
              . map fst
              . take pickNum
-             . sortOn snd
+             . sortOn (\(peer, rn) -> (Map.findWithDefault 0 peer scores , rn))
              . Map.assocs
              $ available'
 

@@ -6,12 +6,15 @@
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 
 module DMQ.SigSubmissionV2.Inbound
   ( -- * SigSubmision Inbound client
     sigSubmissionInbound
   ) where
 
+import Data.Foldable (traverse_)
+import Data.Functor.Identity (Identity (..))
 import Data.Map.Strict qualified as Map
 import Data.Sequence.Strict qualified as StrictSeq
 import Data.Set qualified as Set
@@ -21,6 +24,7 @@ import Control.Exception (assert)
 import Control.Monad (unless, when)
 import Control.Monad.Class.MonadAsync (MonadAsync (..))
 import Control.Monad.Class.MonadThrow
+import Control.Monad.Class.MonadTime.SI
 import "contra-tracer" Control.Tracer (Tracer, traceWith)
 
 import Network.TypedProtocol
@@ -33,6 +37,8 @@ import Ouroboros.Network.TxSubmission.Inbound.V2 (PeerTxAPI (..),
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
            (TxSubmissionMempoolWriter (..))
 
+import DMQ.PeerSelection.PeerMetric (IsValid (..), ReportPeerMetrics' (..),
+           ReportPeerMetricsI)
 import DMQ.Protocol.SigSubmissionV2.Inbound
 import DMQ.Protocol.SigSubmissionV2.Type (NumIdsAck (NumIdsAck), NumIdsReq (..))
 import DMQ.SigSubmissionV2.Types
@@ -49,11 +55,12 @@ sigSubmissionInbound
   :: forall sigid sig idx m failure.
      ( MonadThrow m
      , MonadAsync m
-     , Ord sigid
+     , Ord sigid, MonadMonotonicTime m
      )
   => Tracer m (TraceTxSubmissionInbound sigid sig)
   -> TxSubmissionMempoolWriter sigid sig idx m failure
   -> PeerTxAPI m sigid sig
+  -> ReportPeerMetricsI m sigid
   -> ControlMessageSTM m
   -> SigSubmissionInboundPipelined sigid sig m ()
 sigSubmissionInbound
@@ -64,6 +71,10 @@ sigSubmissionInbound
       handleReceivedTxIds,
       handleReceivedTxs,
       submitTxToMempool
+    }
+    ReportPeerMetrics {
+      reportSigId,
+      reportSig
     }
     controlMessageSTM
     =
@@ -110,6 +121,9 @@ sigSubmissionInbound
             -- * `TraceTxInboundAddedToMempool`, and
             -- * `TraceTxInboundRejectedFromMempool`
             -- events.
+            --
+            -- NOTE: submitTxToMempool applies `reportSig` to validated
+            -- signatures
             mapM_ (uncurry $ submitTxToMempool tracer) listOfTxsToMempool
 
           -- TODO:
@@ -152,10 +166,12 @@ sigSubmissionInbound
                 (NumIdsAck . getNumTxIdsToAck $ sigIdsToAck)
                 (NumIdsReq . getNumTxIdsToReq $ sigIdsToReq)
                 (\sigids -> do
+                   time <- getMonotonicTime
                    let sigidsSeq = StrictSeq.fromList $ fst <$> sigids
                        sigidsMap = Map.fromList sigids
                    unless (StrictSeq.length sigidsSeq <= fromIntegral sigIdsToReq) $
                      throwIO ProtocolErrorSigIdsNotRequested
+                   atomically $ traverse_ (\(sigid, _) -> traceWith reportSigId (Identity (sigid, time))) sigids
                    handleReceivedTxIds sigIdsToReq sigidsSeq sigidsMap
                    inboundIdle
                 )
@@ -206,18 +222,25 @@ sigSubmissionInbound
                 -> m (InboundStIdle n sigid sig m ())
     handleReply k = \case
       CollectSigIds sigIdsToReq sigids -> do
+        time <- getMonotonicTime
         let sigidsSeq = StrictSeq.fromList $ fst <$> sigids
             sigidsMap = Map.fromList sigids
         unless (StrictSeq.length sigidsSeq <= fromIntegral sigIdsToReq) $
           throwIO ProtocolErrorSigIdsNotRequested
+        atomically $ traverse_ (\(sigid, _) -> traceWith reportSigId (Identity (sigid, time))) sigids
         handleReceivedTxIds (NumTxIdsToReq . getNumIdsReq $ sigIdsToReq) sigidsSeq sigidsMap
         k
       CollectSigs sigids sigs -> do
-        let requested = Map.keysSet sigids
-            received  = Map.fromList [ (txId sig, sig) | sig <- sigs ]
+        let requested   = Map.keysSet sigids
+            received    = Map.fromList [ (txId sig, sig) | sig <- sigs ]
+            notReceived = requested Set.\\ Map.keysSet received
 
         unless (Map.keysSet received `Set.isSubsetOf` requested) $
           throwIO ProtocolErrorSigNotRequested
+
+        atomically do
+          traverse_ (traceWith reportSig . Identity . (,NotValidOrNotReceived))
+                    (Set.toList notReceived)
 
         mbe <- handleReceivedTxs sigids received
         traceWith tracer $ TraceTxSubmissionCollected (txId `map` sigs)

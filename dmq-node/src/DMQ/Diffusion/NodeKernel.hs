@@ -41,6 +41,7 @@ import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 
 import DMQ.Configuration
 import DMQ.Diffusion.NodeKernel.Types
+import DMQ.PeerSelection.PeerMetric (mkPeerMetrics)
 import DMQ.Policy qualified as Policy
 import DMQ.Protocol.SigSubmission.Type (Sig (sigExpiresAt, sigId), SigId)
 import DMQ.Tracer
@@ -94,6 +95,8 @@ newNodeKernel rng = do
       ps_POLICY_PEER_SHARE_STICKY_TIME
       ps_POLICY_PEER_SHARE_MAX_PEERS
 
+  peerMetrics <- mkPeerMetrics
+
   pure NodeKernel { fetchClientRegistry
                   , peerSharingRegistry
                   , peerSharingAPI
@@ -103,6 +106,7 @@ newNodeKernel rng = do
                   , sigSharedTxStateVar
                   , nextEpochVar
                   , stakePools
+                  , peerMetrics
                   }
 
 

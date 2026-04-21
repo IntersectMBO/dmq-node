@@ -1,12 +1,14 @@
-{-# LANGUAGE NumericUnderscores #-}
-
 module DMQ.Policy
   ( sigDecisionPolicy
   , sigSubmissionIngressLimit
+  , peerMetricsConfiguration
   ) where
 
+import DMQ.PeerSelection.PeerMetric (PeerMetricsConfiguration (..))
 import DMQ.Protocol.SigSubmission.Type (NumTxIdsToReq)
+
 import Network.Mux.Types (MiniProtocolLimits (..))
+
 import Ouroboros.Network.SizeInBytes (SizeInBytes)
 import Ouroboros.Network.TxSubmission.Inbound.V2
 
@@ -56,3 +58,6 @@ sigSubmissionIngressLimit = MiniProtocolLimits {
     addMargin :: Int -> Int
     addMargin = \x -> x + x `div` 10
 
+
+peerMetricsConfiguration :: PeerMetricsConfiguration
+peerMetricsConfiguration = PeerMetricsConfiguration { timeWindowToKeep = 3600 }
