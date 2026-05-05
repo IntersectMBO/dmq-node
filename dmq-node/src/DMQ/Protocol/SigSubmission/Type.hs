@@ -123,7 +123,7 @@ data SigRaw crypto = SigRaw {
     sigRawKESSignature  :: SigKESSignature crypto
     -- ^ KES signature of all previous fields.
     --
-    -- NOTE: this field must be lazy, otetherwise tests will fail.
+    -- NOTE: this field must be lazy, otherwise tests will fail.
   }
 
 deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
