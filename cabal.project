@@ -43,3 +43,12 @@ if impl(ghc >= 9.12.0)
 
 -- rejecting: cardano-crypto-class-2.3.1.0 (conflict: cardano-crypto-tests => cardano-crypto-class>=2.2.2 && <2.2.4)
 -- allow-newer: cardano-crypto-tests:cardano-crypto-class
+
+source-repository-package
+  type: git
+  location: https://github.com/IntersectMBO/ouroboros-network
+  tag: f2d88695147d9f236669caa214e11dba6b75eadc
+  --sha256: sha256-mRP9WxZ4xPOus/nFzSOMXCYopBGZcERDk+QqOD1LmQc=
+  subdir: ouroboros-network
+
+allow-newer: ouroboros-network:trace-dispatcher
