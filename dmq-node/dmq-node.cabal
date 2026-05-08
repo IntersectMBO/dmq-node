@@ -64,8 +64,8 @@ library
     DMQ.Diffusion.Arguments
     DMQ.Diffusion.NodeKernel
     DMQ.Diffusion.NodeKernel.Types
-    DMQ.Diffusion.PeerSelection
     DMQ.Diffusion.PeerSelection.PeerMetric
+    DMQ.Diffusion.PeerSelectionPolicy
     DMQ.Handlers.TopLevel
     DMQ.NodeToClient
     DMQ.NodeToClient.LocalMsgNotification

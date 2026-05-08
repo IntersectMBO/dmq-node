@@ -1,4 +1,4 @@
-module DMQ.Diffusion.PeerSelection where
+module DMQ.Diffusion.PeerSelectionPolicy where
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Data.List (sortOn, unfoldr)

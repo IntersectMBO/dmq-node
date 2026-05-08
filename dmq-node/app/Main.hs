@@ -47,7 +47,7 @@ import DMQ.Configuration.Topology (readTopologyFile)
 import DMQ.Diffusion.Applications (diffusionApplications)
 import DMQ.Diffusion.Arguments
 import DMQ.Diffusion.NodeKernel as NodeKernel
-import DMQ.Diffusion.PeerSelection (policy)
+import DMQ.Diffusion.PeerSelectionPolicy (policy)
 import DMQ.Handlers.TopLevel (toplevelExceptionHandler)
 import DMQ.NodeToClient qualified as NtC
 import DMQ.NodeToClient.LocalStateQueryClient
