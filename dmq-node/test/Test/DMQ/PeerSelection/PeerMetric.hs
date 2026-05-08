@@ -144,7 +144,7 @@ prepareState :: PeerMetricConfiguration
              -> (Map PeerAddr (LocalPeerMetricState SigId) -> PeerMetricState SigId PeerAddr -> SigType -> Property)
              -> Property
 prepareState config (sig :| sigs) k =
-  let (localMap, st) = Fodalble.foldl' (reportSigType config) (Map.empty, emptyPeerMetricState) (reverse sigs)
+  let (localMap, st) = Foldable.foldl' (reportSigType config) (Map.empty, emptyPeerMetricState) (reverse sigs)
   in k localMap st sig
 
 

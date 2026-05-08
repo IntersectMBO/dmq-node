@@ -12,6 +12,7 @@ module DMQ.SigSubmissionV2.Inbound
     sigSubmissionInbound
   ) where
 
+import Data.Foldable qualified as Foldable
 import Data.Functor.Identity (Identity (..))
 import Data.Map.Strict qualified as Map
 import Data.Sequence.Strict qualified as StrictSeq
@@ -181,9 +182,9 @@ sigSubmissionInbound
                    unless (StrictSeq.length sigidsSeq <= fromIntegral sigIdsToReq) $
                      throwIO ProtocolErrorSigIdsNotRequested
                    let localState' =
-                         foldl' (\st (sigid, _) -> reportSigId sigid time st)
-                                localState
-                                sigids
+                         Foldable.foldl' (\st (sigid, _) -> reportSigId sigid time st)
+                                         localState
+                                         sigids
                    handleReceivedTxIds sigIdsToReq sigidsSeq sigidsMap
                    inboundIdle localState'
                 )
@@ -246,9 +247,9 @@ sigSubmissionInbound
         unless (StrictSeq.length sigidsSeq <= fromIntegral sigIdsToReq) $
           throwIO ProtocolErrorSigIdsNotRequested
         let localState' =
-              foldl' (\st (sigid, _) -> reportSigId sigid time st)
-                     localState
-                     sigids
+              Foldable.foldl' (\st (sigid, _) -> reportSigId sigid time st)
+                              localState
+                              sigids
         handleReceivedTxIds (NumTxIdsToReq . getNumIdsReq $ sigIdsToReq) sigidsSeq sigidsMap
         k localState'
 
