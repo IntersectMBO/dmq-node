@@ -19,6 +19,16 @@ module DMQ.Diffusion.PeerSelection.PeerMetric
     -- * Re-exports
   , TraceLabelPeer (..)
   , TxMempoolResult (..)
+    -- * For testing purposes
+  , peerMetricVar
+    -- * Pure API exported for testing purposes
+  , PeerMetricState (..)
+  , emptyPeerMetricState
+  , reportSigIdImpl
+  , reportSigImpl
+  , erasePeerImpl
+  , announcinessImpl
+  , localState
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
@@ -38,6 +48,7 @@ import Ouroboros.Network.TxSubmission.Inbound.V2 (TxMempoolResult (..))
 newtype PeerMetricConfiguration = PeerMetricConfiguration {
     timeWindowToKeep :: DiffTime
   }
+  deriving Show
 
 -- | Each peer keeps its own `LocalPeerMetricState`.  A `sigid` enters this
 -- state when it is received, leaves when the corresponding signature is
