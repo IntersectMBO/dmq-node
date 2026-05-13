@@ -1,9 +1,8 @@
+{-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE FlexibleInstances   #-}
-{-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE RankNTypes          #-}
-{-# LANGUAGE RecordWildCards     #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_GHC -Wno-orphans #-}
@@ -84,7 +83,7 @@ import DMQ.Protocol.LocalMsgSubmission.Type (LocalMsgSubmission,
            LocalTxSubmission)
 import DMQ.Protocol.LocalMsgSubmission.Type qualified as LMS
 import DMQ.Protocol.SigSubmission.Type (Sig, SigId, SigSubmission,
-           SigValidationTrace)
+           SigValidationTrace, Verbose (..))
 import DMQ.Protocol.SigSubmissionV2.Type (SigSubmissionV2)
 import DMQ.Protocol.SigSubmissionV2.Type qualified as SigSubV2
 import DMQ.SigSubmissionV2.Outbound qualified as SigSubV2
@@ -611,18 +610,27 @@ instance Logging.MetaTrace (AnyMessage (LMS.LocalTxSubmission tx err)) where
 
 
 instance Crypto crypto => Logging.LogFormatting (AnyMessage (LocalMsgNotification (Sig crypto))) where
-  forMachine _dtal (AnyMessageAndAgency _agency msg) = case msg of
+  forMachine dtal (AnyMessageAndAgency _agency msg) = case msg of
     LMN.MsgRequest blockingStyle ->
       mconcat [ "type" .= String "MsgRequest"
               , "blockingStyle" .= show blockingStyle
               ]
     LMN.MsgReply msgs hasMore ->
-      mconcat [ "type" .= String "MsgReply"
-              , "msgs" .= Foldable.toList msgs
-              , "hasMore" .= case hasMore of
-                   LMN.HasMore         -> True
-                   LMN.DoesNotHaveMore -> False
-              ]
+      case dtal of
+        Logging.DMaximum ->
+          mconcat [ "type" .= String "MsgReply"
+                  , "msgs" .= (Verbose <$> Foldable.toList msgs)
+                  , "hasMore" .= case hasMore of
+                       LMN.HasMore         -> True
+                       LMN.DoesNotHaveMore -> False
+                  ]
+        _ ->
+          mconcat [ "type" .= String "MsgReply"
+                  , "msgs" .= Foldable.toList msgs
+                  , "hasMore" .= case hasMore of
+                       LMN.HasMore         -> True
+                       LMN.DoesNotHaveMore -> False
+                  ]
     LMN.MsgClientDone ->
       mconcat [ "type" .= String "MsgClientDone"
               ]
@@ -674,7 +682,8 @@ instance Logging.MetaTrace (LMN.TraceMessageNotificationServer SigId) where
 -- SigSubmissionV2 Tracer
 --------------------------------------------------------------------------------
 
-instance Logging.LogFormatting (AnyMessage (SigSubmissionV2 SigId (Sig crypto))) where
+instance Crypto crypto
+      => Logging.LogFormatting (AnyMessage (SigSubmissionV2 SigId (Sig crypto))) where
   forMachine _dtal (AnyMessageAndAgency stok SigSubV2.MsgRequestSigIds {}) =
     mconcat
       [ "kind" .= String "MsgRequestSigIds"
@@ -696,12 +705,20 @@ instance Logging.LogFormatting (AnyMessage (SigSubmissionV2 SigId (Sig crypto)))
       , "agency" .= String (Text.pack $ show stok)
       , "sigids" .= String (Text.pack $ show sigids)
       ]
-  forMachine _dtal (AnyMessageAndAgency stok (SigSubV2.MsgReplySigs sigs)) =
-    mconcat
-      [ "kind" .= String "MsgReplyTxs"
-      , "agency" .= String (Text.pack $ show stok)
-      , "sigs" .= String (Text.pack $ show sigs)
-      ]
+  forMachine dtal (AnyMessageAndAgency stok (SigSubV2.MsgReplySigs sigs)) =
+    case dtal of
+      Logging.DMaximum ->
+        mconcat
+          [ "kind" .= String "MsgReplyTxs"
+          , "agency" .= String (Text.pack $ show stok)
+          , "sigs" .= (Verbose <$> sigs)
+          ]
+      _ ->
+        mconcat
+          [ "kind" .= String "MsgReplyTxs"
+          , "agency" .= String (Text.pack $ show stok)
+          , "sigs" .= sigs
+          ]
   forMachine _dtal (AnyMessageAndAgency stok SigSubV2.MsgDone) =
     mconcat
       [ "kind" .= String "MsgDone"
@@ -742,35 +759,46 @@ instance Logging.MetaTrace (AnyMessage (SigSubmissionV2 SigId (Sig crypto))) whe
 
 -- TODO: move instances from `Cardano.Node.Tracing.Tracers.NodeToNode` to `ouroboros-network`.
 
-instance (Show txid, Show tx)
+instance (ToJSON txid, ToJSON tx, ToJSON (Verbose tx))
       => Logging.LogFormatting (AnyMessage (TxSubmission2 txid tx)) where
   forMachine _dtal (AnyMessageAndAgency stok STX.MsgInit) =
     mconcat
       [ "kind" .= String "MsgInit"
       , "agency" .= String (Text.pack $ show stok)
       ]
-  forMachine _dtal (AnyMessageAndAgency stok STX.MsgRequestTxIds {}) =
+  forMachine _dtal (AnyMessageAndAgency stok (STX.MsgRequestTxIds _ numToAck numToReq)) =
     mconcat
       [ "kind" .= String "MsgRequestTxIds"
       , "agency" .= String (Text.pack $ show stok)
+      , "numToAck" .= STX.getNumTxIdsToAck numToAck
+      , "numToReq" .= STX.getNumTxIdsToReq numToReq
       ]
-  forMachine _dtal (AnyMessageAndAgency stok (STX.MsgReplyTxIds _)) =
+  forMachine _dtal (AnyMessageAndAgency stok (STX.MsgReplyTxIds txids)) =
     mconcat
       [ "kind" .= String "MsgReplyTxIds"
       , "agency" .= String (Text.pack $ show stok)
+      , "txIds" .= Foldable.toList txids
       ]
   forMachine _dtal (AnyMessageAndAgency stok (STX.MsgRequestTxs txids)) =
     mconcat
       [ "kind" .= String "MsgRequestTxs"
       , "agency" .= String (Text.pack $ show stok)
-      , "txIds" .= String (Text.pack $ show txids)
+      , "txIds" .= txids
       ]
-  forMachine _dtal (AnyMessageAndAgency stok (STX.MsgReplyTxs txs)) =
-    mconcat
-      [ "kind" .= String "MsgReplyTxs"
-      , "agency" .= String (Text.pack $ show stok)
-      , "txs" .= String (Text.pack $ show txs)
-      ]
+  forMachine dtal (AnyMessageAndAgency stok (STX.MsgReplyTxs txs)) =
+    case dtal of
+      Logging.DMaximum ->
+        mconcat
+          [ "kind" .= String "MsgReplyTxs"
+          , "agency" .= String (Text.pack $ show stok)
+          , "txs" .= (Verbose <$> txs)
+          ]
+      _ ->
+        mconcat
+          [ "kind" .= String "MsgReplyTxs"
+          , "agency" .= String (Text.pack $ show stok)
+          , "txs" .= txs
+          ]
   forMachine _dtal (AnyMessageAndAgency stok STX.MsgDone) =
     mconcat
       [ "kind" .= String "MsgDone"
@@ -897,15 +925,22 @@ instance Logging.MetaTrace (AnyMessage (TxSubmission2 SigId (Sig crypto))) where
       , Namespace [] ["Done"]
       ]
 
-instance Logging.LogFormatting (SigSubV2.TraceSigSubmissionOutbound SigId (Sig crypto)) where
+instance Crypto crypto
+      => Logging.LogFormatting (SigSubV2.TraceSigSubmissionOutbound SigId (Sig crypto)) where
   forMachine _ (SigSubV2.TraceSigSubmissionOutboundRecvMsgRequestSigs sigids) =
     mconcat [ "kind" .= String "TraceSigSubmissionOutboundRecvMsgRequestSigs"
             , "sigids" .= sigids
             ]
-  forMachine _ (SigSubV2.TraceSigSubmissionOutboundSendMsgReplySigs sigs) =
-    mconcat [ "kind" .= String "TraceSigSubmissionOutboundSendMsgReplySigs"
-            , "sigids" .= (SigSubV2.sigId <$> sigs)
-            ]
+  forMachine dtal (SigSubV2.TraceSigSubmissionOutboundSendMsgReplySigs sigs) =
+    case dtal of
+      Logging.DMaximum ->
+        mconcat [ "kind" .= String "TraceSigSubmissionOutboundSendMsgReplySigs"
+                , "sigs" .= (Verbose <$> sigs)
+                ]
+      _ ->
+        mconcat [ "kind" .= String "TraceSigSubmissionOutboundSendMsgReplySigs"
+                , "sigs" .= sigs
+                ]
 instance Logging.MetaTrace (SigSubV2.TraceSigSubmissionOutbound SigId (Sig crypto)) where
   namespaceFor SigSubV2.TraceSigSubmissionOutboundRecvMsgRequestSigs {} = Logging.Namespace [] ["TraceSigSubmissionOutboundRecvMsgRequestSigs"]
   namespaceFor SigSubV2.TraceSigSubmissionOutboundSendMsgReplySigs {} = Logging.Namespace [] ["TraceSigSubmissionOutboundSendMsgReplySigs"]

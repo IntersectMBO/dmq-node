@@ -29,6 +29,7 @@ module DMQ.Protocol.SigSubmission.Type
   , SigValidationException (..)
     -- * Utilities
   , CBORBytes (..)
+  , Verbose (..)
     -- * Re-exports from `kes-agent`
   , KESPeriod (..)
   ) where
@@ -49,8 +50,10 @@ import Data.Word (Word64)
 
 import Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm, VerKeyDSIGN)
 import Cardano.Crypto.KES.Class (KESAlgorithm (..))
+import Cardano.Crypto.Util (SignableRepresentation (..))
 import Cardano.KESAgent.KES.Crypto as KES
-import Cardano.KESAgent.KES.OCert (KESPeriod (..), OCert (..))
+import Cardano.KESAgent.KES.OCert (KESPeriod (..), OCert (..),
+           OCertSignable (..))
 import Cardano.Logging qualified as Logging
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type as SigSubmission hiding
@@ -139,30 +142,43 @@ deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
 
 instance Crypto crypto
       => ToJSON (SigRaw crypto) where
-  -- TODO: it is too verbose, we need verbosity levels for these JSON fields
   toJSON SigRaw { sigRawId
-             {- , sigRawBody -}
                 , sigRawKESPeriod
                 , sigRawExpiresAt
-             {- , sigRawKESSignature
-                , sigRawOpCertificate
-                , sigRawColdKey -}
                 } =
     object [ "id"            .= sigRawId
-        {- , "body"          .= show (getSigBody sigRawBody) -}
            , "kesPeriod"     .= unKESPeriod sigRawKESPeriod
            , "expiresAt"     .= show sigRawExpiresAt
-        {- , "kesSignature"  .= show (getSigKESSignature sigRawKESSignature)
+           ]
+
+newtype Verbose a = Verbose { unVerbose :: a }
+
+instance Crypto crypto
+      => ToJSON (Verbose (SigRaw crypto)) where
+  toJSON Verbose { unVerbose =
+           SigRaw { sigRawId
+                  , sigRawBody
+                  , sigRawKESPeriod
+                  , sigRawExpiresAt
+                  , sigRawKESSignature
+                  , sigRawOpCertificate
+                  , sigRawColdKey
+                  }
+         } =
+
+    object [ "id"            .= sigRawId
+           , "body"          .= show (getSigBody sigRawBody)
+           , "kesPeriod"     .= unKESPeriod sigRawKESPeriod
+           , "expiresAt"     .= show sigRawExpiresAt
+           , "kesSignature"  .= show (getSigKESSignature sigRawKESSignature)
 
            , "opCertificate" .= show (getSignableRepresentation signable)
-           , "coldKey"       .= show (getSigColdKey sigRawColdKey) -}
+           , "coldKey"       .= show (getSigColdKey sigRawColdKey)
            ]
-        {-
         where
           ocert    = getSigOpCertificate sigRawOpCertificate
           signable :: OCertSignable crypto
           signable = OCertSignable (ocertVkHot ocert) (ocertN ocert) (ocertKESPeriod ocert)
-        -}
 
 data SigRawWithSignedBytes crypto = SigRawWithSignedBytes {
     sigRawSignedBytes :: LBS.ByteString,
@@ -186,6 +202,10 @@ instance Crypto crypto
       => ToJSON (SigRawWithSignedBytes crypto) where
   toJSON SigRawWithSignedBytes {sigRaw} = toJSON sigRaw
 
+instance Crypto crypto
+      => ToJSON (Verbose (SigRawWithSignedBytes crypto)) where
+  toJSON (Verbose SigRawWithSignedBytes {sigRaw}) = toJSON (Verbose sigRaw)
+
 
 data Sig crypto = SigWithBytes {
     sigRawBytes           :: LBS.ByteString,
@@ -196,7 +216,9 @@ data Sig crypto = SigWithBytes {
 
 -- TODO: this show instance is too minimal.  Proper `Show` instance is useful
 -- in `QuickCheck` tests.  This minimal instance is for example
--- useful in `TraceTxLogic` tracer..
+-- useful in `TraceTxLogic` tracer.  We should move the `Verbose` wrapper to
+-- `ouroboros-network` and use it in the `LogFormatting TraceTxLogic` instance.
+--
 --
 instance Show (Sig crypto) where
   show Sig { sigId, sigKESPeriod, sigExpiresAt } =
@@ -219,6 +241,10 @@ deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
 instance Crypto crypto
       => ToJSON (Sig crypto) where
   toJSON SigWithBytes {sigRawWithSignedBytes} = toJSON sigRawWithSignedBytes
+
+instance Crypto crypto
+      => ToJSON (Verbose (Sig crypto)) where
+  toJSON (Verbose SigWithBytes { sigRawWithSignedBytes}) = toJSON (Verbose sigRawWithSignedBytes)
 
 -- | A convenient bidirectional pattern synonym for the `Sig` type.
 --
