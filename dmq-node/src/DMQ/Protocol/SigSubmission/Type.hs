@@ -6,13 +6,13 @@
 {-# LANGUAGE PatternSynonyms      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
+{-# LANGUAGE TypeData             #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module DMQ.Protocol.SigSubmission.Type
   ( -- * Data types
-    SigHash (..)
-  , SigId (..)
+    SigId (..)
   , SigBody (..)
   , SigKESSignature (..)
   , SigOpCertificate (..)
@@ -37,18 +37,17 @@ module DMQ.Protocol.SigSubmission.Type
 import Control.Exception (Exception (..))
 import Data.Aeson
 import Data.ByteString (ByteString)
-import Data.ByteString.Base16 as BS.Base16
 import Data.ByteString.Base16.Lazy as LBS.Base16
 import Data.ByteString.Lazy qualified as LBS
 import Data.ByteString.Lazy.Char8 qualified as LBS.Char8
 import Data.Text (Text)
-import Data.Text qualified as Text
-import Data.Text.Encoding qualified as Text
 import Data.Time.Clock.POSIX (POSIXTime)
 import Data.Typeable
 import Data.Word (Word64)
 
 import Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm, VerKeyDSIGN)
+import Cardano.Crypto.Hash.Blake2b (Blake2b_256)
+import Cardano.Crypto.Hash.Class (Hash)
 import Cardano.Crypto.KES.Class (KESAlgorithm (..))
 import Cardano.Crypto.Util (SignableRepresentation (..))
 import Cardano.KESAgent.KES.Crypto as KES
@@ -62,20 +61,13 @@ import Ouroboros.Network.Protocol.TxSubmission2.Type as TxSubmission2
 import Ouroboros.Network.Util.ShowProxy
 
 
-newtype SigHash = SigHash { getSigHash :: ByteString }
-  deriving stock (Eq, Ord)
+type data SigPayload
 
-instance Show SigHash where
-  -- show first 10 bytes in hex
-  show (SigHash bs) = take 20 . Text.unpack . Text.decodeUtf8Lenient . BS.Base16.encode $ bs
-
-newtype SigId = SigId { getSigId :: SigHash }
+newtype SigId = SigId { getSigId :: Hash Blake2b_256 SigPayload  }
   deriving stock (Show, Eq, Ord)
 
 instance ToJSON SigId where
-  toJSON (SigId (SigHash bs)) =
-    -- show first 10 bytes in hex
-    String (Text.take 20 . Text.decodeUtf8Lenient . BS.Base16.encode $ bs)
+  toJSON (SigId sigId) = toJSON sigId
 
 instance ShowProxy SigId where
 
@@ -222,7 +214,7 @@ data Sig crypto = SigWithBytes {
 --
 instance Show (Sig crypto) where
   show Sig { sigId, sigKESPeriod, sigExpiresAt } =
-    "Sig { sigId = \"" ++ show (getSigId sigId) ++ "\""
+    "Sig { sigId = " ++ show (getSigId sigId)
     ++ " , sigKESPeriod = " ++ show (unKESPeriod sigKESPeriod)
     ++ " , sigExpiresAt = " ++ show sigExpiresAt
     ++ " }"
@@ -322,7 +314,8 @@ type SigSubmission crypto = TxSubmission2.TxSubmission2 SigId (Sig crypto)
 
 
 data SigValidationError =
-    InvalidKESSignature KESPeriod KESPeriod String
+    InvalidSigId
+  | InvalidKESSignature KESPeriod KESPeriod String
   | InvalidSignatureOCERT
       !Word64    -- OCert counter
       !KESPeriod -- OCert KES period

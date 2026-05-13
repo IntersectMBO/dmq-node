@@ -11,7 +11,7 @@ messagePayload = [
   , expiresAt
 ]
 
-messageId    = bstr
+messageId    = bstr .size 32
 messageBody  = bstr
 messageSize  = word32
 kesSignature = bstr .size 448

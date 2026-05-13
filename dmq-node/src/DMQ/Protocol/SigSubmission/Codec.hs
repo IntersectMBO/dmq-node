@@ -22,12 +22,15 @@ module DMQ.Protocol.SigSubmission.Codec
 import Control.Monad (when)
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadTime.SI
-import Data.ByteString.Lazy (ByteString)
+import Data.ByteString.Lazy as BS.Lazy
+import Data.ByteString.Short qualified as BS.Short
 import Text.Printf
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
+
+import Cardano.Crypto.Hash.Class (hashFromBytes, hashToBytesShort)
 
 import Network.TypedProtocol.Codec.CBOR
 
@@ -91,10 +94,14 @@ byteLimitsSigSubmission = ProtocolSizeLimits stateToLimit
 
 
 encodeSigId :: SigId -> CBOR.Encoding
-encodeSigId SigId { getSigId } = CBOR.encodeBytes (getSigHash getSigId)
+encodeSigId SigId { getSigId } = CBOR.encodeBytes (BS.Short.fromShort (hashToBytesShort getSigId))
 
 decodeSigId :: forall s. CBOR.Decoder s SigId
-decodeSigId = SigId . SigHash <$> CBOR.decodeBytes
+decodeSigId = do
+  mbHash <- hashFromBytes <$> CBOR.decodeBytes
+  case mbHash of
+    Nothing -> fail "decodeSigId: expected 32 bytes"
+    Just hs -> pure (SigId hs)
 
 
 -- | We follow the same encoding as in `cardano-ledger` for `OCert`.

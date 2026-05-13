@@ -32,6 +32,7 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.ST (runST)
 import Data.Bifunctor (second)
 import Data.ByteString (ByteString)
+import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BL
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map qualified as Map
@@ -47,6 +48,9 @@ import Network.TypedProtocol.Codec.Properties hiding (prop_codec)
 import Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm, SignKeyDSIGN,
            deriveVerKeyDSIGN, encodeVerKeyDSIGN)
 import Cardano.Crypto.DSIGN.Class qualified as DSIGN
+import Cardano.Crypto.Hash.Blake2b (Blake2b_256)
+import Cardano.Crypto.Hash.Class (Hash, castHash, hashFromBytes, hashSize,
+           hashWith)
 import Cardano.Crypto.KES.Class (KESAlgorithm (..), VerKeyKES, encodeSigKES)
 import Cardano.Crypto.KES.Class qualified as KES
 import Cardano.Crypto.PinnedSizedBytes (PinnedSizedBytes, psbToByteString)
@@ -136,9 +140,18 @@ tests =
       ]
     ]
 
-instance Arbitrary SigHash where
-  arbitrary = SigHash <$> arbitrary
-  shrink = map SigHash . shrink . getSigHash
+instance Arbitrary (Hash Blake2b_256 a) where
+  arbitrary = do
+      bs <- BS.take size <$> arbitrary `suchThat` (\bs -> BS.length bs >= size)
+      pure $ case hashFromBytes bs of
+        Just a  -> a
+        Nothing -> error "Arbitrary (Hash Blake2b_256): unexpected error"
+    where
+      size :: Int
+      size = fromIntegral $ hashSize (Proxy @Blake2b_256)
+
+  -- there's no need to shrink hashes
+  shrink _ = []
 
 instance Arbitrary SigId where
   arbitrary = SigId <$> arbitrary
@@ -348,7 +361,6 @@ instance ( Crypto crypto
          )
       => Arbitrary (WithConstrKES size kesCrypto (SigRawWithSignedBytes crypto)) where
   arbitrary = do
-    sigRawId <- arbitrary
     sigRawExpiresAt <- arbitrary
     let maxKESOffset :: Word
         maxKESOffset = totalPeriodsKES (Proxy :: Proxy kesCrypto)
@@ -371,7 +383,7 @@ instance ( Crypto crypto
                                       + kesOffset
 
           sigRaw = SigRaw {
-              sigRawId,
+              sigRawId = undefined, -- to be filled below
               sigRawBody,
               sigRawKESPeriod,
               sigRawOpCertificate,
@@ -385,13 +397,15 @@ instance ( Crypto crypto
       mbSnKESKey <- KES.updateKESTo () sigRawKESPeriod ocert (KES.SignKeyWithPeriodKES snKESKey 0)
       case mbSnKESKey of
         Just (KES.SignKeyWithPeriodKES snKESKey' _) -> do
+          let sigRawId = SigId (castHash $ hashWith id signedBytes)
           -- signed bytes with the snKESKey'
           sigRawKESSignature
              <- SigKESSignature
             <$> KES.signKES () kesOffset signedBytes snKESKey'
           return SigRawWithSignedBytes {
               sigRawSignedBytes = BL.fromStrict signedBytes,
-              sigRaw = sigRaw { sigRawKESSignature }
+              sigRaw = sigRaw { sigRawId,
+                                sigRawKESSignature }
             }
         Nothing ->
           error $ "arbitrary SigRawWithSignedBytes: could not evolve KES key to the target period by KES offset: "

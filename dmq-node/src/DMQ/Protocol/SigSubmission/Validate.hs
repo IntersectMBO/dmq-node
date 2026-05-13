@@ -1,7 +1,6 @@
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiWayIf        #-}
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE PatternSynonyms   #-}
 {-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE TypeFamilies      #-}
@@ -33,6 +32,7 @@ import Data.Maybe (fromJust, isNothing)
 import Data.Typeable
 
 import Cardano.Crypto.DSIGN.Class qualified as DSIGN
+import Cardano.Crypto.Hash.Class (castHash, hashWith)
 import Cardano.Crypto.KES.Class (KESAlgorithm (..))
 import Cardano.KESAgent.KES.Crypto as KES
 import Cardano.KESAgent.KES.OCert (OCert (..), OCertSignable, validateOCert)
@@ -57,6 +57,13 @@ pattern ZeroSetSnapshot :: StakeSnapshot
 pattern ZeroSetSnapshot <- (Ledger.isZero . ssSetPool -> True)
 
 {-# COMPLETE NotZeroSetSnapshot, NotZeroMarkSnapshot, ZeroSetSnapshot #-}
+
+
+validateSigId :: Sig crypto -> Bool
+validateSigId Sig { sigId = SigId hash, sigSignedBytes } =
+  hash
+  ==
+  castHash (hashWith id (LBS.toStrict sigSignedBytes))
 
 
 validateSig :: forall crypto.
@@ -95,6 +102,11 @@ validateSig now sigs ctx0 =
                        sigColdKey = SigColdKey coldKey,
                        sigKESSignature = SigKESSignature kesSig
                      } = do
+      -- TODO: if new cborg version is released, validation of SigId should be
+      -- moved to the decoder, right now the decoder only verifies that we
+      -- received the right amount of bytes.
+      validateSigId sig ?! InvalidSigId
+
       ctx@PoolValidationCtx { vctxEpoch, vctxStakeMap, vctxOcertMap } <- State.get
 
       --

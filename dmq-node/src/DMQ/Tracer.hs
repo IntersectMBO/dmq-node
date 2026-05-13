@@ -941,6 +941,7 @@ instance Crypto crypto
         mconcat [ "kind" .= String "TraceSigSubmissionOutboundSendMsgReplySigs"
                 , "sigs" .= sigs
                 ]
+
 instance Logging.MetaTrace (SigSubV2.TraceSigSubmissionOutbound SigId (Sig crypto)) where
   namespaceFor SigSubV2.TraceSigSubmissionOutboundRecvMsgRequestSigs {} = Logging.Namespace [] ["TraceSigSubmissionOutboundRecvMsgRequestSigs"]
   namespaceFor SigSubV2.TraceSigSubmissionOutboundSendMsgReplySigs {} = Logging.Namespace [] ["TraceSigSubmissionOutboundSendMsgReplySigs"]
