@@ -379,7 +379,7 @@ instance ( Crypto crypto
               sigRawExpiresAt,
               sigRawKESSignature = undefined -- to be filled below
           }
-          signedBytes = CBOR.toStrictByteString (encodeSigRaw' sigRaw)
+          signedBytes = CBOR.toStrictByteString (encodeSigPayload sigRaw)
 
       -- evolve the key to the target period
       mbSnKESKey <- KES.updateKESTo () sigRawKESPeriod ocert (KES.SignKeyWithPeriodKES snKESKey 0)
@@ -454,7 +454,7 @@ shrinkSigRawWithSignedBytesFn SigRawWithSignedBytes { sigRaw } =
   [ SigRawWithSignedBytes { sigRaw = sigRaw',
                             sigRawSignedBytes = sigRawSignedBytes' }
   | sigRaw' <- shrinkSigRawFn sigRaw
-  , let sigRawSignedBytes' = CBOR.toLazyByteString (encodeSigRaw' sigRaw')
+  , let sigRawSignedBytes' = CBOR.toLazyByteString (encodeSigPayload sigRaw')
   ]
 
 
@@ -500,17 +500,14 @@ mkSig sigRawWithSignedBytes@SigRawWithSignedBytes { sigRaw } =
     sigRawBytes = CBOR.toLazyByteString (encodeSigRaw  sigRaw)
 
 
--- encode only signed part
-encodeSigRaw' :: SigRaw crypto
-              -> CBOR.Encoding
-encodeSigRaw' SigRaw {
-    sigRawId,
+-- encode the payload
+encodeSigPayload :: SigRaw crypto -> CBOR.Encoding
+encodeSigPayload SigRaw {
     sigRawBody,
     sigRawKESPeriod,
     sigRawExpiresAt
   }
-  =  CBOR.encodeListLen 4
-  <> encodeSigId sigRawId
+  =  CBOR.encodeListLen 3
   <> CBOR.encodeBytes (getSigBody sigRawBody)
   <> CBOR.encodeWord (unKESPeriod sigRawKESPeriod)
   <> CBOR.encodeWord32 (floor sigRawExpiresAt)
@@ -519,9 +516,10 @@ encodeSigRaw' SigRaw {
 encodeSigRaw :: Crypto crypto
              => SigRaw crypto
              -> CBOR.Encoding
-encodeSigRaw sigRaw@SigRaw { sigRawKESSignature, sigRawOpCertificate, sigRawColdKey } =
-     CBOR.encodeListLen 4
-  <> encodeSigRaw' sigRaw
+encodeSigRaw sigRaw@SigRaw { sigRawId, sigRawKESSignature, sigRawOpCertificate, sigRawColdKey } =
+     CBOR.encodeListLen 5
+  <> encodeSigId sigRawId
+  <> encodeSigPayload sigRaw
   <> encodeSigKES (getSigKESSignature sigRawKESSignature)
   <> encodeSigOpCertificate sigRawOpCertificate
   <> encodeVerKeyDSIGN (getSigColdKey sigRawColdKey)
@@ -672,7 +670,7 @@ prop_codec_ocert_standardcrypto = prop_codec_ocert . getBlind
 -- Verify `Sig` encoding/decoding roundtrip:
 -- * `SigRaw` is preserved by encoding/decoding.
 -- * bytes match the encoding of `encodeSig`.
--- * signed bytes match the encoding of `encodeSigRaw'`.
+-- * signed bytes match the encoding of `encodeSigPayload`.
 prop_codec_sig
   :: forall crypto. Crypto crypto
   => WithConstrKES (SeedSizeKES (KES crypto)) (KES crypto) (Sig crypto)

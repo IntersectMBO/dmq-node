@@ -149,11 +149,12 @@ decodeSig :: forall crypto s.
           => CBOR.Decoder s (ByteString -> SigRawWithSignedBytes crypto)
 decodeSig = do
     a <- CBOR.decodeListLen
-    when (a /= 4) $ fail (printf "decodeSig: unexpected number of parameters %d for Sig" a)
+    when (a /= 5) $ fail (printf "decodeSig: unexpected number of parameters %d for Sig" a)
+    sigRawId <- decodeSigId
 
     -- start of signed data
     startOffset <- CBOR.peekByteOffset
-    (sigRawId, sigRawBody, sigRawKESPeriod, sigRawExpiresAt)
+    (sigRawBody, sigRawKESPeriod, sigRawExpiresAt)
       <- decodePayload
     endOffset <- CBOR.peekByteOffset
     -- end of signed data
@@ -175,14 +176,13 @@ decodeSig = do
         }
       }
   where
-    decodePayload :: CBOR.Decoder s (SigId, SigBody, KESPeriod, POSIXTime)
+    decodePayload :: CBOR.Decoder s (SigBody, KESPeriod, POSIXTime)
     decodePayload = do
       a <- CBOR.decodeListLen
-      when (a /= 4) $ fail (printf "decodeSig: unexpected number of parameters %d for Sig's payload" a)
-      (,,,) <$> decodeSigId
-            <*> (SigBody <$> CBOR.decodeBytes)
-            <*> (KESPeriod <$> CBOR.decodeWord)
-            <*> (realToFrac <$> CBOR.decodeWord32)
+      when (a /= 3) $ fail (printf "decodeSig: unexpected number of parameters %d for Sig's payload" a)
+      (,,) <$> (SigBody <$> CBOR.decodeBytes)
+           <*> (KESPeriod <$> CBOR.decodeWord)
+           <*> (realToFrac <$> CBOR.decodeWord32)
 
 
 

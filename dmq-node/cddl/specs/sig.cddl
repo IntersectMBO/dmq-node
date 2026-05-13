@@ -1,12 +1,12 @@
 message = [
-    messagePayload
+    messageId
+  , messagePayload
   , kesSignature
   , operationalCertificate
   , coldVerificationKey
 ]
 messagePayload = [
-    messageId
-  , messageBody
+    messageBody
   , kesPeriod
   , expiresAt
 ]
