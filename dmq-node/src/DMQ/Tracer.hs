@@ -98,7 +98,7 @@ data DMQTracers crypto ntnAddr ntcAddr m = DMQTracers {
     localMsgSubmissionProtocolTracer
       :: Tracer m (Mx.WithBearer (ConnectionId ntcAddr) (TraceSendRecv (LocalMsgSubmission (Sig crypto)))),
     localMsgSubmissionServerTracer
-      ::  Tracer m (Mx.WithBearer (ConnectionId ntcAddr) (TraceLocalMsgSubmission (Sig crypto) SigId)),
+      ::  Tracer m (Mx.WithBearer (ConnectionId ntcAddr) (TraceLocalMsgSubmission SigId)),
     localMsgNotificationProtocolTracer
       :: Tracer m (Mx.WithBearer (ConnectionId ntcAddr) (TraceSendRecv (LocalMsgNotification (Sig crypto)))),
     localMsgNotificationServerTracer
