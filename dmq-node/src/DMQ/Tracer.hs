@@ -689,10 +689,11 @@ instance Crypto crypto
       [ "kind" .= String "MsgRequestSigIds"
       , "agency" .= String (Text.pack $ show stok)
       ]
-  forMachine _dtal (AnyMessageAndAgency stok (SigSubV2.MsgReplySigIds _)) =
+  forMachine _dtal (AnyMessageAndAgency stok (SigSubV2.MsgReplySigIds sigs)) =
     mconcat
       [ "kind" .= String "MsgReplySigIds"
       , "agency" .= String (Text.pack $ show stok)
+      , "sigds" .= Foldable.toList sigs
       ]
   forMachine _dtal (AnyMessageAndAgency stok SigSubV2.MsgReplyNoSigIds) =
     mconcat
@@ -703,7 +704,7 @@ instance Crypto crypto
     mconcat
       [ "kind" .= String "MsgRequestSigs"
       , "agency" .= String (Text.pack $ show stok)
-      , "sigids" .= String (Text.pack $ show sigids)
+      , "sigids" .= sigids
       ]
   forMachine dtal (AnyMessageAndAgency stok (SigSubV2.MsgReplySigs sigs)) =
     case dtal of
