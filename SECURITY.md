@@ -2,7 +2,7 @@
 
 ## Introduction
 
-The Cardano open source project (dmq-node) is committed to ensuring the security of
+The Cardano open source project `dmq-node` is committed to ensuring the security of
 its software and the privacy of its users. We value the contributions
 of the security community in helping us identify and address
 vulnerabilities in our code. This Security Vulnerability Disclosure
@@ -13,17 +13,16 @@ how we will respond to and remediate such reports.
 
 ### Reporting a Vulnerability
 
-If you discover a security vulnerability in xxxx, we encourage you to
-responsibly disclose it to us. To report a vulnerability, please use
-the [private reporting form on
-GitHub](https://github.com/tbc)
-to draft a new _Security advisory_.
+If you discover a security vulnerability in `dmq-node`, we encourage you to
+responsibly disclose it to us. To report a vulnerability, please use the
+[private reporting form on GitHub][security-form] to draft a new _Security
+advisory_.
 
 Please include as much details as needed to clearly qualify the issue:
 
 - A description of the vulnerability and its potential impact.
 - Steps to reproduce the vulnerability.
-- The version of `xxxx` package where the vulnerability exists.
+- The version of `dmq-node` package where the vulnerability exists.
 - Any relevant proof-of-concept or exploit code (if applicable).
 
 ### Processing Vulnerability
@@ -90,13 +89,14 @@ report security vulnerabilities to us.
 ## Contact Information
 
 To report a security vulnerability, please use [GitHub
-form]((add project github form for your project)). Should you experience any issues reporting via GitHub or have other questions, Please contact [Security](security@intersectmbo.org).
+form][security-form]. Should you experience any issues reporting via GitHub or
+have other questions, Please contact [Security](security@intersectmbo.org).
 
 ## Revision of Policy
 
 This Security Vulnerability Disclosure Policy may be updated or
 revised as necessary. Please check the latest version of this policy
-on the [ob-network-dmq-node](https://github.com/IntersectMBO/ob-network-dmq-node).
+on the [dmq-node](https://github.com/IntersectMBO/dmq-node).
 
 ## Conclusion
 
@@ -105,3 +105,5 @@ community in helping us maintain the security of our software while
 upholding the highest standards of privacy. Together, we can work to
 identify and address vulnerabilities, ensuring a safer and more secure
 experience for all users.
+
+[security-form]: https://github.com/intersectmbo/dmq-node/security/advisories/new
