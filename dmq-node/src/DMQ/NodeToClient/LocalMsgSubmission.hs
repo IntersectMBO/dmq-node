@@ -9,7 +9,7 @@ module DMQ.NodeToClient.LocalMsgSubmission where
 
 import Control.Monad.Class.MonadThrow
 import "contra-tracer" Control.Tracer (Tracer, traceWith)
-import Data.Aeson (ToJSON (..), object, (.=))
+import Data.Aeson ((.=))
 import Data.Aeson qualified as Aeson
 import Data.Typeable
 
@@ -105,23 +105,3 @@ deriving instance Show msgid
 
 instance (Typeable msgid, Typeable msg, Show msgid)
   => Exception (MsgSubmissionServerException msgid msg) where
-
-
-instance ToJSON msgid
-      => ToJSON (TraceLocalMsgSubmission msgid) where
-  toJSON (TraceReceivedMsg msgid) =
-    -- TODO: once we have verbosity levels, we could include the full tx, for
-    -- now one can use `TraceSendRecv` tracer for the mini-protocol to see full
-    -- msgs.
-    object [ "kind" .= Aeson.String "TraceReceivedMsg"
-           , "sigId" .= msgid
-           ]
-  toJSON (TraceSubmitFailure msgid reject) =
-    object [ "kind" .= Aeson.String "TraceSubmitFailure"
-           , "sigId" .= msgid
-           , "reason" .= reject
-           ]
-  toJSON (TraceSubmitAccept msgid) =
-    object [ "kind" .= Aeson.String "TraceSubmitAccept"
-           , "sigId" .= msgid
-           ]
