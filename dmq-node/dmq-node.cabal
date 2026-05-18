@@ -64,7 +64,8 @@ library
     DMQ.Diffusion.Arguments
     DMQ.Diffusion.NodeKernel
     DMQ.Diffusion.NodeKernel.Types
-    DMQ.Diffusion.PeerSelection
+    DMQ.Diffusion.PeerSelection.PeerMetric
+    DMQ.Diffusion.PeerSelectionPolicy
     DMQ.Handlers.TopLevel
     DMQ.NodeToClient
     DMQ.NodeToClient.LocalMsgNotification
@@ -131,6 +132,7 @@ library
     optparse-applicative >=0.18 && <0.20,
     ouroboros-consensus:{ouroboros-consensus, cardano, diffusion},
     ouroboros-network:{ouroboros-network, api, framework, framework-tracing, orphan-instances, protocols, tracing} ^>=1.1.0.0,
+    psqueues,
     quiet,
     random ^>=1.3,
     singletons,
@@ -192,6 +194,7 @@ test-suite dmq-tests
     DMQ.Protocol.SigSubmissionV2.Test
     Test.DMQ.NodeToClient
     Test.DMQ.NodeToNode
+    Test.DMQ.PeerSelection.PeerMetric
     Test.DMQ.SigSubmission.App
     Test.DMQ.SigSubmission.Types
 
@@ -215,6 +218,7 @@ test-suite dmq-tests
     io-sim,
     kes-agent-crypto,
     ouroboros-network:{ouroboros-network, api, framework, ouroboros-network-tests-lib, protocols, protocols-tests-lib, tests-lib},
+    psqueues,
     quickcheck-instances,
     random,
     serialise,

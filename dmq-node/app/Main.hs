@@ -46,8 +46,8 @@ import DMQ.Configuration.CLIOptions (parseCLIOptions)
 import DMQ.Configuration.Topology (readTopologyFile)
 import DMQ.Diffusion.Applications (diffusionApplications)
 import DMQ.Diffusion.Arguments
-import DMQ.Diffusion.NodeKernel
-import DMQ.Diffusion.PeerSelection (policy)
+import DMQ.Diffusion.NodeKernel as NodeKernel
+import DMQ.Diffusion.PeerSelectionPolicy (policy)
 import DMQ.Handlers.TopLevel (toplevelExceptionHandler)
 import DMQ.NodeToClient qualified as NtC
 import DMQ.NodeToClient.LocalStateQueryClient
@@ -247,7 +247,7 @@ runDMQ commandLineConfig = do
                                     dmqLimitsAndTimeouts
                                     dmqNtNApps
                                     dmqNtCApps
-                                    (policy policyRngVar)
+                                    (policy policyRngVar nodeKernel.peerMetric)
 
         Diffusion.run dmqDiffusionArguments
                       dmqDiffusionTracers

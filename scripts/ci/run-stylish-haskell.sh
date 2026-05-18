@@ -2,6 +2,9 @@
 
 set -euo pipefail
 
+# First, try to find the 'fd' command
+FD="$(which fdfind 2>/dev/null || which fd 2>/dev/null)"
+
 function usage {
   echo "Usage $(basename "$0") [-ch]"
   echo "Check files with 'stylish-haskell'; by default check all files."
@@ -32,7 +35,7 @@ while getopts ${optstring} arg; do
       PATHS=$(git show --pretty='' --name-only HEAD)
       for path in $PATHS; do
         echo $path
-        fd -e hs --ignore-file ./scripts/ci/check-stylish-ignore --full-path $path -X stylish-haskell $STYLISH_HASKELL_ARGS
+        $FD -e hs --ignore-file ./scripts/ci/check-stylish-ignore --full-path $path -X stylish-haskell $STYLISH_HASKELL_ARGS
       done
       if [ $USE_GIT == 1 ]; then
         git --no-pager diff --exit-code
@@ -44,7 +47,7 @@ while getopts ${optstring} arg; do
       for path in $PATHS; do
         if [ "${path##*.}" == "hs" ]; then
           echo $path
-          fd -e hs --ignore-file ./scripts/ci/check-stylish-ignore --full-path $path -X stylish-haskell $STYLISH_HASKELL_ARGS
+          $FD -e hs --ignore-file ./scripts/ci/check-stylish-ignore --full-path $path -X stylish-haskell $STYLISH_HASKELL_ARGS
         fi
       done
       if [ $USE_GIT == 1 ]; then
@@ -62,7 +65,7 @@ done
 # TODO CPP pragmas in export lists are not supported by stylish-haskell
 FD_OPTS="-e hs --ignore-file ./scripts/ci/check-stylish-ignore -X stylish-haskell $STYLISH_HASKELL_ARGS"
 
-fd . './dmq-node' $FD_OPTS
+$FD . './dmq-node' $FD_OPTS
 
 if [ $USE_GIT == 1 ]; then
 git --no-pager diff --exit-code
