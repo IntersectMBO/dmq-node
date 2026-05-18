@@ -362,8 +362,8 @@ indefiniteListFix term =
 unpackResult :: IO (ExitCode, BL.ByteString, BL.ByteString)
              -> IO (Either String BL.ByteString)
 unpackResult r = r <&> \case
-    (ExitFailure _, _, err) -> (Left $ BL.Char8.unpack err)
-    (ExitSuccess, bytes, _) -> (Right bytes)
+    (ExitFailure _, _, err) -> Left (BL.Char8.unpack err)
+    (ExitSuccess, bytes, _) -> Right bytes
 
 
 withTemporaryFile :: BL.ByteString -> (FilePath -> IO a) -> IO a

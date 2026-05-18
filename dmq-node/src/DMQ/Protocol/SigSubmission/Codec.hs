@@ -22,12 +22,15 @@ module DMQ.Protocol.SigSubmission.Codec
 import Control.Monad (when)
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadTime.SI
-import Data.ByteString.Lazy (ByteString)
+import Data.ByteString.Lazy as BS.Lazy
+import Data.ByteString.Short qualified as BS.Short
 import Text.Printf
 
 import Codec.CBOR.Decoding qualified as CBOR
 import Codec.CBOR.Encoding qualified as CBOR
 import Codec.CBOR.Read qualified as CBOR
+
+import Cardano.Crypto.Hash.Class (hashFromBytes, hashToBytesShort)
 
 import Network.TypedProtocol.Codec.CBOR
 
@@ -91,10 +94,14 @@ byteLimitsSigSubmission = ProtocolSizeLimits stateToLimit
 
 
 encodeSigId :: SigId -> CBOR.Encoding
-encodeSigId SigId { getSigId } = CBOR.encodeBytes (getSigHash getSigId)
+encodeSigId SigId { getSigId } = CBOR.encodeBytes (BS.Short.fromShort (hashToBytesShort getSigId))
 
 decodeSigId :: forall s. CBOR.Decoder s SigId
-decodeSigId = SigId . SigHash <$> CBOR.decodeBytes
+decodeSigId = do
+  mbHash <- hashFromBytes <$> CBOR.decodeBytes
+  case mbHash of
+    Nothing -> fail "decodeSigId: expected 32 bytes"
+    Just hs -> pure (SigId hs)
 
 
 -- | We follow the same encoding as in `cardano-ledger` for `OCert`.
@@ -149,11 +156,12 @@ decodeSig :: forall crypto s.
           => CBOR.Decoder s (ByteString -> SigRawWithSignedBytes crypto)
 decodeSig = do
     a <- CBOR.decodeListLen
-    when (a /= 4) $ fail (printf "decodeSig: unexpected number of parameters %d for Sig" a)
+    when (a /= 5) $ fail (printf "decodeSig: unexpected number of parameters %d for Sig" a)
+    sigRawId <- decodeSigId
 
     -- start of signed data
     startOffset <- CBOR.peekByteOffset
-    (sigRawId, sigRawBody, sigRawKESPeriod, sigRawExpiresAt)
+    (sigRawBody, sigRawKESPeriod, sigRawExpiresAt)
       <- decodePayload
     endOffset <- CBOR.peekByteOffset
     -- end of signed data
@@ -175,14 +183,13 @@ decodeSig = do
         }
       }
   where
-    decodePayload :: CBOR.Decoder s (SigId, SigBody, KESPeriod, POSIXTime)
+    decodePayload :: CBOR.Decoder s (SigBody, KESPeriod, POSIXTime)
     decodePayload = do
       a <- CBOR.decodeListLen
-      when (a /= 4) $ fail (printf "decodeSig: unexpected number of parameters %d for Sig's payload" a)
-      (,,,) <$> decodeSigId
-            <*> (SigBody <$> CBOR.decodeBytes)
-            <*> (KESPeriod <$> CBOR.decodeWord)
-            <*> (realToFrac <$> CBOR.decodeWord32)
+      when (a /= 3) $ fail (printf "decodeSig: unexpected number of parameters %d for Sig's payload" a)
+      (,,) <$> (SigBody <$> CBOR.decodeBytes)
+           <*> (KESPeriod <$> CBOR.decodeWord)
+           <*> (realToFrac <$> CBOR.decodeWord32)
 
 
 

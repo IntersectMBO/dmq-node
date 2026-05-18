@@ -1,17 +1,17 @@
 message = [
-    messagePayload
+    messageId
+  , messagePayload
   , kesSignature
   , operationalCertificate
   , coldVerificationKey
 ]
 messagePayload = [
-    messageId
-  , messageBody
+    messageBody
   , kesPeriod
   , expiresAt
 ]
 
-messageId    = bstr
+messageId    = bstr .size 32
 messageBody  = bstr
 messageSize  = word32
 kesSignature = bstr .size 448

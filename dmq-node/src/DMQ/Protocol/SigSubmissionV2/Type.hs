@@ -36,17 +36,14 @@ module DMQ.Protocol.SigSubmissionV2.Type
   ) where
 
 import Control.DeepSeq (NFData (..))
-import Data.Aeson (KeyValue ((.=)), ToJSON (toJSON), Value (String), object)
 import Data.Kind (Type)
 import Data.Monoid (Sum (..))
 import Data.Singletons
-import Data.Text (pack)
 import Data.Word (Word16)
 import GHC.Generics (Generic)
 import NoThunks.Class (NoThunks (..))
 import Quiet (Quiet (..))
 
-import Network.TypedProtocol.Codec (AnyMessage (AnyMessageAndAgency))
 import Network.TypedProtocol.Core
 
 import DMQ.Protocol.SigSubmission.Type as SigSubmission (Sig (..), SigBody (..),
@@ -98,41 +95,6 @@ instance ( ShowProxy sigId
 
 instance ShowProxy (StIdle :: SigSubmissionV2 sigId sig) where
   showProxy _ = "StIdle"
-instance (Show sigId, Show sig)
-      => ToJSON (AnyMessage (SigSubmissionV2 sigId sig)) where
-  toJSON (AnyMessageAndAgency stok MsgRequestSigIds{}) =
-    object
-      [ "kind" .= String "MsgRequestSigIds"
-      , "agency" .= String (pack $ show stok)
-      ]
-  toJSON (AnyMessageAndAgency stok (MsgReplySigIds ids)) =
-    object
-      [ "kind" .= String "MsgReplySigIds"
-      , "agency" .= String (pack $ show stok)
-      , "ids" .= String (pack $ show ids)
-      ]
-  toJSON (AnyMessageAndAgency stok MsgReplyNoSigIds) =
-    object
-      [ "kind" .= String "MsgReplyNoSigIds"
-      , "agency" .= String (pack $ show stok)
-      ]
-  toJSON (AnyMessageAndAgency stok (MsgRequestSigs{})) =
-    object
-      [ "kind" .= String "MsgRequestSigs"
-      , "agency" .= String (pack $ show stok)
-      ]
-  toJSON (AnyMessageAndAgency stok (MsgReplySigs sigs)) =
-    object
-      [ "kind" .= String "MsgReplySigs"
-      , "agency" .= String (pack $ show stok)
-      , "sigs" .= String (pack $ show sigs)
-      ]
-  toJSON (AnyMessageAndAgency stok MsgDone) =
-    object
-      [ "kind" .= String "MsgDone"
-      , "agency" .= String (pack $ show stok)
-      ]
-
 
 type SingSigSubmissionV2
   :: SigSubmissionV2 sigId sig

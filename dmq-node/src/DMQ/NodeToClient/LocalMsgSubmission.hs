@@ -3,14 +3,13 @@
 {-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE PackageImports       #-}
 {-# LANGUAGE StandaloneDeriving   #-}
-{-# LANGUAGE TypeApplications     #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module DMQ.NodeToClient.LocalMsgSubmission where
 
 import Control.Monad.Class.MonadThrow
 import "contra-tracer" Control.Tracer (Tracer, traceWith)
-import Data.Aeson (ToJSON (..), object, (.=))
+import Data.Aeson ((.=))
 import Data.Aeson qualified as Aeson
 import Data.Typeable
 
@@ -18,7 +17,7 @@ import Cardano.Logging qualified as Logging
 
 import DMQ.Protocol.LocalMsgSubmission.Server
 import DMQ.Protocol.LocalMsgSubmission.Type
-import DMQ.Protocol.SigSubmission.Type (Sig, SigId)
+import DMQ.Protocol.SigSubmission.Type (SigId)
 
 -- | Local transaction submission server, for adding txs to the 'Mempool'
 --
@@ -27,7 +26,7 @@ localMsgSubmissionServer ::
      Monad m
   => (msg -> msgid)
   -- ^ get message id
-  -> Tracer m (TraceLocalMsgSubmission msg msgid)
+  -> Tracer m (TraceLocalMsgSubmission msgid)
   -> (msg -> m (Either (msgid, SigValidationError) msgid))
   -- ^ add a msg to mempool
   -> m (LocalMsgSubmissionServer msg m ())
@@ -50,7 +49,7 @@ localMsgSubmissionServer getMsgId tracer mempoolAddTxs =
     }
 
 
-data TraceLocalMsgSubmission msg msgid =
+data TraceLocalMsgSubmission msgid =
     TraceReceivedMsg msgid
   -- ^ A signature was received.
   | TraceSubmitFailure msgid SigValidationError
@@ -59,10 +58,10 @@ data TraceLocalMsgSubmission msg msgid =
   -- ^ A signature was validated and accepted into the mempool.
 
 deriving instance
-     (Show msg, Show msgid)
-  => Show (TraceLocalMsgSubmission msg msgid)
+     (Show msgid)
+  => Show (TraceLocalMsgSubmission msgid)
 
-instance Logging.LogFormatting (TraceLocalMsgSubmission (Sig crypto) SigId) where
+instance Logging.LogFormatting (TraceLocalMsgSubmission SigId) where
   forMachine _ (TraceReceivedMsg sigid) =
     mconcat [ "kind" .= Aeson.String "TraceReceivedMsg"
             , "sigid" .= sigid
@@ -77,7 +76,7 @@ instance Logging.LogFormatting (TraceLocalMsgSubmission (Sig crypto) SigId) wher
             , "sigid" .= sigid
             ]
 
-instance Logging.MetaTrace (TraceLocalMsgSubmission (Sig crypto) SigId) where
+instance Logging.MetaTrace (TraceLocalMsgSubmission SigId) where
   namespaceFor TraceReceivedMsg {} = Logging.Namespace [] ["TraceReceivedMsg"]
   namespaceFor TraceSubmitFailure {} = Logging.Namespace [] ["TraceSubmitFailure"]
   namespaceFor TraceSubmitAccept {} = Logging.Namespace [] ["TraceSubmitAccept"]
@@ -106,23 +105,3 @@ deriving instance Show msgid
 
 instance (Typeable msgid, Typeable msg, Show msgid)
   => Exception (MsgSubmissionServerException msgid msg) where
-
-
-instance ToJSON msgid
-      => ToJSON (TraceLocalMsgSubmission msg msgid) where
-  toJSON (TraceReceivedMsg msgid) =
-    -- TODO: once we have verbosity levels, we could include the full tx, for
-    -- now one can use `TraceSendRecv` tracer for the mini-protocol to see full
-    -- msgs.
-    object [ "kind" .= Aeson.String "TraceReceivedMsg"
-           , "sigId" .= msgid
-           ]
-  toJSON (TraceSubmitFailure msgid reject) =
-    object [ "kind" .= Aeson.String "TraceSubmitFailure"
-           , "sigId" .= msgid
-           , "reason" .= reject
-           ]
-  toJSON (TraceSubmitAccept msgid) =
-    object [ "kind" .= Aeson.String "TraceSubmitAccept"
-           , "sigId" .= msgid
-           ]
