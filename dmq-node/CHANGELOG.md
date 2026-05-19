@@ -2,6 +2,38 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-0.5.0.0'></a>
+## 0.5.0.0 -- 2026-05-19
+
+### Breaking
+
+- Using `Hash Blake2b_256` hashing algorithm for computing `SigId`.
+- Changed encoding of `Sig` according to: https://github.com/cardano-foundation/CIPs/pull/1185.
+- Removed `TraceLocalMsgSubmission` `msg` parameter, since it was unused.
+- Removed `ToJSON (TraceLocalMsgSubmission msg)` instance.
+- Removed `ToJSON (AnyMessage SigSubmissionV2)` instance.
+
+### Non-Breaking
+
+- Added `DMQ.Diffusion.PeerSelection.PeerMetric`: peer-scoring metric that
+  tracks how promptly each peer announces signatures, used by peer selection
+  to prefer well-performing peers.
+- Wired the metric into the sig-submission inbound client.
+
+- Validation of `SigId`s is implemented using `Hash Blake2b_256` hashing
+  algorithm.
+- Implemented `DMaximum` verbosity for the following tracers:
+  - `AnyMessage (LocalMsgNotification (Sig crypto))`
+  - `AnyMessage (SigSubmissionV2 SigId (Sig crypto))`
+  - `AnyMessage (TxSubmission2 txid tx)`
+  - `TraceSigSubmissionOutbound SigId (Sig crypto)`
+     - the `TraceSigSubmissionOutboundSendMsgReplySigs` logs `sigs` rather than
+       `sigids` with different fields depending on the verbosity level.
+  in `DMaximum` tracing, all fields of `Sig crypto` are logged.
+- Logging of `AnyMessage (SigSubmissionV2 SigId (Sig crypto))` changed syntax:
+  - log `sigids` of `MsgReplySigIds`
+  - log `sigids` of `MsgRequestSigs` using JSON syntax
+
 <a id='changelog-0.4.2.0'></a>
 ## 0.4.2.0 -- 2026-04-07
 
