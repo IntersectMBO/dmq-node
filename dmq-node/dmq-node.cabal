@@ -131,7 +131,7 @@ library
     nothunks,
     optparse-applicative >=0.18 && <0.20,
     ouroboros-consensus:{ouroboros-consensus, cardano, diffusion},
-    ouroboros-network:{ouroboros-network, api, framework, framework-tracing, orphan-instances, protocols, tracing} ^>=1.1.0.0,
+    ouroboros-network:{ouroboros-network, api, framework, orphan-instances, protocols, tracing} ^>=1.1.0.0,
     psqueues,
     quiet,
     random ^>=1.3,

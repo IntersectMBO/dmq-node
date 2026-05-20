@@ -28,7 +28,7 @@ import Data.Void (Void)
 import System.Random (StdGen)
 import System.Random qualified as Random
 
-import Ouroboros.Network.BlockFetch (newFetchClientRegistry)
+import Ouroboros.Network.KeepAlive (newKeepAliveRegistry)
 import Ouroboros.Network.Magic (NetworkMagic (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
            (makePublicPeerSelectionStateVar)
@@ -56,7 +56,7 @@ newNodeKernel :: forall crypto ntnAddr m.
 newNodeKernel rng = do
   publicPeerSelectionStateVar <- makePublicPeerSelectionStateVar
 
-  fetchClientRegistry <- newFetchClientRegistry
+  keepAliveRegistry <- newKeepAliveRegistry
   peerSharingRegistry <- newPeerSharingRegistry
 
   mempool <- Mempool.empty
@@ -97,7 +97,7 @@ newNodeKernel rng = do
 
   peerMetric <- mkPeerMetric
 
-  pure NodeKernel { fetchClientRegistry
+  pure NodeKernel { keepAliveRegistry
                   , peerSharingRegistry
                   , peerSharingAPI
                   , mempool

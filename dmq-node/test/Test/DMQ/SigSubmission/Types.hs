@@ -71,6 +71,7 @@ sigSubmissionCodec2 =
     codecSigSubmissionV2 CBOR.encodeInt CBOR.decodeInt
                          encodeSig decodeSig
   where
+    encodeSig :: Tx TxId -> CBOR.Encoding
     encodeSig Tx {getTxId, getTxSize, getTxAdvSize, getTxValid} =
          CBOR.encodeListLen 4
       <> CBOR.encodeInt getTxId
@@ -78,12 +79,14 @@ sigSubmissionCodec2 =
       <> CBOR.encodeWord32 (getSizeInBytes getTxAdvSize)
       <> CBOR.encodeBool getTxValid
 
+    decodeSig :: CBOR.Decoder s (Tx TxId)
     decodeSig = do
       _ <- CBOR.decodeListLen
       Tx <$> CBOR.decodeInt
          <*> (SizeInBytes <$> CBOR.decodeWord32)
          <*> (SizeInBytes <$> CBOR.decodeWord32)
          <*> CBOR.decodeBool
+         <*> pure Nothing
 
 
 data SigSubmissionState =

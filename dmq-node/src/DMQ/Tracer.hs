@@ -41,8 +41,6 @@ import Network.Socket (HostName, PortNumber)
 import Network.TypedProtocol.Codec (AnyMessage (..))
 
 import Ouroboros.Network.Tracing ()
-import Ouroboros.Network.Tracing.PeerSelection ()
-import Ouroboros.Network.Tracing.TxSubmission ()
 
 import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.Diffusion qualified as Diffusion
@@ -58,8 +56,6 @@ import Ouroboros.Network.Protocol.PeerSharing.Type qualified as PS
 import Ouroboros.Network.Protocol.TxSubmission2.Type (TxSubmission2)
 import Ouroboros.Network.Protocol.TxSubmission2.Type qualified as STX
 import Ouroboros.Network.Snocket (RemoteAddress)
-import Ouroboros.Network.Tracing.TxSubmission.Inbound ()
-import Ouroboros.Network.Tracing.TxSubmission.Outbound ()
 import Ouroboros.Network.TxSubmission.Inbound.V2 (TraceTxLogic)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
            (TraceTxSubmissionInbound)

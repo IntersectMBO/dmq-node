@@ -33,6 +33,7 @@ import Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import Ouroboros.Network.Magic (NetworkMagic (..))
 import Ouroboros.Network.PeerSelection (PeerSharing (..))
 import Ouroboros.Network.Protocol.Handshake (Accept (..), Handshake (..))
+import Ouroboros.Network.Util (PrettyShow (..))
 
 import Ouroboros.Network.OrphanInstances ()
 
@@ -41,6 +42,8 @@ data NodeToNodeVersion
   = NodeToNodeV_1
   | NodeToNodeV_2
   deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData)
+
+instance PrettyShow NodeToNodeVersion where
 
 instance Aeson.ToJSON NodeToNodeVersion where
   toJSON NodeToNodeV_1 = Aeson.toJSON (1 :: Int)
@@ -75,7 +78,7 @@ data NodeToNodeVersionData = NodeToNodeVersionData
   , query         :: !Bool
   }
   deriving stock    (Show, Eq, Generic)
-  deriving anyclass NFData
+  deriving anyclass (NFData, PrettyShow)
 
 instance Aeson.ToJSON NodeToNodeVersionData where
   toJSON NodeToNodeVersionData {

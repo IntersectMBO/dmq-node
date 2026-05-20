@@ -18,8 +18,8 @@ import System.Random (StdGen)
 import Cardano.Ledger.Api.State.Query qualified as LedgerQuery
 import Cardano.Ledger.Shelley.API qualified as Ledger
 
-import Ouroboros.Network.BlockFetch (FetchClientRegistry)
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
+import Ouroboros.Network.KeepAlive (KeepAliveRegistry)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
            LedgerPeersKind (..))
 import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry)
@@ -32,8 +32,8 @@ import DMQ.Protocol.SigSubmission.Type (Sig, SigId)
 
 data NodeKernel crypto ntnAddr m =
   NodeKernel {
-    -- | The fetch client registry, used for the keep alive clients.
-    fetchClientRegistry :: !(FetchClientRegistry (ConnectionId ntnAddr) () () m)
+    -- | The keep alive registry, used for the keep alive clients.
+    keepAliveRegistry   :: !(KeepAliveRegistry (ConnectionId ntnAddr) m)
 
     -- | Read the current peer sharing registry, used for interacting with
     -- the PeerSharing protocol

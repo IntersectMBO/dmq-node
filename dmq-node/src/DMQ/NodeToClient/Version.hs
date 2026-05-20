@@ -33,11 +33,13 @@ import Ouroboros.Network.Handshake.Acceptable (Acceptable (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import Ouroboros.Network.Magic (NetworkMagic (..))
 import Ouroboros.Network.Protocol.Handshake (Accept (..), Handshake)
+import Ouroboros.Network.Util (PrettyShow (..))
 
 
 data NodeToClientVersion =
   NodeToClientV_1
-  deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData)
+  deriving stock    (Eq, Ord, Enum, Bounded, Show, Generic)
+  deriving anyclass (NFData, PrettyShow)
 
 instance Aeson.ToJSON NodeToClientVersion where
   toJSON NodeToClientV_1 = Aeson.toJSON (1 :: Int)
@@ -84,7 +86,7 @@ data NodeToClientVersionData = NodeToClientVersionData
   , query        :: !Bool
   }
   deriving stock    (Eq, Show, Generic)
-  deriving anyclass NFData
+  deriving anyclass (NFData, PrettyShow)
 
 instance Aeson.ToJSON NodeToClientVersionData where
   toJSON NodeToClientVersionData {
