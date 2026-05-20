@@ -58,10 +58,13 @@ data QueryError = UnsupportedEra
 
 instance Exception QueryError where
 
--- TODO generalize to handle ledger eras other than Conway
--- | connects the dmq node to cardano node via local state query
--- and updates the node kernel with stake pool data necessary to perform message
--- validation
+-- | Connect the dmq node to cardano node via local state query protocol and
+-- update the node kernel with stake pool data necessary to perform mithril
+-- signature validation
+--
+-- NOTE: we are querying using VolatileTip, e.g. for stake snapshot this
+-- means that the mark set should not be trusted as it might be different
+-- on different forks.
 --
 cardanoClient
   :: forall block query point crypto m. (MonadDelay m, MonadSTM m, MonadThrow m, MonadTime m)
@@ -82,8 +85,7 @@ cardanoClient tracer ledgerPeers
   where
     idle mSystemStart = do
       traceWith tracer $ Acquiring mSystemStart
-      -- FIXME: switched to volatiletip for prerelease testing purposes
-      pure $ SendMsgAcquire VolatileTip {-ImmutableTip-} acquire
+      pure $ SendMsgAcquire VolatileTip acquire
       where
         acquire :: ClientStAcquiring block point query m Void
         acquire = ClientStAcquiring {

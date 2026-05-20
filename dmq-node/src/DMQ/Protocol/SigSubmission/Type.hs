@@ -328,7 +328,6 @@ data SigValidationError =
   | PoolNotEligible
   | UnrecognizedPool
   | NotInitialized
-  | ClockSkew
   | SigDuplicate
   | SigExpired
   | SigResultOther Text

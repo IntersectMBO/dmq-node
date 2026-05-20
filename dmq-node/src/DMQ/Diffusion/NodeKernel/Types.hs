@@ -56,6 +56,10 @@ type PoolId = Ledger.KeyHash Ledger.StakePool
 data StakePools m = StakePools {
     -- | contains map of cardano pool stake snapshot obtained
     -- via local state query client
+    --
+    -- NOTE: StakeSnapshot is taken from `VolatileTip`, this means that
+    -- `ssMarkSet` is not safe to be used as we could be on an adversarial fork
+    -- which crossed boundary.
     stakePoolsVar
       :: !(StrictTVar m (Map PoolId LedgerQuery.StakeSnapshot))
     -- | Acquire and update validation context for signature validation
