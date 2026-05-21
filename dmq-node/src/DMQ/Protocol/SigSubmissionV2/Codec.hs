@@ -52,7 +52,7 @@ byteLimitsSigSubmissionV2 = ProtocolSizeLimits stateToLimit
     -- `maxSigsInflight` since the txSubmission logic can download one signature
     -- more that the `maxSigsInflight` limit.
     byteLimit :: Word
-    byteLimit = fromIntegral Policy.maxSigSize * (fromIntegral Policy.maxSigsInflight + 2)
+    byteLimit = fromIntegral Policy.maxSigSize * (fromIntegral Policy.maxSigIdsInflight + 2)
 
     stateToLimit
       :: forall (st :: SigSubmissionV2 sigId sig).

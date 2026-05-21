@@ -85,10 +85,10 @@ byteLimitsSigSubmission :: forall crypto bytes.
 byteLimitsSigSubmission = ProtocolSizeLimits stateToLimit
   where
     -- `(33 + 1) * 2800 = 95200` plus 2800 bytes of overhead.  We add `1` to
-    -- `maxSigsInflight` since the txSubmission logic can download one signature
-    -- more that the `maxSigsInflight` limit.
+    -- `maxSigIdsInflight` since the txSubmission logic can download one signature
+    -- more that the `maxSigIdsInflight` limit.
     byteLimit :: Word
-    byteLimit = fromIntegral Policy.maxSigSize * (fromIntegral Policy.maxSigsInflight + 2)
+    byteLimit = fromIntegral Policy.maxSigSize * (fromIntegral Policy.maxSigIdsInflight + 2)
 
     stateToLimit :: forall (st :: SigSubmission crypto).
                     ActiveState st => StateToken st -> Word
