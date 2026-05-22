@@ -38,6 +38,7 @@ import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map qualified as Map
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Typeable
+import Data.Word (Word32)
 import GHC.TypeNats (KnownNat)
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -354,7 +355,10 @@ instance ( Crypto crypto
          )
       => Arbitrary (WithConstrKES size kesCrypto (SigRawWithSignedBytes crypto)) where
   arbitrary = do
-    sigRawExpiresAt <- arbitrary
+    -- generate via @Word32 values so no negative nor fractional values are
+    -- generated.  The codec is using `floor` function to map `POSIXTime` to
+    -- a `Word32` value.
+    sigRawExpiresAt <- fromIntegral @Word32 <$> arbitrary
     let maxKESOffset :: Word
         maxKESOffset = totalPeriodsKES (Proxy :: Proxy kesCrypto)
     -- offset since `ocertKESPeriod`, so that the signature is still valid
@@ -489,7 +493,7 @@ shrinkSigRawFn sig@SigRaw { sigRawId,
   ]
   ++
   [ sig { sigRawExpiresAt = sigRawExpiresAt' }
-  | sigRawExpiresAt' <- shrink sigRawExpiresAt
+  | sigRawExpiresAt' <- fromIntegral @Word32 <$> shrink (floor sigRawExpiresAt)
   ]
 
 
