@@ -569,7 +569,11 @@ instance ( Crypto crypto
          )
       => Arbitrary (WithConstrKES size kesCrypto (Sig crypto)) where
   arbitrary = fmap mkSig <$> arbitrary
-  shrink = shrinkWithConstr updateSigFn shrinkSigFn
+  -- Context shrinking (changing the KES seed) would regenerate `vnKESKey`
+  -- but `updateSigFn` cannot also regenerate `ocertSigma` (it lacks the cold
+  -- key), so the OCert would be invalid.  Field shrinking via `shrinkSigFn`
+  -- is sufficient here.
+  shrink constr = unsafePerformIO (sequenceWithConstr updateSigFn $ shrinkSigFn <$> constr)
 
 
 instance ( kesCrypto ~ KES crypto
@@ -947,9 +951,6 @@ instance Arbitrary Validity where
 
 
 -- | Check that the KES signature is valid.
---
--- TODO: shrinker of `Sig` has a bug which produces invalid `OCert`s
--- (`validateOCert` with "Validation failed", indicating a wrong signature).
 --
 -- TODO: generate invalid crypto
 --
