@@ -74,11 +74,10 @@ validateSig :: forall crypto.
                , ContextKES (KES crypto) ~ ()
                , Signable (KES crypto) ByteString
                )
-            => UTCTime
-            -> [Sig crypto]
+            => [Sig crypto]
             -> PoolValidationCtx
             -> ([Either (SigId, SigValidationError) (Sig crypto)], PoolValidationCtx)
-validateSig now sigs ctx0 =
+validateSig sigs ctx0@PoolValidationCtx { vctxNow = now } =
     State.runState (traverse (exceptions . validate) sigs) ctx0
   where
     exceptions :: StateT s (Except e) a

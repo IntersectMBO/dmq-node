@@ -62,13 +62,19 @@ data StakePools m = StakePools {
     -- which crossed boundary.
     stakePoolsVar
       :: !(StrictTVar m (Map PoolId LedgerQuery.StakeSnapshot))
+
     -- | Acquire and update validation context for signature validation
+    --
+    -- First argument is the current time inserted into `PoolValidationCtx`,
+    -- other fields are read from share state available in `STM` action.
   , withPoolValidationCtx
-      :: forall a. (PoolValidationCtx -> (a, PoolValidationCtx)) ->  STM m a
+      :: forall a. UTCTime -> (PoolValidationCtx -> (a, PoolValidationCtx)) ->  STM m a
+
      -- | provides only those big peers which provide SRV endpoints
      -- as otherwise those are cardano-nodes
   , ledgerBigPeersVar
       :: !(StrictTVar m (Maybe (LedgerPeerSnapshot BigLedgerPeers)))
+
     -- | all ledger peers, restricted to srv endpoints
   , ledgerPeersVar
       :: !(StrictTMVar m (LedgerPeerSnapshot AllLedgerPeers))
@@ -76,11 +82,13 @@ data StakePools m = StakePools {
 
 data PoolValidationCtx =
   PoolValidationCtx {
-      vctxEpoch    :: !(Maybe UTCTime)
+      vctxNow       :: UTCTime
+      -- ^ current time
+    , vctxEpoch    :: !(Maybe UTCTime)
       -- ^ UTC time of next epoch boundary for handling clock skew
-    , vctxStakeMap :: !(Map PoolId LedgerQuery.StakeSnapshot)
+    , vctxStakeMap  :: !(Map PoolId LedgerQuery.StakeSnapshot)
       -- ^ for signature validation
-    , vctxOcertMap :: !(Map PoolId Word64)
+    , vctxOcertMap  :: !(Map PoolId Word64)
       -- ^ ocert counters to check monotonicity
     }
   deriving Show

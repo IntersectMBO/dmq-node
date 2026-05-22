@@ -193,7 +193,7 @@ runDMQ commandLineConfig = do
                     Mempool.getWriter SigDuplicate
                                       sigId
                                       (\now sigs ->
-                                        withPoolValidationCtx (stakePools nodeKernel) (validateSig now sigs)
+                                        withPoolValidationCtx (stakePools nodeKernel) now (validateSig sigs)
                                       )
                                       (traverse_ $ \(sigid, reason) -> do
                                         traceWith sigValidationTracer $ InvalidSignature sigid reason
@@ -222,7 +222,7 @@ runDMQ commandLineConfig = do
                     Mempool.getWriter SigDuplicate
                                       sigId
                                       (\now sigs ->
-                                        withPoolValidationCtx (stakePools nodeKernel) (validateSig now sigs)
+                                        withPoolValidationCtx (stakePools nodeKernel) now (validateSig sigs)
                                       )
                                       (traverse_ $ \(sigid, reason) ->
                                          traceWith localSigValidationTracer $ InvalidSignature sigid reason

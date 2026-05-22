@@ -72,11 +72,12 @@ newNodeKernel rng = do
            <*> newEmptyTMVar
 
   let withPoolValidationCtx
-        :: forall a. (PoolValidationCtx -> (a, PoolValidationCtx)) -> STM m a
-      withPoolValidationCtx f = do
-        ctx <- PoolValidationCtx <$> readTVar nextEpochVar
-                                 <*> readTVar stakePoolsVar
-                                 <*> readTVar ocertCountersVar
+        :: forall a. UTCTime -> (PoolValidationCtx -> (a, PoolValidationCtx)) -> STM m a
+      withPoolValidationCtx now f = do
+        ctx <- PoolValidationCtx now
+                <$> readTVar nextEpochVar
+                <*> readTVar stakePoolsVar
+                <*> readTVar ocertCountersVar
         let (a, PoolValidationCtx {vctxOcertMap}) = f ctx
         writeTVar ocertCountersVar vctxOcertMap
         return a
