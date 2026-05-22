@@ -16,10 +16,8 @@ module DMQ.Protocol.SigSubmission.Validate
   , SigValidationException (..)
   , SigValidationError (..)
   , SigValidationTrace (..)
-  , c_MAX_CLOCK_SKEW_SEC
   ) where
 
-import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Except (Except)
 import Control.Monad.Except qualified as Except
 import Control.Monad.State.Strict (State, StateT (..))
@@ -28,7 +26,6 @@ import Control.Monad.State.Strict qualified as State
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Map.Strict qualified as Map
-import Data.Maybe (isNothing)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.Typeable
 
@@ -44,12 +41,9 @@ import Cardano.Ledger.Api.State.Query (StakeSnapshot (ssSetPool))
 import Cardano.Ledger.BaseTypes.NonZero qualified as Ledger
 import Cardano.Ledger.Keys qualified as Ledger
 
-import DMQ.Diffusion.NodeKernel (PoolValidationCtx (..))
+import DMQ.Diffusion.NodeKernel (PoolValidationCtx (..), Readiness (..))
 import DMQ.Protocol.SigSubmission.Type
 
-
-c_MAX_CLOCK_SKEW_SEC :: NominalDiffTime
-c_MAX_CLOCK_SKEW_SEC = 5
 
 pattern NotZeroSetSnapshot :: StakeSnapshot
 pattern NotZeroSetSnapshot <- (Ledger.isZero . ssSetPool -> False)
@@ -111,7 +105,7 @@ validateSig sigs ctx0@PoolValidationCtx { vctxNow = now } =
       -- received the right amount of bytes.
       validateSigId sig ?! InvalidSigId
 
-      ctx@PoolValidationCtx { vctxEpoch, vctxStakeMap, vctxOcertMap } <- State.get
+      ctx@PoolValidationCtx { vctxReadiness, vctxStakeMap, vctxOcertMap } <- State.get
 
       --
       -- verify KES period
@@ -125,10 +119,10 @@ validateSig sigs ctx0@PoolValidationCtx { vctxNow = now } =
       --
 
       case Map.lookup (Ledger.hashKey (Ledger.VKey coldKey)) vctxStakeMap of
-        Nothing | isNothing vctxEpoch
-                  -> left NotInitialized
-                | otherwise
-                  -> left UnrecognizedPool
+        Nothing ->
+          left $ case vctxReadiness of
+            Ready    -> UnrecognizedPool
+            NotReady -> NotInitialized
 
         Just NotZeroSetSnapshot -> return ()
 

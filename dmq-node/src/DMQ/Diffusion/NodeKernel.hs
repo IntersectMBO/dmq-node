@@ -64,8 +64,8 @@ newNodeKernel rng = do
   sigMempoolSem <- newTxMempoolSem
   let (rng', rng'') = Random.splitGen rng
   sigSharedTxStateVar <- newSharedTxStateVar rng'
-  (nextEpochVar, ocertCountersVar, stakePoolsVar, ledgerBigPeersVar, ledgerPeersVar) <- atomically $
-    (,,,,) <$> newTVar Nothing
+  (readinessVar, ocertCountersVar, stakePoolsVar, ledgerBigPeersVar, ledgerPeersVar) <- atomically $
+    (,,,,) <$> newTVar NotReady
            <*> newTVar Map.empty
            <*> newTVar Map.empty
            <*> newTVar Nothing
@@ -75,7 +75,7 @@ newNodeKernel rng = do
         :: forall a. UTCTime -> (PoolValidationCtx -> (a, PoolValidationCtx)) -> STM m a
       withPoolValidationCtx now f = do
         ctx <- PoolValidationCtx now
-                <$> readTVar nextEpochVar
+                <$> readTVar readinessVar
                 <*> readTVar stakePoolsVar
                 <*> readTVar ocertCountersVar
         let (a, PoolValidationCtx {vctxOcertMap}) = f ctx
@@ -105,7 +105,7 @@ newNodeKernel rng = do
                   , sigChannelVar
                   , sigMempoolSem
                   , sigSharedTxStateVar
-                  , nextEpochVar
+                  , readinessVar
                   , stakePools
                   , peerMetric
                   }

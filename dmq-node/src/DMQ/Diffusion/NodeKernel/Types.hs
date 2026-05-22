@@ -3,6 +3,7 @@
 
 module DMQ.Diffusion.NodeKernel.Types
   ( NodeKernel (..)
+  , Readiness (..)
   , PoolId
   , StakePools (..)
   , PoolValidationCtx (..)
@@ -30,6 +31,13 @@ import DMQ.Diffusion.PeerSelection.PeerMetric (PeerMetric)
 import DMQ.Protocol.SigSubmission.Type (Sig, SigId)
 
 
+-- | A signal when a dmq-node becomes ready to validate signatures, e.g. when
+-- local-state query returned necessary context.
+--
+data Readiness = NotReady | Ready
+  deriving Show
+
+
 data NodeKernel crypto ntnAddr m =
   NodeKernel {
     -- | The keep alive registry, used for the keep alive clients.
@@ -44,7 +52,7 @@ data NodeKernel crypto ntnAddr m =
   , sigMempoolSem       :: !(TxMempoolSem m)
   , sigSharedTxStateVar :: !(SharedTxStateVar m ntnAddr SigId (Sig crypto))
   , stakePools          :: !(StakePools m)
-  , nextEpochVar        :: !(StrictTVar m (Maybe UTCTime))
+  , readinessVar        :: !(StrictTVar m Readiness)
   , peerMetric          :: !(PeerMetric m SigId ntnAddr)
   }
 
@@ -84,8 +92,9 @@ data PoolValidationCtx =
   PoolValidationCtx {
       vctxNow       :: UTCTime
       -- ^ current time
-    , vctxEpoch    :: !(Maybe UTCTime)
-      -- ^ UTC time of next epoch boundary for handling clock skew
+    , vctxReadiness :: !Readiness
+      -- ^ if pool validation ctx was initialised by local state query
+      -- mini-prototocol
     , vctxStakeMap  :: !(Map PoolId LedgerQuery.StakeSnapshot)
       -- ^ for signature validation
     , vctxOcertMap  :: !(Map PoolId Word64)

@@ -4,7 +4,8 @@
 {-# LANGUAGE TypeOperators            #-}
 
 module DMQ.NodeToClient.LocalStateQueryClient
-  ( TraceLocalStateQueryClient (..)
+  ( Readiness (..)
+  , TraceLocalStateQueryClient (..)
   , cardanoClient
   , connectToCardanoNode
   ) where
@@ -72,7 +73,7 @@ cardanoClient
   => Tracer m TraceLocalStateQueryClient
   -> Bool -- ^ use ledger peers
   -> StakePools m
-  -> StrictTVar m (Maybe UTCTime) -- ^ from node kernel
+  -> StrictTVar m Readiness -- ^ from node kernel
   -> LocalStateQueryClient (CardanoBlock crypto) (Point block) (Query block) m Void
 cardanoClient tracer ledgerPeers
               StakePools {
@@ -80,7 +81,7 @@ cardanoClient tracer ledgerPeers
                 ledgerPeersVar,
                 ledgerBigPeersVar
               }
-              nextEpochVar =
+              readyVar =
   LocalStateQueryClient (idle Nothing)
   where
     idle mSystemStart = do
@@ -187,15 +188,17 @@ cardanoClient tracer ledgerPeers
         handleStakeSnapshots StakeSnapshots { ssStakeSnapshots } = do
           atomically do
             writeTVar stakePoolsVar ssStakeSnapshots
-            writeTVar nextEpochVar $ Just nextEpoch
+            writeTVar readyVar Ready
           toNextEpoch <- diffUTCTime nextEpoch <$> getCurrentTime
           traceWith tracer $ NextEpoch nextEpoch toNextEpoch
-          threadDelay $ min (max 1 $ realToFrac toNextEpoch) 86400 -- TODO fuzz this?
-          pure $
+          threadDelay $ max 1 (realToFrac toNextEpoch) `min` 86400
+          pure
             if ledgerPeers
-            then -- continue with ledger peers query
-                 queryLedgerPeers systemStart toNextEpoch
-            else -- release and continue in the idle state
+            then
+            -- continue with ledger peers query
+            queryLedgerPeers systemStart toNextEpoch
+            else
+            -- release and continue in the idle state
             release systemStart toNextEpoch
 
 
@@ -265,7 +268,7 @@ cardanoClient tracer ledgerPeers
                  m
                  Void
     release systemStart toNextEpoch = SendMsgRelease do
-      threadDelay $ min (realToFrac toNextEpoch) 86400 -- TODO fuzz this?
+      threadDelay $ realToFrac toNextEpoch `min` 86400
       idle $ Just systemStart
 
 
@@ -307,7 +310,7 @@ connectToCardanoNode tracer ledgerPeers localSnocket' snocketPath networkMagic n
                            $ cardanoClient tracer
                                            ledgerPeers
                                            (stakePools nodeKernel)
-                                           (nextEpochVar nodeKernel)
+                                           (readinessVar nodeKernel)
                          )
                  }
              ]

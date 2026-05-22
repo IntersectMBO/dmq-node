@@ -66,7 +66,7 @@ import Cardano.Ledger.Keys (VKey (..))
 import Cardano.Ledger.Keys qualified as Ledger.Keys
 import Test.Crypto.Instances
 
-import DMQ.Diffusion.NodeKernel (PoolValidationCtx (..))
+import DMQ.Diffusion.NodeKernel (PoolValidationCtx (..), Readiness (..))
 import DMQ.Protocol.SigSubmission.Codec
 import DMQ.Protocol.SigSubmission.Type
 import DMQ.Protocol.SigSubmission.Validate
@@ -871,32 +871,24 @@ prop_codec_valid_cbor_standardcrypto = prop_codec_valid_cbor . getBlind
 -- `currentDiffTime`: diff between current time and `expiresAt` (if negative then
 -- a signature is valid)
 --
--- `epochTimeDiff`: diff between current time and the beginning of the last
--- epoch.
 data Validity =
     Valid {
-       currentTimeDiff :: NominalDiffTime,
-       epochTimeDiff   :: NominalDiffTime
+       currentTimeDiff :: NominalDiffTime
       }
   | InvalidViaNotInitialized {
-        currentTimeDiff :: NominalDiffTime,
-        epochTimeDiff   :: NominalDiffTime
+        currentTimeDiff :: NominalDiffTime
       }
   | InvalidViaUnrecognizedPool {
-        currentTimeDiff :: NominalDiffTime,
-        epochTimeDiff   :: NominalDiffTime
+        currentTimeDiff :: NominalDiffTime
       }
   | InvalidViaSigExpired {
-        currentTimeDiff :: NominalDiffTime,
-        epochTimeDiff   :: NominalDiffTime
+        currentTimeDiff :: NominalDiffTime
       }
   | InvalidViaPoolNotEligible {
-        currentTimeDiff :: NominalDiffTime,
-        epochTimeDiff   :: NominalDiffTime
+        currentTimeDiff :: NominalDiffTime
       }
   | InvalidViaOCertCounter {
-        currentTimeDiff :: NominalDiffTime,
-        epochTimeDiff   :: NominalDiffTime
+        currentTimeDiff :: NominalDiffTime
       }
   deriving (Eq, Show)
 
@@ -914,44 +906,32 @@ instance Arbitrary Validity where
     arbitrary = oneof
       [ Valid
           <$> arbitrary `suchThat` (<= 0)
-          <*> arbitrary `suchThat` (< c_MAX_CLOCK_SKEW_SEC) `suchThat` (>= 0)
-      , Valid
-          <$> arbitrary `suchThat` (<= 0)
-          <*> arbitrary `suchThat` (>= c_MAX_CLOCK_SKEW_SEC)
       , InvalidViaNotInitialized
           <$> arbitrary `suchThat` (<= 0)
-          <*> arbitrary `suchThat` (< c_MAX_CLOCK_SKEW_SEC) `suchThat` (>= 0)
       , InvalidViaUnrecognizedPool
           <$> arbitrary `suchThat` (<= 0)
-          <*> arbitrary `suchThat` (< c_MAX_CLOCK_SKEW_SEC) `suchThat` (>= 0)
       , InvalidViaSigExpired
           <$> arbitrary `suchThat` (> 0)
-          <*> arbitrary `suchThat` (< c_MAX_CLOCK_SKEW_SEC) `suchThat` (>= 0)
       , InvalidViaPoolNotEligible
           <$> arbitrary `suchThat` (<= 0)
-          <*> arbitrary `suchThat` (> c_MAX_CLOCK_SKEW_SEC)
       , InvalidViaOCertCounter
           <$> arbitrary `suchThat` (<= 0)
-          <*> arbitrary `suchThat` (< c_MAX_CLOCK_SKEW_SEC) `suchThat` (>= 0)
       ]
 
-    shrink a@Valid { currentTimeDiff, epochTimeDiff }
+    shrink a@Valid { currentTimeDiff }
       =  [ a { currentTimeDiff = t } | t <- shrink currentTimeDiff, t <= 0 ]
-      ++ [ a { epochTimeDiff = t }   | t <- shrink epochTimeDiff, t < c_MAX_CLOCK_SKEW_SEC, t >= 0 ]
-    shrink (InvalidViaNotInitialized { currentTimeDiff, epochTimeDiff })
-      =  [ Valid { currentTimeDiff, epochTimeDiff } ]
-    shrink (InvalidViaUnrecognizedPool { currentTimeDiff, epochTimeDiff })
-      =  [ Valid { currentTimeDiff, epochTimeDiff } ]
-    shrink a@InvalidViaSigExpired { currentTimeDiff, epochTimeDiff }
+    shrink (InvalidViaNotInitialized { currentTimeDiff })
+      =  [ Valid { currentTimeDiff } ]
+    shrink (InvalidViaUnrecognizedPool { currentTimeDiff })
+      =  [ Valid { currentTimeDiff } ]
+    shrink a@InvalidViaSigExpired { currentTimeDiff }
       =  [ a { currentTimeDiff = t } | t <- shrink currentTimeDiff, t > 0 ]
-      ++ [ a { epochTimeDiff = t }   | t <- shrink epochTimeDiff, t < c_MAX_CLOCK_SKEW_SEC, t >= 0 ]
-      ++ [ Valid { currentTimeDiff = 0, epochTimeDiff } ]
-    shrink a@InvalidViaPoolNotEligible { currentTimeDiff, epochTimeDiff }
+      ++ [ Valid { currentTimeDiff = 0 } ]
+    shrink a@InvalidViaPoolNotEligible { currentTimeDiff }
       =  [ a { currentTimeDiff = t } | t <- shrink currentTimeDiff, t <= 0 ]
-      ++ [ a { epochTimeDiff = t }   | t <- shrink epochTimeDiff, t > c_MAX_CLOCK_SKEW_SEC ]
-      ++ [ Valid { currentTimeDiff, epochTimeDiff = 0 } ]
-    shrink InvalidViaOCertCounter { currentTimeDiff, epochTimeDiff }
-      =  [ Valid { currentTimeDiff, epochTimeDiff } ]
+      ++ [ Valid { currentTimeDiff } ]
+    shrink InvalidViaOCertCounter { currentTimeDiff }
+      =  [ Valid { currentTimeDiff } ]
 
 
 -- | Check that the KES signature is valid.
@@ -998,11 +978,11 @@ prop_validateSig constr validity = labelValidity validity $ ioProperty do
         vctxNow   :: UTCTime
         vctxNow   = posixSecondsToUTCTime posixNow
 
-        vctxEpoch :: Maybe UTCTime
-        vctxEpoch = case validity of
+        vctxReadiness :: Readiness
+        vctxReadiness = case validity of
           InvalidViaNotInitialized {}
-            -> Nothing
-          _ -> Just $ posixSecondsToUTCTime (posixNow - epochTimeDiff validity)
+            -> NotReady
+          _ -> Ready
 
         vctxStakeMap =
           case validity of
@@ -1016,7 +996,7 @@ prop_validateSig constr validity = labelValidity validity $ ioProperty do
               -> Map.fromList [(poolId, succ ocertN)]
             _ -> Map.fromList [(poolId, ocertN)]
 
-        validationCtx = PoolValidationCtx { vctxNow, vctxEpoch, vctxStakeMap, vctxOcertMap }
+        validationCtx = PoolValidationCtx { vctxNow, vctxReadiness, vctxStakeMap, vctxOcertMap }
 
     return
       . counterexample ("KES seed: " ++ show (ctx constr))
