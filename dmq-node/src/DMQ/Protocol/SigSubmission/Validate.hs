@@ -29,6 +29,7 @@ import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromJust, isNothing)
+import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 import Data.Typeable
 
 import Cardano.Crypto.DSIGN.Class qualified as DSIGN
@@ -100,8 +101,12 @@ validateSig now sigs ctx0 =
                          ocertN
                          },
                        sigColdKey = SigColdKey coldKey,
-                       sigKESSignature = SigKESSignature kesSig
+                       sigKESSignature = SigKESSignature kesSig,
+                       sigExpiresAt
                      } = do
+      -- check if sig expired
+      utcTimeToPOSIXSeconds now <= sigExpiresAt ?! SigExpired
+
       -- TODO: if new cborg version is released, validation of SigId should be
       -- moved to the decoder, right now the decoder only verifies that we
       -- received the right amount of bytes.
