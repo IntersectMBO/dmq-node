@@ -36,9 +36,8 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BL
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map qualified as Map
-import Data.Time.Clock (nominalDiffTimeToSeconds, secondsToNominalDiffTime)
+import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Typeable
-import Data.Word (Word32)
 import GHC.TypeNats (KnownNat)
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -77,6 +76,7 @@ import Test.Ouroboros.Network.Protocol.Utils (prop_codec_cborM,
            prop_codec_valid_cbor_encoding, splits2)
 
 import Test.QuickCheck.Instances.ByteString ()
+import Test.QuickCheck.Instances.Time ()
 import Test.Tasty
 import Test.Tasty.QuickCheck as QC
 -- import qualified Debug.Trace as Debug
@@ -160,13 +160,6 @@ instance Arbitrary SigId where
 instance Arbitrary SigBody where
   arbitrary = SigBody <$> arbitrary
   shrink = map SigBody . shrink . getSigBody
-
-instance Arbitrary POSIXTime where
-  -- generate only whole seconds (this is what we receive on the wire)
-  arbitrary = realToFrac @Word32 <$> arbitrary
-  -- shrink via Word32 (e.g. in seconds)
-  shrink posix = realToFrac <$> shrink (floor @_ @Word32 posix)
-
 
 -- | Make a KES key pair.
 --
@@ -681,7 +674,7 @@ prop_codec_ocert_standardcrypto
 prop_codec_ocert_standardcrypto = prop_codec_ocert . getBlind
 
 
--- Verify `Sig` encoding/decoding roundtrip:
+-- Verify `Sig` encoding/decoding round-trip:
 -- * `SigRaw` is preserved by encoding/decoding.
 -- * bytes match the encoding of `encodeSig`.
 -- * signed bytes match the encoding of `encodeSigPayload`.
@@ -864,77 +857,93 @@ prop_codec_valid_cbor_standardcrypto
   -> Property
 prop_codec_valid_cbor_standardcrypto = prop_codec_valid_cbor . getBlind
 
-data SnapshotType = NotZeroSetSnapshotType
-                  | NotZeroMarkSnapshotType
-                  | ZeroSetAndMarkSnapshotType
+
+-- | Context which decides if a signature is valid or not.
+--
+-- `currentDiffTime`: diff between current time and `expiresAt` (if negative then
+-- a signature is valid)
+--
+-- `epochTimeDiff`: diff between current time and the beginning of the last
+-- epoch.
+data Validity =
+    Valid {
+       currentTimeDiff :: NominalDiffTime,
+       epochTimeDiff   :: NominalDiffTime
+      }
+  | InvalidViaNotInitialized {
+        currentTimeDiff :: NominalDiffTime,
+        epochTimeDiff   :: NominalDiffTime
+      }
+  | InvalidViaUnrecognizedPool {
+        currentTimeDiff :: NominalDiffTime,
+        epochTimeDiff   :: NominalDiffTime
+      }
+  | InvalidViaSigExpired {
+        currentTimeDiff :: NominalDiffTime,
+        epochTimeDiff   :: NominalDiffTime
+      }
+  | InvalidViaPoolNotEligible {
+        currentTimeDiff :: NominalDiffTime,
+        epochTimeDiff   :: NominalDiffTime
+      }
+  | InvalidViaOCertCounter {
+        currentTimeDiff :: NominalDiffTime,
+        epochTimeDiff   :: NominalDiffTime
+      }
   deriving (Eq, Show)
 
-instance Arbitrary SnapshotType where
-  arbitrary = elements [ NotZeroSetSnapshotType
-                       , NotZeroMarkSnapshotType
-                       , ZeroSetAndMarkSnapshotType
-                       ]
+labelValidity :: Testable p => Validity -> p -> Property
+labelValidity = \case
+    Valid {}                               -> label "Valid"
+    InvalidViaNotInitialized {}            -> label "InvalidViaNotInitialized"
+    InvalidViaUnrecognizedPool {}          -> label "InvalidViaUnrecognizedPool"
+    InvalidViaSigExpired {}                -> label "InvalidViaSigExpired"
+    InvalidViaPoolNotEligible {}           -> label "InvalidViaPoolNotEligible"
+    InvalidViaOCertCounter {}              -> label "InvalidViaOCertCounter"
 
-
-data Validity = Valid NominalDiffTime
-              | InvalidViaNotInitialized
-              | InvalidViaUnrecognizedPool
-              | InvalidViaSigExpired SnapshotType NominalDiffTime
-              | InvalidViaClockSkew SnapshotType NominalDiffTime
-              | InvalidViaPoolNotEligible NominalDiffTime
-              | InvalidViaExpiredViaZeroSetSnapshot
-              | InvalidViaOCertCounter
-  deriving (Eq, Show)
 
 instance Arbitrary Validity where
     arbitrary = oneof
-      [ -- the `NominalDiffTime` generator has hard time to generate small values
-        Valid . secondsToNominalDiffTime
-          <$> arbitrary `suchThat` (< nominalDiffTimeToSeconds c_MAX_CLOCK_SKEW_SEC)
-      , pure InvalidViaNotInitialized
-      , pure InvalidViaUnrecognizedPool
+      [ Valid
+          <$> arbitrary `suchThat` (<= 0)
+          <*> arbitrary `suchThat` (< c_MAX_CLOCK_SKEW_SEC) `suchThat` (>= 0)
+      , Valid
+          <$> arbitrary `suchThat` (<= 0)
+          <*> arbitrary `suchThat` (>= c_MAX_CLOCK_SKEW_SEC)
+      , InvalidViaNotInitialized
+          <$> arbitrary `suchThat` (<= 0)
+          <*> arbitrary `suchThat` (< c_MAX_CLOCK_SKEW_SEC) `suchThat` (>= 0)
+      , InvalidViaUnrecognizedPool
+          <$> arbitrary `suchThat` (<= 0)
+          <*> arbitrary `suchThat` (< c_MAX_CLOCK_SKEW_SEC) `suchThat` (>= 0)
       , InvalidViaSigExpired
-          <$> arbitrary
-          <*> arbitrary `suchThat` (> c_MAX_CLOCK_SKEW_SEC)
-      , InvalidViaClockSkew
-          <$> arbitrary `suchThat` (/= ZeroSetAndMarkSnapshotType)
-          <*> arbitrary `suchThat` (> c_MAX_CLOCK_SKEW_SEC)
+          <$> arbitrary `suchThat` (> 0)
+          <*> arbitrary `suchThat` (< c_MAX_CLOCK_SKEW_SEC) `suchThat` (>= 0)
       , InvalidViaPoolNotEligible
-          <$> arbitrary `suchThat` (> c_MAX_CLOCK_SKEW_SEC)
-      , pure InvalidViaOCertCounter
+          <$> arbitrary `suchThat` (<= 0)
+          <*> arbitrary `suchThat` (> c_MAX_CLOCK_SKEW_SEC)
+      , InvalidViaOCertCounter
+          <$> arbitrary `suchThat` (<= 0)
+          <*> arbitrary `suchThat` (< c_MAX_CLOCK_SKEW_SEC) `suchThat` (>= 0)
       ]
 
-    shrink (Valid t)
-      = [ Valid t' | t' <- shrink t, t' >= 0 ]
-    shrink InvalidViaNotInitialized = [ Valid c_MAX_CLOCK_SKEW_SEC ]
-    shrink InvalidViaUnrecognizedPool = [ Valid c_MAX_CLOCK_SKEW_SEC ]
-    shrink (InvalidViaSigExpired a t)
-      = [ InvalidViaSigExpired a' t
-        | a' <- shrink a
-        ]
-      ++
-        [ InvalidViaSigExpired a t'
-        | t' <- shrink t
-        , t' > c_MAX_CLOCK_SKEW_SEC
-        ]
-      ++
-        [Valid c_MAX_CLOCK_SKEW_SEC]
-    shrink (InvalidViaClockSkew a t)
-      = [ InvalidViaClockSkew a t'
-        | t' <- shrink t
-        , t' > c_MAX_CLOCK_SKEW_SEC
-        ]
-      ++
-        [ Valid c_MAX_CLOCK_SKEW_SEC ]
-    shrink (InvalidViaPoolNotEligible t)
-      = [ InvalidViaPoolNotEligible t'
-        | t' <- shrink t
-        , t' > c_MAX_CLOCK_SKEW_SEC
-        ]
-      ++
-        [Valid c_MAX_CLOCK_SKEW_SEC]
-    shrink InvalidViaExpiredViaZeroSetSnapshot = [ Valid c_MAX_CLOCK_SKEW_SEC ]
-    shrink InvalidViaOCertCounter = [ Valid c_MAX_CLOCK_SKEW_SEC ]
+    shrink a@Valid { currentTimeDiff, epochTimeDiff }
+      =  [ a { currentTimeDiff = t } | t <- shrink currentTimeDiff, t <= 0 ]
+      ++ [ a { epochTimeDiff = t }   | t <- shrink epochTimeDiff, t < c_MAX_CLOCK_SKEW_SEC, t >= 0 ]
+    shrink (InvalidViaNotInitialized { currentTimeDiff, epochTimeDiff })
+      =  [ Valid { currentTimeDiff, epochTimeDiff } ]
+    shrink (InvalidViaUnrecognizedPool { currentTimeDiff, epochTimeDiff })
+      =  [ Valid { currentTimeDiff, epochTimeDiff } ]
+    shrink a@InvalidViaSigExpired { currentTimeDiff, epochTimeDiff }
+      =  [ a { currentTimeDiff = t } | t <- shrink currentTimeDiff, t > 0 ]
+      ++ [ a { epochTimeDiff = t }   | t <- shrink epochTimeDiff, t < c_MAX_CLOCK_SKEW_SEC, t >= 0 ]
+      ++ [ Valid { currentTimeDiff = 0, epochTimeDiff } ]
+    shrink a@InvalidViaPoolNotEligible { currentTimeDiff, epochTimeDiff }
+      =  [ a { currentTimeDiff = t } | t <- shrink currentTimeDiff, t <= 0 ]
+      ++ [ a { epochTimeDiff = t }   | t <- shrink epochTimeDiff, t > c_MAX_CLOCK_SKEW_SEC ]
+      ++ [ Valid { currentTimeDiff, epochTimeDiff = 0 } ]
+    shrink InvalidViaOCertCounter { currentTimeDiff, epochTimeDiff }
+      =  [ Valid { currentTimeDiff, epochTimeDiff } ]
 
 
 -- | Check that the KES signature is valid.
@@ -954,101 +963,79 @@ prop_validateSig
   => WithConstrKES size kesCrypt (Sig crypto)
   -> Validity
   -> Property
-prop_validateSig constr validity = ioProperty do
+prop_validateSig constr validity = labelValidity validity $ ioProperty do
     sig@Sig { sigColdKey = SigColdKey coldKey,
-              sigOpCertificate = SigOpCertificate OCert { ocertN }
+              sigOpCertificate = SigOpCertificate OCert { ocertN },
+              sigExpiresAt
             } <- runWithConstr constr
-    now <- getCurrentTime
     let poolId = hashKey (VKey coldKey)
 
         stakeSnapshot =
           case validity of
-            InvalidViaSigExpired ZeroSetAndMarkSnapshotType _
+            InvalidViaSigExpired {}
+              -> StakeSnapshot { ssMarkPool = mempty,
+                                 ssSetPool  = mempty,
+                                 ssGoPool   = succ mempty
+                               }
+            InvalidViaPoolNotEligible {}
               -> StakeSnapshot { ssMarkPool = mempty,
                                  ssSetPool  = mempty,
                                  ssGoPool   = mempty
                                }
-            InvalidViaPoolNotEligible {}
-              -> StakeSnapshot { ssMarkPool = succ mempty,
+            _ -> StakeSnapshot { ssMarkPool = mempty,
                                  ssSetPool  = mempty,
-                                 ssGoPool   = mempty
+                                 ssGoPool   = succ mempty
                                }
-            InvalidViaClockSkew NotZeroSetSnapshotType _
-              -> StakeSnapshot { ssMarkPool = succ mempty,
-                                 ssSetPool  = succ mempty,
-                                 ssGoPool   = mempty
-                               }
-            InvalidViaClockSkew NotZeroMarkSnapshotType _
-              -> StakeSnapshot { ssMarkPool = succ mempty,
-                                 ssSetPool  = mempty,
-                                 ssGoPool   = mempty
-                               }
-            _ -> StakeSnapshot { ssMarkPool = succ mempty,
-                                 ssSetPool  = succ mempty,
-                                 ssGoPool   = mempty
-                               }
-        vctxEpoch =
-          case validity of
-              Valid delta
-                -> Just $ (-delta) `addUTCTime` now
-              InvalidViaSigExpired _ delta
-                -> Just $ (-delta) `addUTCTime` now
-              InvalidViaNotInitialized
-                -> Nothing
-              InvalidViaUnrecognizedPool
-                -> Just now
-              InvalidViaPoolNotEligible delta
-                -> Just $ delta `addUTCTime` now
-              InvalidViaClockSkew NotZeroSetSnapshotType delta
-                -> Just $ (-delta) `addUTCTime` now
-              InvalidViaClockSkew NotZeroMarkSnapshotType delta
-                -> Just $ (-delta) `addUTCTime` now
-              InvalidViaClockSkew ZeroSetAndMarkSnapshotType _
-                -> error "invariant violation"
-              _ -> Just now
+
+        posixNow  :: POSIXTime
+        posixNow  = sigExpiresAt + currentTimeDiff validity
+
+        vctxNow   :: UTCTime
+        vctxNow   = posixSecondsToUTCTime posixNow
+
+        vctxEpoch :: Maybe UTCTime
+        vctxEpoch = case validity of
+          InvalidViaNotInitialized {}
+            -> Nothing
+          _ -> Just $ posixSecondsToUTCTime (posixNow - epochTimeDiff validity)
 
         vctxStakeMap =
           case validity of
-            InvalidViaNotInitialized   -> Map.empty
-            InvalidViaUnrecognizedPool -> Map.empty
-            _                          -> Map.fromList [(poolId, stakeSnapshot)]
+            InvalidViaNotInitialized {}   -> Map.empty
+            InvalidViaUnrecognizedPool {} -> Map.empty
+            _                             -> Map.fromList [(poolId, stakeSnapshot)]
 
         vctxOcertMap =
           case validity of
-            InvalidViaOCertCounter
+            InvalidViaOCertCounter {}
               -> Map.fromList [(poolId, succ ocertN)]
             _ -> Map.fromList [(poolId, ocertN)]
 
-        validationCtx = PoolValidationCtx { vctxEpoch, vctxStakeMap, vctxOcertMap }
+        validationCtx = PoolValidationCtx { vctxNow, vctxEpoch, vctxStakeMap, vctxOcertMap }
 
     return
       . counterexample ("KES seed: " ++ show (ctx constr))
       . counterexample ("KES vk key: " ++ show (ocertVkHot . getSigOpCertificate . sigOpCertificate $ sig))
       . counterexample (show sig)
-      $ case (validity, fst $ validateSig now [sig] validationCtx) of
+      $ case (validity, fst $ validateSig [sig] validationCtx) of
           (Valid {}, Left (_, err) : _) -> counterexample (show err) False
           (Valid {}, Right _ : _)       -> property True
 
-          (InvalidViaNotInitialized, Left (_, NotInitialized) : _) -> property True
-          (InvalidViaNotInitialized, Left (_, err) : _)            -> counterexample (show err) False
-          (InvalidViaNotInitialized, Right _ : _)                  -> counterexample "unexpectedly valid signature" False
+          (InvalidViaNotInitialized {}, Left (_, NotInitialized) : _) -> property True
+          (InvalidViaNotInitialized {}, Left (_, err) : _)            -> counterexample (show err) False
+          (InvalidViaNotInitialized {}, Right _ : _)                  -> counterexample "unexpectedly valid signature" False
 
-          (InvalidViaUnrecognizedPool, Left (_, UnrecognizedPool) : _) -> property True
-          (InvalidViaUnrecognizedPool, Left (_, err) : _)              -> counterexample (show err) False
-          (InvalidViaUnrecognizedPool, Right _ : _)                    -> counterexample "unexpectedly valid signature" False
+          (InvalidViaUnrecognizedPool {}, Left (_, UnrecognizedPool) : _) -> property True
+          (InvalidViaUnrecognizedPool {}, Left (_, err) : _)              -> counterexample (show err) False
+          (InvalidViaUnrecognizedPool {}, Right _ : _)                    -> counterexample "unexpectedly valid signature" False
 
           (InvalidViaSigExpired {}, Left (_, SigExpired) : _) -> property True
-          (InvalidViaSigExpired {}, Left (_, ClockSkew) : _)  -> property True
           (InvalidViaSigExpired {}, Left (_, err) : _)        -> counterexample (show err) False
           (InvalidViaSigExpired {}, Right _ : _)              -> counterexample "unexpectedly valid signature" False
 
           (InvalidViaPoolNotEligible {}, Left (_, PoolNotEligible) : _) -> property True
           (InvalidViaPoolNotEligible {}, Left (_, err) : _)             -> counterexample (show err) False
           (InvalidViaPoolNotEligible {}, Right _ : _)                   -> counterexample "unexpectedly valid signature" False
-
-          (InvalidViaClockSkew {}, Left (_, ClockSkew) : _) -> property True
-          (InvalidViaClockSkew {}, Left (_, err) : _)       -> counterexample (show err) False
-          (InvalidViaClockSkew {}, Right _ : _)             -> counterexample "unexpectedly valid signature" False
 
           (InvalidViaOCertCounter {}, Left (_, InvalidOCertCounter {}) : _) -> property True
           (InvalidViaOCertCounter {}, Left (_, err) : _)                    -> counterexample (show err) False
