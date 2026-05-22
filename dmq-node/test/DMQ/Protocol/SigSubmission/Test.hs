@@ -702,23 +702,33 @@ prop_codec_sig constr = ioProperty $ do
                Right (leftovers, f) ->
                  -- split the properties for better counterexample reporting
 
-                     -- SigRaw is preserved
-                      sigRaw (sigRawWithSignedBytes sig)
-                      ===
-                      sigRaw (sigRawWithSignedBytes (mkSig (f encoded)))
+                     counterexample "sig raw differ" (
+                       -- SigRaw is preserved
+                       sigRaw (sigRawWithSignedBytes sig)
+                       ===
+                       sigRaw (sigRawWithSignedBytes (mkSig (f encoded)))
+                     )
 
                       -- signed bytes are preserved
-                 .&&. sigRawSignedBytes (sigRawWithSignedBytes sig)
-                      ===
-                      sigRawSignedBytes (sigRawWithSignedBytes (mkSig (f encoded)))
+                 .&&.
+                      counterexample "signed bytes differ" (
+                        sigRawSignedBytes (sigRawWithSignedBytes sig)
+                        ===
+                        sigRawSignedBytes (sigRawWithSignedBytes (mkSig (f encoded)))
+                      )
 
                      -- bytes are preserved
-                 .&&. sigRawBytes sig
-                      ===
-                      sigRawBytes (mkSig (f encoded))
+                 .&&.
+                      counterexample "raw bytes differ" (
+                        sigRawBytes sig
+                        ===
+                        sigRawBytes (mkSig (f encoded))
+                      )
 
                       -- no leftovers
-                 .&&. BL.null leftovers
+                 .&&. label "null leftovers" (
+                        BL.null leftovers
+                      )
 
 prop_codec_sig_mockcrypto
   :: Blind (WithConstrKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (Sig MockCrypto))
