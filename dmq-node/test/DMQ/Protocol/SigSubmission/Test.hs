@@ -552,11 +552,11 @@ updateSigFn :: forall crypto.
             -> IO (Sig crypto)
 updateSigFn
   sig@Sig { sigOpCertificate = SigOpCertificate opCert,
-            sigBody          = SigBody body
+            sigSignedBytes
           }
   (snKESKey, vnKESKey)
   = do
-  signature <- KES.signKES () (KES.unKESPeriod (ocertKESPeriod opCert)) body snKESKey
+  signature <- KES.signKES () (KES.unKESPeriod (ocertKESPeriod opCert)) (BL.toStrict sigSignedBytes) snKESKey
   return $ sig { sigOpCertificate = SigOpCertificate opCert { ocertVkHot = vnKESKey},
                  sigKESSignature  = SigKESSignature signature
                }
