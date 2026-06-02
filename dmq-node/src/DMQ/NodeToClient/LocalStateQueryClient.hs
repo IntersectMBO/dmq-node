@@ -138,6 +138,7 @@ cardanoClient tracer ledgerPeers
     queryCurrentEra
       :: SystemStart
       -> UTCTime
+      -- ^ next epoch
       -> ClientStAcquired
            (CardanoBlock crypto)
            (Point (CardanoBlock crypto))
@@ -152,6 +153,7 @@ cardanoClient tracer ledgerPeers
     queryStakeSnapshots
       :: SystemStart
       -> UTCTime
+      -- ^ next epoch
       -> EraIndex (CardanoEras crypto)
       -> m (ClientStAcquired
              (CardanoBlock crypto)
@@ -189,30 +191,28 @@ cardanoClient tracer ledgerPeers
           atomically do
             writeTVar stakePoolsVar ssStakeSnapshots
             writeTVar readyVar Ready
-          toNextEpoch <- diffUTCTime nextEpoch <$> getCurrentTime
-          traceWith tracer $ NextEpoch nextEpoch toNextEpoch
-          threadDelay $ max 1 (realToFrac toNextEpoch) `min` 86400
           pure
             if ledgerPeers
             then
             -- continue with ledger peers query
-            queryLedgerPeers systemStart toNextEpoch
+            queryLedgerPeers systemStart nextEpoch
             else
             -- release and continue in the idle state
-            release systemStart toNextEpoch
+            release systemStart nextEpoch
 
 
     -- query ledger peer snapshot
     queryLedgerPeers
       :: SystemStart
-      -> NominalDiffTime
+      -> UTCTime
+      -- ^ next epoch
       -> ClientStAcquired
            (CardanoBlock crypto)
            (Point (CardanoBlock crypto))
            (Query (CardanoBlock crypto))
            m
            Void
-    queryLedgerPeers systemStart toNextEpoch =
+    queryLedgerPeers systemStart nextEpoch =
         SendMsgQuery (BlockQuery . QueryIfCurrentConway $ GetLedgerPeerSnapshot SingAllLedgerPeers)
         $ wrappingMismatch handleLedgerPeers
       where
@@ -255,20 +255,25 @@ cardanoClient tracer ledgerPeers
             writeTMVar ledgerPeersVar $ LedgerAllPeerSnapshotV23 pt magic srvRelays
             writeTVar  ledgerBigPeersVar . Just $! LedgerBigPeerSnapshotV23 pt' magic bigSrvRelays
 
-          pure $ release systemStart toNextEpoch
+          pure $ release systemStart nextEpoch
 
 
     -- release, continue the loop in `idle`
     release :: SystemStart
-            -> NominalDiffTime
+            -> UTCTime
+            -- ^ next epoch
             -> ClientStAcquired
                  (CardanoBlock crypto)
                  (Point (CardanoBlock crypto))
                  (Query (CardanoBlock crypto))
                  m
                  Void
-    release systemStart toNextEpoch = SendMsgRelease do
-      threadDelay $ realToFrac toNextEpoch `min` 86400
+    release systemStart nextEpoch = SendMsgRelease do
+      toNextEpoch <- diffUTCTime nextEpoch <$> getCurrentTime
+      let toNextEpoch' :: DiffTime
+          toNextEpoch' = max 1 (realToFrac toNextEpoch) `min` 86400
+      traceWith tracer $ NextEpoch nextEpoch toNextEpoch'
+      threadDelay toNextEpoch'
       idle $ Just systemStart
 
 
