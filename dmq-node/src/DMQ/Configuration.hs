@@ -194,7 +194,8 @@ defaultConfiguration = Configuration {
       dmqcIPv4                              = I Nothing,
       dmqcIPv6                              = I Nothing,
       dmqcLocalAddress                      = I (LocalAddress "dmq-node.socket"),
-      dmqcNetworkMagic                      = I NetworkMagic { unNetworkMagic = 3_141_592 },
+      -- mainnet dmq protocol magic according to CIP#137
+      dmqcNetworkMagic                      = I NetworkMagic { unNetworkMagic = 2_912_307_721 },
       dmqcCardanoNetworkMagic               =
         I (NetworkMagic . unProtocolMagicId $ mainnetProtocolMagicId),
       dmqcPortNumber                        = I 3_141,
