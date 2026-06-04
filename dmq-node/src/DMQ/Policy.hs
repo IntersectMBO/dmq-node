@@ -2,6 +2,8 @@ module DMQ.Policy
   ( sigDecisionPolicy
   , sigSubmissionIngressLimit
   , peerMetricConfiguration
+  , maxSigSize
+  , maxSigsInflight
   ) where
 
 import DMQ.Diffusion.PeerSelection.PeerMetric (PeerMetricConfiguration (..))
@@ -17,6 +19,16 @@ maxSigSize :: SizeInBytes
 maxSigSize = 2800
 
 -- | Maximum numbers signatures in-flight per peer.
+--
+-- NOTE: it is used by:
+-- * `sigDecisionPolicy`
+-- * `byteLimitsSigSubmission`,
+-- * `byteLimitsSigSubmissionV2`, and
+-- * `sigSubmissionIngressLimit`
+--
+-- NOTE: Since `maxSigsInflight` or `maxSigSize` are used by the codec size
+-- limits and ingress limit, changes might require a new `node-to-node`
+-- protocol version.
 --
 -- TODO: make it configurable
 maxSigsInflight :: NumTxIdsToReq

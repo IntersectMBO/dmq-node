@@ -3,6 +3,7 @@
 
 module DMQ.Diffusion.NodeKernel.Types
   ( NodeKernel (..)
+  , Readiness (..)
   , PoolId
   , StakePools (..)
   , PoolValidationCtx (..)
@@ -18,8 +19,8 @@ import System.Random (StdGen)
 import Cardano.Ledger.Api.State.Query qualified as LedgerQuery
 import Cardano.Ledger.Shelley.API qualified as Ledger
 
-import Ouroboros.Network.BlockFetch (FetchClientRegistry)
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
+import Ouroboros.Network.KeepAlive (KeepAliveRegistry)
 import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
            LedgerPeersKind (..))
 import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry)
@@ -30,10 +31,17 @@ import DMQ.Diffusion.PeerSelection.PeerMetric (PeerMetric)
 import DMQ.Protocol.SigSubmission.Type (Sig, SigId)
 
 
+-- | A signal when a dmq-node becomes ready to validate signatures, e.g. when
+-- local-state query returned necessary context.
+--
+data Readiness = NotReady | Ready
+  deriving Show
+
+
 data NodeKernel crypto ntnAddr m =
   NodeKernel {
-    -- | The fetch client registry, used for the keep alive clients.
-    fetchClientRegistry :: !(FetchClientRegistry (ConnectionId ntnAddr) () () m)
+    -- | The keep alive registry, used for the keep alive clients.
+    keepAliveRegistry   :: !(KeepAliveRegistry (ConnectionId ntnAddr) m)
 
     -- | Read the current peer sharing registry, used for interacting with
     -- the PeerSharing protocol
@@ -44,7 +52,7 @@ data NodeKernel crypto ntnAddr m =
   , sigMempoolSem       :: !(TxMempoolSem m)
   , sigSharedTxStateVar :: !(SharedTxStateVar m ntnAddr SigId (Sig crypto))
   , stakePools          :: !(StakePools m)
-  , nextEpochVar        :: !(StrictTVar m (Maybe UTCTime))
+  , readinessVar        :: !(StrictTVar m Readiness)
   , peerMetric          :: !(PeerMetric m SigId ntnAddr)
   }
 
@@ -56,15 +64,25 @@ type PoolId = Ledger.KeyHash Ledger.StakePool
 data StakePools m = StakePools {
     -- | contains map of cardano pool stake snapshot obtained
     -- via local state query client
+    --
+    -- NOTE: StakeSnapshot is taken from `VolatileTip`, this means that
+    -- `ssMarkSet` is not safe to be used as we could be on an adversarial fork
+    -- which crossed boundary.
     stakePoolsVar
       :: !(StrictTVar m (Map PoolId LedgerQuery.StakeSnapshot))
+
     -- | Acquire and update validation context for signature validation
+    --
+    -- First argument is the current time inserted into `PoolValidationCtx`,
+    -- other fields are read from share state available in `STM` action.
   , withPoolValidationCtx
-      :: forall a. (PoolValidationCtx -> (a, PoolValidationCtx)) ->  STM m a
+      :: forall a. UTCTime -> (PoolValidationCtx -> (a, PoolValidationCtx)) ->  STM m a
+
      -- | provides only those big peers which provide SRV endpoints
      -- as otherwise those are cardano-nodes
   , ledgerBigPeersVar
       :: !(StrictTVar m (Maybe (LedgerPeerSnapshot BigLedgerPeers)))
+
     -- | all ledger peers, restricted to srv endpoints
   , ledgerPeersVar
       :: !(StrictTMVar m (LedgerPeerSnapshot AllLedgerPeers))
@@ -72,11 +90,16 @@ data StakePools m = StakePools {
 
 data PoolValidationCtx =
   PoolValidationCtx {
-      vctxEpoch    :: !(Maybe UTCTime)
-      -- ^ UTC time of next epoch boundary for handling clock skew
-    , vctxStakeMap :: !(Map PoolId LedgerQuery.StakeSnapshot)
+      vctxNow            :: UTCTime
+      -- ^ current time
+    , vctxReadiness      :: !Readiness
+      -- ^ if pool validation ctx was initialised by local state query
+      -- mini-prototocol
+    , vctxStakeMap       :: !(Map PoolId LedgerQuery.StakeSnapshot)
       -- ^ for signature validation
-    , vctxOcertMap :: !(Map PoolId Word64)
+    , vctxOcertMap       :: !(Map PoolId Word64)
       -- ^ ocert counters to check monotonicity
+    , vctxPraosMaxKESEvo :: !Word64
+      -- ^ maximum number of KES iterations (read from the Shelley genesis file)
     }
   deriving Show

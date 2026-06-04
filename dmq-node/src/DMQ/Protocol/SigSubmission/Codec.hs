@@ -45,6 +45,7 @@ import Ouroboros.Network.Protocol.Codec.Utils qualified as Utils
 import Ouroboros.Network.Protocol.Limits
 import Ouroboros.Network.Protocol.TxSubmission2.Codec qualified as TX
 
+import DMQ.Policy qualified as Policy
 import DMQ.Protocol.SigSubmission.Type
 
 
@@ -83,12 +84,18 @@ byteLimitsSigSubmission :: forall crypto bytes.
                         -> ProtocolSizeLimits (SigSubmission crypto) bytes
 byteLimitsSigSubmission = ProtocolSizeLimits stateToLimit
   where
+    -- `(33 + 1) * 2800 = 95200` plus 2800 bytes of overhead.  We add `1` to
+    -- `maxSigsInflight` since the txSubmission logic can download one signature
+    -- more that the `maxSigsInflight` limit.
+    byteLimit :: Word
+    byteLimit = fromIntegral Policy.maxSigSize * (fromIntegral Policy.maxSigsInflight + 2)
+
     stateToLimit :: forall (st :: SigSubmission crypto).
                     ActiveState st => StateToken st -> Word
     stateToLimit SingInit                    = smallByteLimit
     stateToLimit (SingTxIds SingBlocking)    = smallByteLimit
     stateToLimit (SingTxIds SingNonBlocking) = smallByteLimit
-    stateToLimit SingTxs                     = smallByteLimit
+    stateToLimit SingTxs                     = byteLimit
     stateToLimit SingIdle                    = smallByteLimit
     stateToLimit a@SingDone                  = notActiveState a
 

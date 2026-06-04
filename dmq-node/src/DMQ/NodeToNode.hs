@@ -203,7 +203,7 @@ ntnApps
     mempoolWriter
     sigSize
     NodeKernel {
-      fetchClientRegistry
+      keepAliveRegistry
     , peerSharingRegistry
     , peerSharingAPI
     , sigChannelVar
@@ -387,7 +387,7 @@ ntnApps
                                 dqCtx
                                 (KeepAliveInterval 10)
 
-      ((), trailing) <- bracketKeepAliveClient fetchClientRegistry connId kacApp
+      ((), trailing) <- bracketKeepAliveClient keepAliveRegistry connId kacApp
       return ((), trailing)
 
     aKeepAliveServer

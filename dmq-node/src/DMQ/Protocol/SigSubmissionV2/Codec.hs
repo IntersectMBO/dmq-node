@@ -37,6 +37,7 @@ import Ouroboros.Network.Protocol.Limits
 
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 
+import DMQ.Policy qualified as Policy
 import DMQ.Protocol.SigSubmission.Codec qualified as V1
 import DMQ.Protocol.SigSubmissionV2.Type
 
@@ -47,14 +48,20 @@ byteLimitsSigSubmissionV2
   -> ProtocolSizeLimits (SigSubmissionV2 sigId sig) bytes
 byteLimitsSigSubmissionV2 = ProtocolSizeLimits stateToLimit
   where
+    -- `(33 + 1) * 2800 = 95200` plus 2800 bytes of overhead.  We add `1` to
+    -- `maxSigsInflight` since the txSubmission logic can download one signature
+    -- more that the `maxSigsInflight` limit.
+    byteLimit :: Word
+    byteLimit = fromIntegral Policy.maxSigSize * (fromIntegral Policy.maxSigsInflight + 2)
+
     stateToLimit
       :: forall (st :: SigSubmissionV2 sigId sig).
          ActiveState st
       => StateToken st
       -> Word
-    stateToLimit (SingSigIds SingBlocking)    = largeByteLimit
-    stateToLimit (SingSigIds SingNonBlocking) = largeByteLimit
-    stateToLimit SingSigs                     = largeByteLimit
+    stateToLimit (SingSigIds SingBlocking)    = smallByteLimit
+    stateToLimit (SingSigIds SingNonBlocking) = smallByteLimit
+    stateToLimit SingSigs                     = byteLimit
     stateToLimit SingIdle                     = smallByteLimit
     stateToLimit a@SingDone                   = notActiveState a
 

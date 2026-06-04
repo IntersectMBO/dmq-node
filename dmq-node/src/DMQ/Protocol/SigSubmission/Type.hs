@@ -103,7 +103,6 @@ deriving instance Eq (VerKeyDSIGN (KES.DSIGN crypto))
 
 -- | Sig type consists of payload and its KES signature.
 --
--- TODO: add signed bytes.
 data SigRaw crypto = SigRaw {
     sigRawId            :: SigId,
     sigRawBody          :: SigBody,
@@ -328,7 +327,6 @@ data SigValidationError =
   | PoolNotEligible
   | UnrecognizedPool
   | NotInitialized
-  | ClockSkew
   | SigDuplicate
   | SigExpired
   | SigResultOther Text

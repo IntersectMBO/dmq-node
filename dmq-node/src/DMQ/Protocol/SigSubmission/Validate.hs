@@ -16,10 +16,8 @@ module DMQ.Protocol.SigSubmission.Validate
   , SigValidationException (..)
   , SigValidationError (..)
   , SigValidationTrace (..)
-  , c_MAX_CLOCK_SKEW_SEC
   ) where
 
-import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Except (Except)
 import Control.Monad.Except qualified as Except
 import Control.Monad.State.Strict (State, StateT (..))
@@ -28,35 +26,31 @@ import Control.Monad.State.Strict qualified as State
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromJust, isNothing)
-import Data.Typeable
+import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 
 import Cardano.Crypto.DSIGN.Class qualified as DSIGN
 import Cardano.Crypto.Hash.Class (castHash, hashWith)
 import Cardano.Crypto.KES.Class (KESAlgorithm (..))
 import Cardano.KESAgent.KES.Crypto as KES
 import Cardano.KESAgent.KES.OCert (OCert (..), OCertSignable, validateOCert)
-import Cardano.Ledger.Api.State.Query (StakeSnapshot (..))
+-- NOTE: one should be careful with `ssMarkPool` in this module, so it is not
+-- imported, see a note in
+-- `DMQ.NodeToClient.LocalStateQueryClient.cardanoClient`.
+import Cardano.Ledger.Api.State.Query (StakeSnapshot (ssSetPool))
 import Cardano.Ledger.BaseTypes.NonZero qualified as Ledger
 import Cardano.Ledger.Keys qualified as Ledger
 
-import DMQ.Diffusion.NodeKernel (PoolValidationCtx (..))
+import DMQ.Diffusion.NodeKernel (PoolValidationCtx (..), Readiness (..))
 import DMQ.Protocol.SigSubmission.Type
 
-
-c_MAX_CLOCK_SKEW_SEC :: NominalDiffTime
-c_MAX_CLOCK_SKEW_SEC = 5
 
 pattern NotZeroSetSnapshot :: StakeSnapshot
 pattern NotZeroSetSnapshot <- (Ledger.isZero . ssSetPool -> False)
 
-pattern NotZeroMarkSnapshot :: StakeSnapshot
-pattern NotZeroMarkSnapshot <- (Ledger.isZero . ssMarkPool -> False)
-
 pattern ZeroSetSnapshot :: StakeSnapshot
 pattern ZeroSetSnapshot <- (Ledger.isZero . ssSetPool -> True)
 
-{-# COMPLETE NotZeroSetSnapshot, NotZeroMarkSnapshot, ZeroSetSnapshot #-}
+{-# COMPLETE NotZeroSetSnapshot, ZeroSetSnapshot #-}
 
 
 validateSigId :: Sig crypto -> Bool
@@ -73,11 +67,10 @@ validateSig :: forall crypto.
                , ContextKES (KES crypto) ~ ()
                , Signable (KES crypto) ByteString
                )
-            => UTCTime
-            -> [Sig crypto]
+            => [Sig crypto]
             -> PoolValidationCtx
             -> ([Either (SigId, SigValidationError) (Sig crypto)], PoolValidationCtx)
-validateSig now sigs ctx0 =
+validateSig sigs ctx0@PoolValidationCtx { vctxNow = now, vctxPraosMaxKESEvo = maxKESEvo } =
     State.runState (traverse (exceptions . validate) sigs) ctx0
   where
     exceptions :: StateT s (Except e) a
@@ -100,14 +93,18 @@ validateSig now sigs ctx0 =
                          ocertN
                          },
                        sigColdKey = SigColdKey coldKey,
-                       sigKESSignature = SigKESSignature kesSig
+                       sigKESSignature = SigKESSignature kesSig,
+                       sigExpiresAt
                      } = do
+      -- check if sig expired
+      utcTimeToPOSIXSeconds now <= sigExpiresAt ?! SigExpired
+
       -- TODO: if new cborg version is released, validation of SigId should be
       -- moved to the decoder, right now the decoder only verifies that we
       -- received the right amount of bytes.
       validateSigId sig ?! InvalidSigId
 
-      ctx@PoolValidationCtx { vctxEpoch, vctxStakeMap, vctxOcertMap } <- State.get
+      ctx@PoolValidationCtx { vctxReadiness, vctxStakeMap, vctxOcertMap } <- State.get
 
       --
       -- verify KES period
@@ -120,42 +117,16 @@ validateSig now sigs ctx0 =
       -- verify that the pool is registered and eligible to mint blocks
       --
 
-      let -- `vctxEpoch` and `vctxStakeMap` are initialized in one STM
-          -- transaction, which guarantees that fromJust will not fail
-          nextEpoch = fromJust vctxEpoch
       case Map.lookup (Ledger.hashKey (Ledger.VKey coldKey)) vctxStakeMap of
-        Nothing | isNothing vctxEpoch
-                  -> left NotInitialized
-                | otherwise
-                  -> left UnrecognizedPool
+        Nothing ->
+          left $ case vctxReadiness of
+            Ready    -> UnrecognizedPool
+            NotReady -> NotInitialized
 
-        Just ss@NotZeroSetSnapshot ->
-          if | now <= addUTCTime c_MAX_CLOCK_SKEW_SEC nextEpoch
-             -> return ()
+        Just NotZeroSetSnapshot -> return ()
 
-               -- local-state-query is late, but the pool is about to expire
-             | Ledger.isZero (ssMarkPool ss)
-             -> left SigExpired
-
-             | otherwise
-             -> left ClockSkew
-
-        Just NotZeroMarkSnapshot ->
-          -- we take abs time in case we're late with our own local-state-query
-          -- update, and/or the other side's clock is ahead, and we're just
-          -- about or have just crossed the epoch and the pool is expected to
-          -- move into the set mark
-          if | abs (diffUTCTime nextEpoch now) <= c_MAX_CLOCK_SKEW_SEC
-             -> return ()
-
-             | diffUTCTime nextEpoch now > c_MAX_CLOCK_SKEW_SEC
-             -> left PoolNotEligible
-
-             | otherwise
-             -> left ClockSkew
-
-        -- pool unregistered and is ineligible to mint blocks
-        Just ZeroSetSnapshot -> left SigExpired
+        -- pool unregistered and is ineligible to mint signatures
+        Just ZeroSetSnapshot -> left PoolNotEligible
 
       --
       -- verify that our observations of ocertN are strictly monotonic
@@ -196,10 +167,8 @@ validateSig now sigs ctx0 =
         startKESPeriod, endKESPeriod :: KESPeriod
 
         startKESPeriod = ocertKESPeriod
-        -- TODO: is `totalPeriodsKES` the same as `praosMaxKESEvo`
-        -- or `sgMaxKESEvolution` in the genesis file?
         endKESPeriod   = KESPeriod $ unKESPeriod startKESPeriod
-                                   + totalPeriodsKES (Proxy :: Proxy (KES crypto))
+                                   + fromIntegral maxKESEvo
 
         (?!:) :: Either err ()
               -> (err -> SigValidationError)

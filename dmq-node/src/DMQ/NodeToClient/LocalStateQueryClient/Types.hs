@@ -16,7 +16,7 @@ import Ouroboros.Consensus.HardFork.History.Qry (PastHorizonException)
 data TraceLocalStateQueryClient =
     Acquiring (Maybe SystemStart)
   | CurrentEpoch EpochNo
-  | NextEpoch UTCTime NominalDiffTime
+  | NextEpoch UTCTime DiffTime
   | PastHorizon PastHorizonException
   | LedgerPeersNotAvailable
 

@@ -75,6 +75,7 @@ import Ouroboros.Network.Server.RateLimiting (AcceptedConnectionsLimit (..))
 import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
 
 import DMQ.Configuration.Topology (NoExtraConfig (..), NoExtraFlags (..))
+import DMQ.Genesis
 
 -- | Configuration comes in two flavours depending on the `f` functor:
 -- `PartialConfig` is using `Last` and `Configuration` is using an identity
@@ -91,6 +92,12 @@ data Configuration' f =
     dmqcNetworkMagic                      :: f NetworkMagic,
     -- | Network magic for local connections to a cardano-node
     dmqcCardanoNetworkMagic               :: f NetworkMagic,
+    -- | shelley genesis file, e.g.
+    -- `/configuration/cardano/mainnet-shelley-genesis.json` in `cardano-node`
+    -- repo.
+    dmqcShelleyGenesisFile                :: f GenesisFile,
+    -- | Hash of the genesis file.
+    dmqcShelleyGenesisHash                :: f (Maybe GenesisHash),
 
     -- | IPv4 address to bind to for `node-to-node` communication.
     dmqcIPv4                              :: f (Maybe IPv4),
@@ -187,12 +194,15 @@ defaultConfiguration = Configuration {
       dmqcIPv4                              = I Nothing,
       dmqcIPv6                              = I Nothing,
       dmqcLocalAddress                      = I (LocalAddress "dmq-node.socket"),
-      dmqcNetworkMagic                      = I NetworkMagic { unNetworkMagic = 3_141_592 },
+      -- mainnet dmq protocol magic according to CIP#137
+      dmqcNetworkMagic                      = I NetworkMagic { unNetworkMagic = 2_912_307_721 },
       dmqcCardanoNetworkMagic               =
         I (NetworkMagic . unProtocolMagicId $ mainnetProtocolMagicId),
       dmqcPortNumber                        = I 3_141,
       dmqcConfigFile                        = I "dmq.config.json",
       dmqcTopologyFile                      = I "dmq.topology.json",
+      dmqcShelleyGenesisFile                = I (GenesisFile "mainnet-shelley-genesis.json"),
+      dmqcShelleyGenesisHash                = I Nothing,
       dmqcAcceptedConnectionsLimit          = I defaultAcceptedConnectionsLimit,
       dmqcDiffusionMode                     = I InitiatorAndResponderDiffusionMode,
       dmqcCardanoNodeSocket                 = I "cardano-node.socket",
@@ -246,6 +256,9 @@ instance FromJSON PartialConfig where
       dmqcPeerSharing <- Last <$> v .:? "PeerSharing"
       dmqcCardanoNodeSocket <- Last <$> v .:? "CardanoNodeSocket"
 
+      dmqcShelleyGenesisFile <- Last . fmap GenesisFile <$> v .:? "ShelleyGenesisFile"
+      dmqcShelleyGenesisHash <- Last <$> v .:? "ShelleyGenesisHash"
+
       dmqcTargetOfRootPeers                 <- Last <$> v .:? "TargetNumberOfRootPeers"
       dmqcTargetOfKnownPeers                <- Last <$> v .:? "TargetNumberOfKnownPeers"
       dmqcTargetOfEstablishedPeers          <- Last <$> v .:? "TargetNumberOfEstablishedPeers"
@@ -279,6 +292,8 @@ instance ToJSON Configuration where
            , "ConfigFile"                        .= unI dmqcConfigFile
            , "CardanoNodeSocket"                 .= unI dmqcCardanoNodeSocket
            , "TopologyFile"                      .= unI dmqcTopologyFile
+           , "ShelleyGenesisFile"                .= unGenesisFile (unI dmqcShelleyGenesisFile)
+           , "ShelleyGenesisHash"                .= unI dmqcShelleyGenesisHash
            , "AcceptedConnectionsLimit"          .= unI dmqcAcceptedConnectionsLimit
            , "DiffusionMode"                     .= unI dmqcDiffusionMode
            , "TargetOfRootPeers"                 .= unI dmqcTargetOfRootPeers

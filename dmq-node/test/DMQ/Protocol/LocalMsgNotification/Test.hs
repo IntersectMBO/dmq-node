@@ -41,7 +41,6 @@ import Ouroboros.Network.Channel
 import Ouroboros.Network.Driver.Simple
 import Ouroboros.Network.Protocol.Codec.Utils (WithBytes (..))
 import Ouroboros.Network.Protocol.Codec.Utils qualified as Utils
-import Ouroboros.Network.Util.ShowProxy (ShowProxy (..))
 
 import Test.Ouroboros.Network.Protocol.Utils
 import Test.Ouroboros.Network.Utils
@@ -225,9 +224,6 @@ instance NFData (WithBytes Msg) where
     rnf cborBytes
     `seq`
     rnf cborPayload
-
-instance ShowProxy (WithBytes Msg) where
-  showProxy _ = "WithBytes Msg"
 
 codec :: MonadST m
       => LocalMsgNotificationCodec m MsgWithBytes

@@ -28,7 +28,7 @@ import Data.Void (Void)
 import System.Random (StdGen)
 import System.Random qualified as Random
 
-import Ouroboros.Network.BlockFetch (newFetchClientRegistry)
+import Ouroboros.Network.KeepAlive (newKeepAliveRegistry)
 import Ouroboros.Network.Magic (NetworkMagic (..))
 import Ouroboros.Network.PeerSelection.Governor.Types
            (makePublicPeerSelectionStateVar)
@@ -42,6 +42,7 @@ import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 import DMQ.Configuration
 import DMQ.Diffusion.NodeKernel.Types
 import DMQ.Diffusion.PeerSelection.PeerMetric (mkPeerMetric)
+import DMQ.Genesis
 import DMQ.Policy qualified as Policy
 import DMQ.Protocol.SigSubmission.Type (Sig (sigExpiresAt, sigId), SigId)
 import DMQ.Tracer
@@ -52,11 +53,12 @@ newNodeKernel :: forall crypto ntnAddr m.
                  , Ord ntnAddr
                  )
               => StdGen
+              -> ShelleyGenesis
               -> m (NodeKernel crypto ntnAddr m)
-newNodeKernel rng = do
+newNodeKernel rng ShelleyGenesis {sgMaxKESEvolutions} = do
   publicPeerSelectionStateVar <- makePublicPeerSelectionStateVar
 
-  fetchClientRegistry <- newFetchClientRegistry
+  keepAliveRegistry <- newKeepAliveRegistry
   peerSharingRegistry <- newPeerSharingRegistry
 
   mempool <- Mempool.empty
@@ -64,19 +66,21 @@ newNodeKernel rng = do
   sigMempoolSem <- newTxMempoolSem
   let (rng', rng'') = Random.splitGen rng
   sigSharedTxStateVar <- newSharedTxStateVar rng'
-  (nextEpochVar, ocertCountersVar, stakePoolsVar, ledgerBigPeersVar, ledgerPeersVar) <- atomically $
-    (,,,,) <$> newTVar Nothing
+  (readinessVar, ocertCountersVar, stakePoolsVar, ledgerBigPeersVar, ledgerPeersVar) <- atomically $
+    (,,,,) <$> newTVar NotReady
            <*> newTVar Map.empty
            <*> newTVar Map.empty
            <*> newTVar Nothing
            <*> newEmptyTMVar
 
   let withPoolValidationCtx
-        :: forall a. (PoolValidationCtx -> (a, PoolValidationCtx)) -> STM m a
-      withPoolValidationCtx f = do
-        ctx <- PoolValidationCtx <$> readTVar nextEpochVar
-                                 <*> readTVar stakePoolsVar
-                                 <*> readTVar ocertCountersVar
+        :: forall a. UTCTime -> (PoolValidationCtx -> (a, PoolValidationCtx)) -> STM m a
+      withPoolValidationCtx now f = do
+        ctx <- PoolValidationCtx now
+                <$> readTVar readinessVar
+                <*> readTVar stakePoolsVar
+                <*> readTVar ocertCountersVar
+                <*> pure sgMaxKESEvolutions
         let (a, PoolValidationCtx {vctxOcertMap}) = f ctx
         writeTVar ocertCountersVar vctxOcertMap
         return a
@@ -97,14 +101,14 @@ newNodeKernel rng = do
 
   peerMetric <- mkPeerMetric
 
-  pure NodeKernel { fetchClientRegistry
+  pure NodeKernel { keepAliveRegistry
                   , peerSharingRegistry
                   , peerSharingAPI
                   , mempool
                   , sigChannelVar
                   , sigMempoolSem
                   , sigSharedTxStateVar
-                  , nextEpochVar
+                  , readinessVar
                   , stakePools
                   , peerMetric
                   }
@@ -123,6 +127,7 @@ withNodeKernel :: forall crypto ntnAddr ntcAddr m a.
                   )
                => DMQTracers crypto ntnAddr ntcAddr m
                -> Configuration
+               -> ShelleyGenesis
                -> StdGen
                -> (NetworkMagic -> NodeKernel crypto ntnAddr m -> m (Either SomeException Void))
                -> (NodeKernel crypto ntnAddr m -> m a)
@@ -133,13 +138,14 @@ withNodeKernel DMQTracers { sigSubmissionLogicTracer }
                Configuration {
                  dmqcCardanoNetworkMagic = I networkMagic
                }
+               shelleyGenesis
                rng
                mkStakePoolMonitor k = do
   nodeKernel@NodeKernel { mempool,
                           sigChannelVar,
                           sigSharedTxStateVar
                         }
-    <- newNodeKernel rng
+    <- newNodeKernel rng shelleyGenesis
   withAsync (mempoolWorker mempool)
           $ \mempoolThread ->
     withAsync (decisionLogicThreads
