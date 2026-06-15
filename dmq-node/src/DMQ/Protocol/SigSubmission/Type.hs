@@ -329,6 +329,7 @@ data SigValidationError =
   | NotInitialized
   | SigDuplicate
   | SigExpired
+  | SigExpiresAtTooFarInTheFuture
   | SigResultOther Text
   deriving (Eq, Show)
 

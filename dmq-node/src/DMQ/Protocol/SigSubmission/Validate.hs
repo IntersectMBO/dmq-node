@@ -26,6 +26,7 @@ import Control.Monad.State.Strict qualified as State
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Map.Strict qualified as Map
+import Data.Time.Clock (addUTCTime)
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 
 import Cardano.Crypto.DSIGN.Class qualified as DSIGN
@@ -41,6 +42,7 @@ import Cardano.Ledger.BaseTypes.NonZero qualified as Ledger
 import Cardano.Ledger.Keys qualified as Ledger
 
 import DMQ.Diffusion.NodeKernel (PoolValidationCtx (..), Readiness (..))
+import DMQ.Policy qualified as Policy
 import DMQ.Protocol.SigSubmission.Type
 
 
@@ -97,7 +99,12 @@ validateSig sigs ctx0@PoolValidationCtx { vctxNow = now, vctxPraosMaxKESEvo = ma
                        sigExpiresAt
                      } = do
       -- check if sig expired
-      utcTimeToPOSIXSeconds now <= sigExpiresAt ?! SigExpired
+      let posixNow = utcTimeToPOSIXSeconds now
+      posixNow <= sigExpiresAt ?! SigExpired
+
+      -- check if sigExpiresAt is not too far in the future
+      let posixBound = utcTimeToPOSIXSeconds (Policy.maxSigExpiresAtDelay `addUTCTime` now)
+      sigExpiresAt < posixBound ?! SigExpiresAtTooFarInTheFuture
 
       -- TODO: if new cborg version is released, validation of SigId should be
       -- moved to the decoder, right now the decoder only verifies that we

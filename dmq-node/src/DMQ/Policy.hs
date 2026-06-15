@@ -5,8 +5,11 @@ module DMQ.Policy
   , maxSigSize
   , minSigBodySize
   , maxSigBodySize
+  , maxSigExpiresAtDelay
   , maxSigIdsInflight
   ) where
+
+import Data.Time (NominalDiffTime)
 
 import DMQ.Diffusion.PeerSelection.PeerMetric (PeerMetricConfiguration (..))
 import DMQ.Protocol.SigSubmission.Type (NumTxIdsToReq)
@@ -34,6 +37,13 @@ minSigBodySize = 360
 -- See: https://cips.cardano.org/cip/CIP-0137#mithril-extra-network-usage
 maxSigBodySize :: SizeInBytes
 maxSigBodySize = 2000
+
+
+-- | We bound the `sigExpiresAt` to `maxSigExpiersAtDelay` seconds into the
+-- future.
+--
+maxSigExpiresAtDelay :: NominalDiffTime
+maxSigExpiresAtDelay = 1800
 
 
 -- | Maximum numbers signatures in-flight per peer.
