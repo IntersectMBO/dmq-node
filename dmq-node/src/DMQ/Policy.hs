@@ -3,6 +3,8 @@ module DMQ.Policy
   , sigSubmissionIngressLimit
   , peerMetricConfiguration
   , maxSigSize
+  , minSigBodySize
+  , maxSigBodySize
   , maxSigIdsInflight
   ) where
 
@@ -14,11 +16,27 @@ import Network.Mux.Types (MiniProtocolLimits (..))
 import Ouroboros.Network.SizeInBytes (SizeInBytes)
 import Ouroboros.Network.TxSubmission.Inbound.V2
 
+-- | Maximum signature size.
 -- TODO: make it configurable
+--
+-- See: https://cips.cardano.org/cip/CIP-0137#mithril-extra-network-usage
 maxSigSize :: SizeInBytes
 maxSigSize = 2800
 
--- | Maximum numbers signature id's in-flight per peer.
+-- | Minimum `sigBody` size
+--
+-- See: https://cips.cardano.org/cip/CIP-0137#mithril-extra-network-usage
+minSigBodySize :: SizeInBytes
+minSigBodySize = 360
+
+-- | Maximum `sigBody` size, it must be smaller than `maxSigSize`.
+--
+-- See: https://cips.cardano.org/cip/CIP-0137#mithril-extra-network-usage
+maxSigBodySize :: SizeInBytes
+maxSigBodySize = 2000
+
+
+-- | Maximum numbers signatures in-flight per peer.
 --
 -- NOTE: it is used by:
 -- * `sigDecisionPolicy`

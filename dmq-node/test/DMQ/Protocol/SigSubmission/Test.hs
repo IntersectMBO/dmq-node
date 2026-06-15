@@ -165,7 +165,13 @@ instance Arbitrary SigId where
   shrink = map SigId . shrink . getSigId
 
 instance Arbitrary SigBody where
-  arbitrary = SigBody <$> arbitrary
+  arbitrary = SigBody <$> arbitrary `suchThat` predicate
+    where
+      predicate :: ByteString -> Bool
+      predicate bs =
+        let l = BS.length bs
+        in l >= fromIntegral Policy.minSigBodySize
+        && l <= fromIntegral Policy.maxSigBodySize
   shrink = map SigBody . shrink . getSigBody
 
 -- | Make a KES key pair.
@@ -367,14 +373,11 @@ instance ( Crypto crypto
     sigRawExpiresAt <- fromIntegral @Word32 <$> arbitrary
     -- offset since `ocertKESPeriod`, so that the signature is still valid
     kesOffset <- arbitrary `suchThat` (< fromIntegral maxKESEvo)
-    payload <- arbitrary
+    sigRawBody <- arbitrary
     crypto <- arbitrary
     return $ withConstrBind crypto \CryptoCtx {ocert, coldKey, snKESKey} -> do
       let sigRawOpCertificate :: SigOpCertificate crypto
           sigRawOpCertificate = SigOpCertificate ocert
-
-          sigRawBody :: SigBody
-          sigRawBody = SigBody payload
 
           sigRawColdKey :: SigColdKey crypto
           sigRawColdKey = SigColdKey $ deriveVerKeyDSIGN coldKey
