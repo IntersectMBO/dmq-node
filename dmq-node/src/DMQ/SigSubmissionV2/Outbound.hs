@@ -162,7 +162,7 @@ sigSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version =
               pure (SendMsgReplySigIds (NonBlockingReply sigs') server')
 
         recvMsgRequestSigs :: [sigId]
-                          -> m (OutboundStSigs sigId sig m ())
+                           -> m (OutboundStSigs sigId sig m ())
         recvMsgRequestSigs sigIds = do
           -- Trace the IDs of the signatures requested.
           traceWith tracer (TraceSigSubmissionOutboundRecvMsgRequestSigs sigIds)
