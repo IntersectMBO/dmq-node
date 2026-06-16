@@ -17,6 +17,7 @@ module DMQ.Protocol.SigSubmission.Validate
   , SigValidationTrace (..)
   ) where
 
+import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Except (Except)
 import Control.Monad.Except qualified as Except
 import Control.Monad.State.Strict (State, StateT (..))
@@ -25,7 +26,7 @@ import Control.Monad.State.Strict qualified as State
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Map.Strict qualified as Map
-import Data.Time.Clock (addUTCTime)
+import Data.OrdPSQ qualified as OrdPSQ
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 
 import Cardano.Crypto.DSIGN.Class qualified as DSIGN
@@ -40,7 +41,7 @@ import Cardano.Ledger.Api.State.Query (StakeSnapshot (ssSetPool))
 import Cardano.Ledger.BaseTypes.NonZero qualified as Ledger
 import Cardano.Ledger.Keys qualified as Ledger
 
-import DMQ.Diffusion.NodeKernel (PoolId, PoolValidationCtx (..), Readiness (..))
+import DMQ.Diffusion.NodeKernel (PoolValidationCtx (..), Readiness (..))
 import DMQ.Policy qualified as Policy
 import DMQ.Protocol.SigSubmission.Type
 
@@ -107,13 +108,36 @@ validateSig sigs = State.runState (traverse (commute . validate) sigs)
                        sigExpiresAt
                      } = do
       -- check if sig expired
-      vctxNow <$> State.get >>= \now -> do
-        let posixNow = utcTimeToPOSIXSeconds now
+      vctxUTCNow <$> State.get >>= \utcNow -> do
+        let posixNow = utcTimeToPOSIXSeconds utcNow
         posixNow <= sigExpiresAt ?! SigExpired
 
         -- check if sigExpiresAt is not too far in the future
-        let posixBound = utcTimeToPOSIXSeconds (Policy.maxSigExpiresAtDelay `addUTCTime` now)
+        let posixBound = utcTimeToPOSIXSeconds (Policy.maxSigExpiresAtDelay `addUTCTime` utcNow)
         sigExpiresAt < posixBound ?! SigExpiresAtTooFarInTheFuture
+
+      -- check if the PoolId doesn't forge signatures too frequently
+      (\st -> ( vctxNow st
+              , vctxLastSigByPoolId st
+              ))
+        <$> State.get >>= \(now, lastSigByPoolId) -> do
+        let fn :: Maybe (Time, ())
+               -> (Either DiffTime (), Maybe (Time, ()))
+            fn Nothing
+                = (Right (), Just (now, ()))
+
+            fn a@(Just (lastSeen, _))
+                | sinceLast >= Policy.minSigDelay
+                = (Right (), Just (now, ()))
+
+                | otherwise
+                = (Left sinceLast, a)
+              where
+                sinceLast = now `diffTime` lastSeen
+
+            (r, lastSigByPoolId') = OrdPSQ.alter fn poolId lastSigByPoolId
+        r ?!: SigTooFrequent poolId
+        State.modify (\a -> a { vctxLastSigByPoolId = lastSigByPoolId' })
 
       -- TODO: if new cborg version is released, validation of SigId should be
       -- moved to the decoder, right now the decoder only verifies that we

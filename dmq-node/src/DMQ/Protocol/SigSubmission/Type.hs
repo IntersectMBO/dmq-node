@@ -27,6 +27,7 @@ module DMQ.Protocol.SigSubmission.Type
   , SigValidationError (..)
   , SigValidationTrace (..)
   , SigValidationException (..)
+  , PoolId
     -- * Utilities
   , CBORBytes (..)
   , Verbose (..)
@@ -35,6 +36,7 @@ module DMQ.Protocol.SigSubmission.Type
   ) where
 
 import Control.Exception (Exception (..))
+import Control.Monad.Class.MonadTime.SI
 import Data.Aeson
 import Data.ByteString (ByteString)
 import Data.ByteString.Base16.Lazy as LBS.Base16
@@ -53,12 +55,18 @@ import Cardano.Crypto.Util (SignableRepresentation (..))
 import Cardano.KESAgent.KES.Crypto as KES
 import Cardano.KESAgent.KES.OCert (KESPeriod (..), OCert (..),
            OCertSignable (..))
+import Cardano.Ledger.Shelley.API qualified as Ledger
 import Cardano.Logging qualified as Logging
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type as SigSubmission hiding
            (TxSubmission2)
 import Ouroboros.Network.Protocol.TxSubmission2.Type as TxSubmission2
 import Ouroboros.Network.Util.ShowProxy
+
+
+-- | Cardano pool id's are hashes of the cold verification key
+--
+type PoolId = Ledger.KeyHash Ledger.StakePool
 
 
 type data SigPayload
@@ -331,6 +339,7 @@ data SigValidationError =
   | SigExpired
   | SigExpiresAtTooFarInTheFuture
   | SigResultOther Text
+  | SigTooFrequent PoolId DiffTime
   deriving (Eq, Show)
 
 instance ShowProxy SigValidationError where

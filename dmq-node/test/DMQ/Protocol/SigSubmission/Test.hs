@@ -8,7 +8,6 @@
 {-# LANGUAGE LambdaCase           #-}
 {-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE RankNTypes           #-}
-{-# LANGUAGE RecordWildCards      #-}
 {-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE TupleSections        #-}
@@ -36,6 +35,8 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BL
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map qualified as Map
+import Data.OrdPSQ (OrdPSQ)
+import Data.OrdPSQ qualified as OrdPSQ
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Typeable
 import Data.Word (Word32, Word64)
@@ -67,6 +68,7 @@ import Cardano.Ledger.Keys qualified as Ledger.Keys
 import Test.Crypto.Instances
 
 import DMQ.Diffusion.NodeKernel (PoolValidationCtx (..), Readiness (..))
+import DMQ.Policy qualified as Policy
 import DMQ.Protocol.SigSubmission.Codec
 import DMQ.Protocol.SigSubmission.Type
 import DMQ.Protocol.SigSubmission.Validate
@@ -890,22 +892,32 @@ prop_codec_valid_cbor_standardcrypto = prop_codec_valid_cbor . getBlind
 --
 data Validity =
     Valid {
-       currentTimeDiff :: NominalDiffTime
+       currentTimeDiff :: NominalDiffTime,
+       lastSigTimeDiff :: DiffTime
       }
   | InvalidViaNotInitialized {
-        currentTimeDiff :: NominalDiffTime
+        currentTimeDiff :: NominalDiffTime,
+        lastSigTimeDiff :: DiffTime
       }
   | InvalidViaUnrecognizedPool {
-        currentTimeDiff :: NominalDiffTime
+        currentTimeDiff :: NominalDiffTime,
+        lastSigTimeDiff :: DiffTime
       }
   | InvalidViaSigExpired {
-        currentTimeDiff :: NominalDiffTime
+        currentTimeDiff :: NominalDiffTime,
+        lastSigTimeDiff :: DiffTime
       }
   | InvalidViaPoolNotEligible {
-        currentTimeDiff :: NominalDiffTime
+        currentTimeDiff :: NominalDiffTime,
+        lastSigTimeDiff :: DiffTime
       }
   | InvalidViaOCertCounter {
-        currentTimeDiff :: NominalDiffTime
+        currentTimeDiff :: NominalDiffTime,
+        lastSigTimeDiff :: DiffTime
+      }
+  | InvalidViaTooRecentSig {
+        currentTimeDiff :: NominalDiffTime,
+        lastSigTimeDiff :: DiffTime
       }
   deriving (Eq, Show)
 
@@ -917,38 +929,50 @@ labelValidity = \case
     InvalidViaSigExpired {}                -> label "InvalidViaSigExpired"
     InvalidViaPoolNotEligible {}           -> label "InvalidViaPoolNotEligible"
     InvalidViaOCertCounter {}              -> label "InvalidViaOCertCounter"
+    InvalidViaTooRecentSig {}              -> label "InvalidViaTooRecentSig"
 
 
 instance Arbitrary Validity where
     arbitrary = oneof
       [ Valid
           <$> arbitrary `suchThat` (<= 0)
+          <*> arbitrary `suchThat` (<= -Policy.minSigDelay)
       , InvalidViaNotInitialized
           <$> arbitrary `suchThat` (<= 0)
+          <*> arbitrary `suchThat` (<= -Policy.minSigDelay)
       , InvalidViaUnrecognizedPool
           <$> arbitrary `suchThat` (<= 0)
+          <*> arbitrary `suchThat` (<= -Policy.minSigDelay)
       , InvalidViaSigExpired
           <$> arbitrary `suchThat` (> 0)
+          <*> arbitrary `suchThat` (<= -Policy.minSigDelay)
       , InvalidViaPoolNotEligible
           <$> arbitrary `suchThat` (<= 0)
+          <*> arbitrary `suchThat` (<= -Policy.minSigDelay)
       , InvalidViaOCertCounter
           <$> arbitrary `suchThat` (<= 0)
+          <*> arbitrary `suchThat` (<= -Policy.minSigDelay)
+      , InvalidViaTooRecentSig
+          <$> arbitrary `suchThat` (<= 0)
+          <*> arbitrary `suchThat` (\a -> a > -Policy.minSigDelay && a <= 0)
       ]
 
     shrink a@Valid { currentTimeDiff }
       =  [ a { currentTimeDiff = t } | t <- shrink currentTimeDiff, t <= 0 ]
-    shrink (InvalidViaNotInitialized { currentTimeDiff })
-      =  [ Valid { currentTimeDiff } ]
-    shrink (InvalidViaUnrecognizedPool { currentTimeDiff })
-      =  [ Valid { currentTimeDiff } ]
-    shrink a@InvalidViaSigExpired { currentTimeDiff }
+    shrink (InvalidViaNotInitialized { currentTimeDiff, lastSigTimeDiff })
+      =  [ Valid { currentTimeDiff, lastSigTimeDiff } ]
+    shrink (InvalidViaUnrecognizedPool { currentTimeDiff, lastSigTimeDiff })
+      =  [ Valid { currentTimeDiff, lastSigTimeDiff } ]
+    shrink a@InvalidViaSigExpired { currentTimeDiff, lastSigTimeDiff }
       =  [ a { currentTimeDiff = t } | t <- shrink currentTimeDiff, t > 0 ]
-      ++ [ Valid { currentTimeDiff = 0 } ]
-    shrink a@InvalidViaPoolNotEligible { currentTimeDiff }
+      ++ [ Valid { currentTimeDiff = 0, lastSigTimeDiff } ]
+    shrink a@InvalidViaPoolNotEligible { currentTimeDiff, lastSigTimeDiff }
       =  [ a { currentTimeDiff = t } | t <- shrink currentTimeDiff, t <= 0 ]
-      ++ [ Valid { currentTimeDiff } ]
-    shrink InvalidViaOCertCounter { currentTimeDiff }
-      =  [ Valid { currentTimeDiff } ]
+      ++ [ Valid { currentTimeDiff, lastSigTimeDiff } ]
+    shrink InvalidViaOCertCounter { currentTimeDiff, lastSigTimeDiff }
+      =  [ Valid { currentTimeDiff, lastSigTimeDiff } ]
+    shrink InvalidViaTooRecentSig { currentTimeDiff, lastSigTimeDiff }
+      =  [ Valid { currentTimeDiff, lastSigTimeDiff = lastSigTimeDiff - 30 } ]
 
 
 -- | Check that the KES signature is valid.
@@ -992,8 +1016,18 @@ prop_validateSig constr validity = labelValidity validity $ ioProperty do
         posixNow  :: POSIXTime
         posixNow  = sigExpiresAt + currentTimeDiff validity
 
-        vctxNow   :: UTCTime
-        vctxNow   = posixSecondsToUTCTime posixNow
+        vctxUTCNow :: UTCTime
+        vctxUTCNow = posixSecondsToUTCTime posixNow
+
+        vctxNow :: Time
+        vctxNow = Time 0
+
+        vctxLastSigByPoolId :: OrdPSQ PoolId Time ()
+        vctxLastSigByPoolId =
+          case validity of
+            InvalidViaTooRecentSig { lastSigTimeDiff } ->
+                  OrdPSQ.fromList [(poolId, lastSigTimeDiff `addTime` vctxNow, ())]
+            _ ->  OrdPSQ.fromList [(poolId, lastSigTimeDiff validity `addTime` vctxNow, ())]
 
         vctxReadiness :: Readiness
         vctxReadiness = case validity of
@@ -1015,10 +1049,12 @@ prop_validateSig constr validity = labelValidity validity $ ioProperty do
 
         validationCtx = PoolValidationCtx {
             vctxNow,
+            vctxUTCNow,
             vctxReadiness,
             vctxStakeMap,
             vctxOcertMap,
-            vctxPraosMaxKESEvo = maxKESEvo -- hard coded Shelley value for testing
+            vctxPraosMaxKESEvo = maxKESEvo, -- hard coded Shelley value for testing
+            vctxLastSigByPoolId
           }
 
     return
@@ -1048,6 +1084,10 @@ prop_validateSig constr validity = labelValidity validity $ ioProperty do
           (InvalidViaOCertCounter {}, Left (_, InvalidOCertCounter {}) : _) -> property True
           (InvalidViaOCertCounter {}, Left (_, err) : _)                    -> counterexample (show err) False
           (InvalidViaOCertCounter {}, Right _ : _)                          -> counterexample "unexpectedly valid signature" False
+
+          (InvalidViaTooRecentSig {}, Left (_, SigTooFrequent {}) : _) -> property True
+          (InvalidViaTooRecentSig {}, Left (_, err) : _)               -> counterexample (show err) False
+          (InvalidViaTooRecentSig {}, Right _ : _)                     -> counterexample "unexpectedly valid signature" False
 
           a -> error ("validateSig: invariant violation " ++ show a)
 

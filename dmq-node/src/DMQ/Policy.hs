@@ -5,11 +5,12 @@ module DMQ.Policy
   , maxSigSize
   , minSigBodySize
   , maxSigBodySize
+  , minSigDelay
   , maxSigExpiresAtDelay
   , maxSigIdsInflight
   ) where
 
-import Data.Time (NominalDiffTime)
+import Data.Time (DiffTime, NominalDiffTime)
 
 import DMQ.Diffusion.PeerSelection.PeerMetric (PeerMetricConfiguration (..))
 import DMQ.Protocol.SigSubmission.Type (NumTxIdsToReq)
@@ -38,6 +39,11 @@ minSigBodySize = 360
 maxSigBodySize :: SizeInBytes
 maxSigBodySize = 2000
 
+
+-- | Minimum delay between signatures created by the same `PoolId`.
+--
+minSigDelay :: DiffTime
+minSigDelay = 60
 
 -- | We bound the `sigExpiresAt` to `maxSigExpiersAtDelay` seconds into the
 -- future.

@@ -51,6 +51,7 @@ import DMQ.Diffusion.NodeKernel as NodeKernel
 import DMQ.Diffusion.PeerSelectionPolicy (policy)
 import DMQ.Genesis
 import DMQ.Handlers.TopLevel (toplevelExceptionHandler)
+import DMQ.Mempool qualified as Mempool
 import DMQ.NodeToClient qualified as NtC
 import DMQ.NodeToNode (NodeToNodeVersion, dmqCodecs, dmqLimitsAndTimeouts,
            ntnApps)
@@ -65,7 +66,6 @@ import Ouroboros.Network.PeerSelection.PeerSharing.Codec (decodeRemoteAddress,
            encodeRemoteAddress)
 import Ouroboros.Network.SizeInBytes
 import Ouroboros.Network.Snocket
-import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 
 import Paths_dmq_node qualified as Meta
 
@@ -192,8 +192,8 @@ runDMQ commandLineConfig = do
               let ntnMempoolWriter =
                     Mempool.getWriter SigDuplicate
                                       sigId
-                                      (\now sigs ->
-                                        withPoolValidationCtx (stakePools nodeKernel) now (validateSig sigs)
+                                      (\(utcNow, now) sigs ->
+                                        withPoolValidationCtx (stakePools nodeKernel) utcNow now (validateSig sigs)
                                       )
                                       (traverse_ $ \(sigid, reason) -> do
                                         traceWith sigValidationTracer $ InvalidSignature sigid reason
@@ -221,8 +221,8 @@ runDMQ commandLineConfig = do
               let ntcMempoolWriter =
                     Mempool.getWriter SigDuplicate
                                       sigId
-                                      (\now sigs ->
-                                        withPoolValidationCtx (stakePools nodeKernel) now (validateSig sigs)
+                                      (\(utcNow, now) sigs ->
+                                        withPoolValidationCtx (stakePools nodeKernel) utcNow now (validateSig sigs)
                                       )
                                       (traverse_ $ \(sigid, reason) ->
                                          traceWith localSigValidationTracer $ InvalidSignature sigid reason
