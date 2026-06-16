@@ -25,7 +25,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
-import Control.Tracer (Tracer (..), contramap)
+import Control.Tracer (Tracer (..), contramap, mkTracer)
 import System.Random (mkStdGen)
 
 import Data.ByteString.Lazy qualified as BSL
@@ -296,7 +296,7 @@ runSigSubmissionV2 tracer tracerSigLogic st0 sigDecisionPolicy = do
       let outbounds = (\(addr, (mempool, _, outDelay, _, outChannel, _)) -> do
                       labelThisThread ("outbound-" ++ show addr)
                       let outbound = sigSubmissionOutbound
-                                       (Tracer $ say . show)
+                                       (mkTracer $ say . show)
                                        (NumIdsAck $ getNumTxIdsToReq $ maxUnacknowledgedTxIds sigDecisionPolicy)
                                        (getMempoolReader mempool)
                                        (maxBound :: TestVersion)
@@ -490,7 +490,7 @@ runSigSubmissionV2WithMetric tracer tracerSigLogic config st0 sigDecisionPolicy 
       let outbounds = (\(addr, (mempool, _, outDelay, _, outChannel, _)) -> do
                       labelThisThread ("outbound-" ++ show addr)
                       let outbound = sigSubmissionOutbound
-                                       (Tracer $ say . show)
+                                       (mkTracer $ say . show)
                                        (NumIdsAck $ getNumTxIdsToReq $ maxUnacknowledgedTxIds sigDecisionPolicy)
                                        (getMempoolReader mempool)
                                        (maxBound :: TestVersion)

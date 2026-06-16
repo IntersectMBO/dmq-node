@@ -23,15 +23,10 @@ import Ouroboros.Network.OrphanInstances (localRootPeersGroupsFromJSON,
            networkTopologyFromJSON, networkTopologyToJSON)
 import System.Exit (die)
 
--- TODO: move `NoExtraConfig` and the `ToJSON NoExtraFlags` to
--- `ouroboros-network`.
+-- TODO: move `NoExtraConfig` to `ouroboros-network`.
 
 data NoExtraConfig = NoExtraConfig
   deriving Show
-
-instance ToJSON NoExtraFlags where
-  toJSON _ = Null
-  omitField _ = True
 
 instance FromJSON (NetworkTopology NoExtraConfig NoExtraFlags) where
   parseJSON = networkTopologyFromJSON

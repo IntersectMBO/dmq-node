@@ -99,7 +99,7 @@ import Ouroboros.Network.TxSubmission.Mempool.Reader
 import Ouroboros.Network.OrphanInstances ()
 
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
-import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
+import Ouroboros.Network.Protocol.Handshake.Codec (mkVersionedCodecCBORTerm,
            codecHandshake, timeLimitsHandshake)
 import Ouroboros.Network.Protocol.KeepAlive.Client (keepAliveClientPeer)
 import Ouroboros.Network.Protocol.KeepAlive.Codec (byteLimitsKeepAlive,
@@ -716,7 +716,7 @@ ntnHandshakeArguments tracer =
     haHandshakeTracer  = tracer
   , haBearerTracer     = nullTracer -- TODO
   , haHandshakeCodec   = codecHandshake nodeToNodeVersionCodec
-  , haVersionDataCodec = cborTermVersionDataCodec nodeToNodeCodecCBORTerm
+  , haVersionDataCodec = mkVersionedCodecCBORTerm nodeToNodeCodecCBORTerm
   , haAcceptVersion    = acceptableVersion
   , haQueryVersion     = queryVersion
   , haTimeLimits       = timeLimitsHandshake

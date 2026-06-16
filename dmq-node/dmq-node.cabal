@@ -125,7 +125,7 @@ library
     hashable >=1.0 && <1.6,
     io-classes:{io-classes, si-timers, strict-mvar, strict-stm} ^>=1.8.0.1,
     iproute ^>=1.7.15,
-    kes-agent-crypto ^>=1.1.0.0,
+    kes-agent-crypto ^>=1.2,
     mmap,
     mtl,
     network ^>=3.2.7,
