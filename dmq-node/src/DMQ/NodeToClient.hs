@@ -51,7 +51,7 @@ import Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import Ouroboros.Network.Mux
 import Ouroboros.Network.OrphanInstances ()
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
-import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
+import Ouroboros.Network.Protocol.Handshake.Codec (mkVersionedCodecCBORTerm,
            codecHandshake, noTimeLimitsHandshake)
 import Ouroboros.Network.TxSubmission.Mempool.Reader
 import Ouroboros.Network.TxSubmission.Mempool.Simple
@@ -71,7 +71,7 @@ ntcHandshakeArguments tracer =
   , haBearerTracer     = nullTracer -- TODO
   , haHandshakeCodec   = codecHandshake nodeToClientVersionCodec
   , haVersionDataCodec =
-      cborTermVersionDataCodec
+      mkVersionedCodecCBORTerm
         nodeToClientCodecCBORTerm
   , haAcceptVersion = acceptableVersion
   , haQueryVersion  = queryVersion
