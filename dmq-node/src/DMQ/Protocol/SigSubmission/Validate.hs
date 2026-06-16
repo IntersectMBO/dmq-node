@@ -1,6 +1,5 @@
 {-# LANGUAGE DataKinds         #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE MultiWayIf        #-}
 {-# LANGUAGE PatternSynonyms   #-}
 {-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE TypeFamilies      #-}
@@ -41,7 +40,7 @@ import Cardano.Ledger.Api.State.Query (StakeSnapshot (ssSetPool))
 import Cardano.Ledger.BaseTypes.NonZero qualified as Ledger
 import Cardano.Ledger.Keys qualified as Ledger
 
-import DMQ.Diffusion.NodeKernel (PoolValidationCtx (..), Readiness (..))
+import DMQ.Diffusion.NodeKernel (PoolId, PoolValidationCtx (..), Readiness (..))
 import DMQ.Policy qualified as Policy
 import DMQ.Protocol.SigSubmission.Type
 
@@ -72,18 +71,27 @@ validateSig :: forall crypto.
             => [Sig crypto]
             -> PoolValidationCtx
             -> ([Either (SigId, SigValidationError) (Sig crypto)], PoolValidationCtx)
-validateSig sigs ctx0@PoolValidationCtx { vctxNow = now, vctxPraosMaxKESEvo = maxKESEvo } =
-    State.runState (traverse (exceptions . validate) sigs) ctx0
+validateSig sigs = State.runState (traverse (commute . validate) sigs)
   where
-    exceptions :: StateT s (Except e) a
-               -> State  s (Either e a)
-    exceptions (StateT k) = StateT $ \s ->
+    -- Commute `StateT` and `ExceptT` monads, e.g. a natural transformation
+    -- `StateT s (Except e) ~> ExceptT e (State s)`. The latter monad allows us
+    -- to validate all signatures and retain all errors, rather than fail on
+    -- first invalid signature.
+    commute :: StateT s (Except e) a
+            -> (State s) (Either e a)
+            -- equivalent to `ExceptT (State s) a`
+    commute (StateT k) = StateT $ \s ->
       case Except.runExcept (k s) of
-        -- in case of a validation error, we continue with un-modified
-        -- `PoolValidationCtx`
+        -- validation failed, continue with the previous state
         Left x        -> return (Left x, s)
+        -- validation succeeded, continue with updated state
         Right (a, s') -> return (Right a, s')
 
+    -- NOTE: we run in `StateT s (Except e)` monad which has the semantics
+    -- of `s -> Either e (a, s)`.  In this monad `Except.throwError` abandons
+    -- the computation, and ignores the computed state.  Thus we can update the
+    -- state even if future validations will prove a signature to be invalid,
+    -- and still make sure that invalid signatures do not modify the state.
     validate :: Sig crypto
              -> StateT PoolValidationCtx (Except (SigId, SigValidationError)) (Sig crypto)
     validate sig@Sig { sigId,
@@ -99,60 +107,65 @@ validateSig sigs ctx0@PoolValidationCtx { vctxNow = now, vctxPraosMaxKESEvo = ma
                        sigExpiresAt
                      } = do
       -- check if sig expired
-      let posixNow = utcTimeToPOSIXSeconds now
-      posixNow <= sigExpiresAt ?! SigExpired
+      vctxNow <$> State.get >>= \now -> do
+        let posixNow = utcTimeToPOSIXSeconds now
+        posixNow <= sigExpiresAt ?! SigExpired
 
-      -- check if sigExpiresAt is not too far in the future
-      let posixBound = utcTimeToPOSIXSeconds (Policy.maxSigExpiresAtDelay `addUTCTime` now)
-      sigExpiresAt < posixBound ?! SigExpiresAtTooFarInTheFuture
+        -- check if sigExpiresAt is not too far in the future
+        let posixBound = utcTimeToPOSIXSeconds (Policy.maxSigExpiresAtDelay `addUTCTime` now)
+        sigExpiresAt < posixBound ?! SigExpiresAtTooFarInTheFuture
 
       -- TODO: if new cborg version is released, validation of SigId should be
       -- moved to the decoder, right now the decoder only verifies that we
       -- received the right amount of bytes.
       validateSigId sig ?! InvalidSigId
 
-      ctx@PoolValidationCtx { vctxReadiness, vctxStakeMap, vctxOcertMap } <- State.get
-
       --
       -- verify KES period
       --
 
-      sigKESPeriod < endKESPeriod    ?! KESAfterEndOCERT endKESPeriod sigKESPeriod
-      sigKESPeriod >= startKESPeriod ?! KESBeforeStartOCERT startKESPeriod sigKESPeriod
+      vctxPraosMaxKESEvo <$> State.get >>= \maxKESEvo -> do
+        let endKESPeriod :: KESPeriod
+            endKESPeriod = KESPeriod $ unKESPeriod startKESPeriod
+                                     + fromIntegral maxKESEvo
+        sigKESPeriod < endKESPeriod    ?! KESAfterEndOCERT endKESPeriod sigKESPeriod
+        sigKESPeriod >= startKESPeriod ?! KESBeforeStartOCERT startKESPeriod sigKESPeriod
 
       --
       -- verify that the pool is registered and eligible to mint blocks
       --
 
-      case Map.lookup (Ledger.hashKey (Ledger.VKey coldKey)) vctxStakeMap of
-        Nothing ->
-          left $ case vctxReadiness of
-            Ready    -> UnrecognizedPool
-            NotReady -> NotInitialized
+      (vctxStakeMap <$> State.get) >>= \stakeMap ->
+        case Map.lookup poolId stakeMap of
+          Nothing ->
+            vctxReadiness <$> State.get >>= \case
+              Ready    -> left UnrecognizedPool
+              NotReady -> left NotInitialized
 
-        Just NotZeroSetSnapshot -> return ()
+          Just NotZeroSetSnapshot -> return ()
 
-        -- pool unregistered and is ineligible to mint signatures
-        Just ZeroSetSnapshot -> left PoolNotEligible
+          -- pool unregistered and is ineligible to mint signatures
+          Just ZeroSetSnapshot -> left PoolNotEligible
 
       --
       -- verify that our observations of ocertN are strictly monotonic
       --
 
-      case Map.alterF (\a -> (a, Just ocertN))
-                      (Ledger.hashKey (Ledger.VKey coldKey))
-                      vctxOcertMap of
-        (Nothing, ocertCounters')
-          -- there is no ocert in the map, e.g. we're validating a signature
-          -- produced by that SPO for the first time
-          -> State.put ctx { vctxOcertMap = ocertCounters' }
-        (Just prevOcertN, ocertCounters')
-          -- QUESTION: should we be more strict with `<`!
-          | prevOcertN <= ocertN -- `ocertN` is valid
-          -> State.put ctx { vctxOcertMap = ocertCounters' }
+      vctxOcertMap <$> State.get >>= \ocertMap ->
+        case Map.alterF (\a -> (a, Just ocertN))
+                        poolId
+                        ocertMap of
+          (Nothing, ocertMap')
+            -- there is no ocert in the map, e.g. we're validating a signature
+            -- produced by that SPO for the first time
+            -> State.modify (\a -> a { vctxOcertMap = ocertMap' })
+          (Just prevOcertN, ocertMap')
+            -- QUESTION: should we be more strict with `<`!
+            | prevOcertN <= ocertN -- `ocertN` is valid
+            -> State.modify (\a -> a { vctxOcertMap = ocertMap' })
 
-          | otherwise
-          -> left (InvalidOCertCounter prevOcertN ocertN)
+            | otherwise
+            -> left (InvalidOCertCounter prevOcertN ocertN)
 
       --
       -- Cryptographic checks
@@ -171,11 +184,11 @@ validateSig sigs ctx0@PoolValidationCtx { vctxNow = now, vctxPraosMaxKESEvo = ma
 
       return sig
       where
-        startKESPeriod, endKESPeriod :: KESPeriod
+        poolId :: PoolId
+        poolId = Ledger.hashKey (Ledger.VKey coldKey)
 
+        startKESPeriod :: KESPeriod
         startKESPeriod = ocertKESPeriod
-        endKESPeriod   = KESPeriod $ unKESPeriod startKESPeriod
-                                   + fromIntegral maxKESEvo
 
         (?!:) :: Either err ()
               -> (err -> SigValidationError)
