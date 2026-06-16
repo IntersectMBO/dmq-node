@@ -25,15 +25,13 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
-import Control.Tracer (Tracer (..), contramap)
-import System.Random (mkStdGen)
+import Control.Tracer (Tracer (..), contramap, mkTracer)
 
 import Data.ByteString.Lazy qualified as BSL
 import Data.Foldable (toList, traverse_)
 import Data.Foldable qualified as Foldable
 import Data.Function (on)
 import Data.Functor.Identity (runIdentity)
-import Data.Hashable
 import Data.List (nubBy)
 import Data.List qualified as List
 import Data.Map.Strict (Map)
@@ -259,7 +257,6 @@ runSigSubmissionV2
      , Typeable sigid
      , Show peeraddr
      , Ord peeraddr
-     , Hashable peeraddr
      , Typeable peeraddr
 
      , sigid ~ Int
@@ -295,7 +292,7 @@ runSigSubmissionV2 tracer tracerSigLogic st0 sigDecisionPolicy = do
       let outbounds = (\(addr, (mempool, _, outDelay, _, outChannel, _)) -> do
                       labelThisThread ("outbound-" ++ show addr)
                       let outbound = sigSubmissionOutbound
-                                       (Tracer $ say . show)
+                                       (mkTracer $ say . show)
                                        (NumIdsAck $ getNumTxIdsToReq $ maxUnacknowledgedTxIds sigDecisionPolicy)
                                        (getMempoolReader mempool)
                                        (maxBound :: TestVersion)
@@ -489,7 +486,7 @@ runSigSubmissionV2WithMetric tracer tracerSigLogic config st0 sigDecisionPolicy 
       let outbounds = (\(addr, (mempool, _, outDelay, _, outChannel, _)) -> do
                       labelThisThread ("outbound-" ++ show addr)
                       let outbound = sigSubmissionOutbound
-                                       (Tracer $ say . show)
+                                       (mkTracer $ say . show)
                                        (NumIdsAck $ getNumTxIdsToReq $ maxUnacknowledgedTxIds sigDecisionPolicy)
                                        (getMempoolReader mempool)
                                        (maxBound :: TestVersion)
