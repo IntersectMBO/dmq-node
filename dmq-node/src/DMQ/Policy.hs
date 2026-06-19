@@ -8,9 +8,12 @@ module DMQ.Policy
   , minSigDelay
   , maxSigExpiresAtDelay
   , maxSigIdsInflight
+  , cardanoEpochSlots
   ) where
 
 import Data.Time (DiffTime, NominalDiffTime)
+
+import Cardano.Chain.Slotting (EpochSlots (..))
 
 import DMQ.Diffusion.PeerSelection.PeerMetric (PeerMetricConfiguration (..))
 import DMQ.Protocol.SigSubmission.Type (NumTxIdsToReq)
@@ -107,3 +110,21 @@ sigSubmissionIngressLimit = MiniProtocolLimits {
 
 peerMetricConfiguration :: PeerMetricConfiguration
 peerMetricConfiguration = PeerMetricConfiguration { timeWindowToKeep = 3600 }
+
+
+-- Cardano node sets `epochSlots` by:
+--
+-- * asserting that Byron security parameter and Shelley security
+--   parameter are equal, see
+--   https://github.com/intersectmbo/ouroboros-consensus/tree/release-ouroboros-consensus-3.0.1.0/ouroboros-consensus-cardano/src/ouroboros-consensus-cardano/Ouroboros/Consensus/Cardano/Node.hs#L850-L851
+--
+-- * multiplies it by the factor of `10`: see
+--   https://github.com/IntersectMBO/cardano-api/tree/cardano-rpc-11.0.0.0/cardano-api/src/Cardano/Api/LedgerState.hs#L525
+--
+-- We hard code it, since the local state query is only using it for decoding
+-- Byron blocks which dmq-node doesn't need to know about at all.
+--
+cardanoEpochSlots :: EpochSlots
+cardanoEpochSlots = EpochSlots $ 10 * k
+  where
+    k = 2160

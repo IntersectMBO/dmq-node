@@ -36,7 +36,6 @@ import System.Random qualified as Random
 
 import Network.Mux qualified as Mx
 
-import Cardano.Chain.Slotting (EpochSlots (..))
 import Cardano.Network.NodeToClient qualified as Cardano.NtoC
 import Cardano.Protocol.Crypto qualified as Cardano (StandardCrypto)
 
@@ -270,7 +269,7 @@ withNodeKernel DMQTracers { sigSubmissionLogicTracer,
                   supportedNodeToClientVersions (Proxy :: Proxy (CardanoBlock Cardano.StandardCrypto))
                 blk = supportedVersionMap Map.! version
                 Codecs {cStateQueryCodec} =
-                  clientCodecs (pClientInfoCodecConfig . protocolClientInfoCardano $ EpochSlots 21600)
+                  clientCodecs (pClientInfoCodecConfig . protocolClientInfoCardano $ Policy.cardanoEpochSlots)
                   blk version
           ])
         Nothing
