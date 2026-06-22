@@ -20,7 +20,6 @@ import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Trans.Except
 import "contra-tracer" Control.Tracer (Tracer, traceWith)
-import Data.Functor ((<&>))
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Void
 
@@ -46,8 +45,7 @@ import Ouroboros.Consensus.Shelley.Ledger.Query
 import Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import Ouroboros.Network.Block
 import Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeersKind (..),
-           RawBlockHash, accumulateBigLedgerStake)
-import Ouroboros.Network.Point (Block (..))
+           accumulateBigLedgerStake)
 import Ouroboros.Network.Protocol.LocalStateQuery.Client
 import Ouroboros.Network.Protocol.LocalStateQuery.Type
 
@@ -259,9 +257,7 @@ cardanoLocalStateQueryClient tracer ledgerPeers
                                   relays
                 , not (null relays')
                 ]
-              pt' :: Point RawBlockHash
-              pt' = Point $ getPoint pt <&>
-                              \blk -> blk { blockPointSlot = maxBound }
+
               srvRelays = force
                 [ (stake, NonEmpty.fromList relays')
                 | (stake, relays) <- peers
@@ -276,7 +272,7 @@ cardanoLocalStateQueryClient tracer ledgerPeers
 
           atomically do
             writeTMVar ledgerPeersVar $ LedgerAllPeerSnapshotV23 pt magic srvRelays
-            writeTVar  ledgerBigPeersVar . Just $! LedgerBigPeerSnapshotV23 pt' magic bigSrvRelays
+            writeTVar  ledgerBigPeersVar . Just $! LedgerBigPeerSnapshotV23 pt magic bigSrvRelays
 
           pure $ release systemStart nextEpoch
 
