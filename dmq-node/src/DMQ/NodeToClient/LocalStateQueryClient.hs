@@ -1,6 +1,10 @@
+{-# LANGUAGE DataKinds                #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
+{-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE LambdaCase               #-}
 {-# LANGUAGE PackageImports           #-}
+{-# LANGUAGE RankNTypes               #-}
+{-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TypeOperators            #-}
 
 module DMQ.NodeToClient.LocalStateQueryClient
@@ -24,22 +28,28 @@ import Data.Proxy
 import Data.Void
 
 import Cardano.Chain.Slotting (EpochSlots (..))
+import Cardano.Ledger.Api (EraGov)
 import Cardano.Ledger.Api.State.Query (StakeSnapshots (..))
 import Cardano.Network.NodeToClient
 import Cardano.Network.PeerSelection (LedgerPeerSnapshot (..),
            LedgerRelayAccessPoint (..), SingLedgerPeersKind (..))
 import Cardano.Slotting.EpochInfo.API
+import Cardano.Slotting.Slot (EpochNo)
 import Cardano.Slotting.Time
 
 import DMQ.Diffusion.NodeKernel
 import Ouroboros.Consensus.Cardano.Block
-import Ouroboros.Consensus.Cardano.Node
+import Ouroboros.Consensus.Cardano.Node (protocolClientInfoCardano)
+import Ouroboros.Consensus.HardFork.Combinator.AcrossEras (mkEraMismatch)
 import Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
-import Ouroboros.Consensus.HardFork.History.EpochInfo (interpreterToEpochInfo)
-import Ouroboros.Consensus.Ledger.Query (Query (..))
+           (QueryHardFork (GetCurrentEra, GetInterpreter))
+import Ouroboros.Consensus.HardFork.History (Interpreter,
+           interpreterToEpochInfo)
+import Ouroboros.Consensus.Ledger.Query (Query (..), QueryFootprint (..))
 import Ouroboros.Consensus.Network.NodeToClient
 import Ouroboros.Consensus.Node.NetworkProtocolVersion
 import Ouroboros.Consensus.Node.ProtocolInfo
+import Ouroboros.Consensus.Shelley.Ledger.Block
 import Ouroboros.Consensus.Shelley.Ledger.Query
 import Ouroboros.Consensus.Shelley.Ledger.SupportsProtocol ()
 import Ouroboros.Network.Block
@@ -58,6 +68,15 @@ data QueryError = UnsupportedEra
   deriving Show
 
 instance Exception QueryError where
+
+data QueryInEra c proto era where
+  QueryInEra ::
+    EraGov era =>
+    (forall result.
+        BlockQuery (ShelleyBlock proto era) QFNoTables result
+     -> CardanoQuery c QFNoTables (CardanoQueryResult c result))
+    -> QueryInEra c proto era
+
 
 -- | Connect the dmq node to cardano node via local state query protocol and
 -- update the node kernel with stake pool data necessary to perform mithril
@@ -81,149 +100,116 @@ cardanoClient tracer ledgerPeers
                 ledgerPeersVar,
                 ledgerBigPeersVar
               }
-              readyVar =
-  LocalStateQueryClient (idle Nothing)
+              readyVar = LocalStateQueryClient (idle Nothing)
   where
     idle mSystemStart = do
       traceWith tracer $ Acquiring mSystemStart
-      pure $ SendMsgAcquire VolatileTip acquire
-      where
-        acquire :: ClientStAcquiring block point query m Void
-        acquire = ClientStAcquiring {
-          recvMsgAcquired =
-            let epochQry systemStart = pure $
-                    SendMsgQuery (BlockQuery . QueryIfCurrentConway $ GetEpochNo)
-                  $ wrappingMismatch (handleEpoch systemStart)
-            in case mSystemStart of
-                 Just systemStart -> epochQry systemStart
-                 Nothing -> pure $
-                   SendMsgQuery GetSystemStart $ ClientStQuerying epochQry
+      pure $ SendMsgAcquire VolatileTip (acquire mSystemStart)
 
-         , recvMsgFailure = \failure ->
-             throwIO . userError $ "recvMsgFailure: " <> show failure
-         }
+    acquire mSystemStart = ClientStAcquiring
+      { recvMsgAcquired = maybe systemStartQuery eraQuery mSystemStart
+      , recvMsgFailure = \failure ->
+          throwIO . userError $ "recvMsgFailure: " <> show failure
+      }
 
-    wrappingMismatch :: forall err r.
-                        (r -> m (ClientStAcquired block point query m Void))
-                     -> ClientStQuerying block point query m Void (Either err r)
+    systemStartQuery =
+      pure . SendMsgQuery GetSystemStart $ ClientStQuerying eraQuery
+
+    eraQuery systemStart = pure $
+      SendMsgQuery (BlockQuery (QueryHardFork GetCurrentEra)) . ClientStQuerying $ \case
+        EraByron{}    -> throwIO UnsupportedEra
+        EraShelley{}  -> epochQuery systemStart (QueryInEra QueryIfCurrentShelley)
+        EraAllegra{}  -> epochQuery systemStart (QueryInEra QueryIfCurrentAllegra)
+        EraMary{}     -> epochQuery systemStart (QueryInEra QueryIfCurrentMary)
+        EraAlonzo{}   -> epochQuery systemStart (QueryInEra QueryIfCurrentAlonzo)
+        EraBabbage{}  -> epochQuery systemStart (QueryInEra QueryIfCurrentBabbage)
+        EraConway{}   -> epochQuery systemStart (QueryInEra QueryIfCurrentConway)
+        EraDijkstra{} -> epochQuery systemStart (QueryInEra QueryIfCurrentDijkstra)
+
+    epochQuery :: SystemStart
+               -> QueryInEra crypto proto era
+               -> m (ClientStAcquired block point query m Void)
+    epochQuery systemStart qie@(QueryInEra f) =
+        pure . SendMsgQuery (BlockQuery $ f GetEpochNo)
+      $ wrappingMismatch (handleEpoch systemStart qie)
+
+
+    wrappingMismatch :: forall r.
+                       (r -> m (ClientStAcquired block point query m Void))
+                     -> ClientStQuerying block point query m Void (CardanoQueryResult crypto r)
     wrappingMismatch k = ClientStQuerying $
-      either (const . throwIO . userError $ "mismatch era info") k
-
-    handleEpoch systemStart epoch = pure
-      . SendMsgQuery (BlockQuery . QueryHardFork $ GetInterpreter)
-      $ getInterpreter systemStart epoch
-
-    getInterpreter systemStart epoch = ClientStQuerying \interpreter -> do
-      let ei  = interpreterToEpochInfo interpreter
-          res =
-            runExcept do
-              lastSlot <- snd <$> epochInfoRange ei epoch
-              lastSlotTime <- epochInfoSlotToRelativeTime ei lastSlot
-              lastSlotLength <- epochInfoSlotLength ei lastSlot
-              pure $ addRelativeTime (getSlotLength lastSlotLength) lastSlotTime
-
-      traceWith tracer $ CurrentEpoch epoch
-      case res of
-        Left err ->
-          pure $ SendMsgRelease do
-            traceWith tracer $ PastHorizon err
-            threadDelay 86400
-            idle $ Just systemStart
-        Right relativeTime -> do
-          let nextEpoch = fromRelativeTime systemStart relativeTime
-          -- continue with stake snapshot query
-          pure $ queryCurrentEra systemStart nextEpoch
+      either (throwIO . userError . show . mkEraMismatch) k
 
 
-    queryCurrentEra
-      :: SystemStart
-      -> UTCTime
-      -- ^ next epoch
-      -> ClientStAcquired
-           (CardanoBlock crypto)
-           (Point (CardanoBlock crypto))
-           (Query (CardanoBlock crypto))
-           m
-           Void
-    queryCurrentEra systemStart nextEpoch =
-        SendMsgQuery (BlockQuery (QueryHardFork GetCurrentEra))
-          $ ClientStQuerying $ \era -> queryStakeSnapshots systemStart nextEpoch era
+    handleEpoch :: SystemStart
+                -> QueryInEra crypto proto era
+                -> EpochNo
+                -> m (ClientStAcquired block point query m Void)
+    handleEpoch systemStart qie epoch =
+      pure . SendMsgQuery (BlockQuery . QueryHardFork $ GetInterpreter)
+       $ getInterpreter systemStart qie epoch
 
-    -- query stake snapshot
-    queryStakeSnapshots
-      :: SystemStart
-      -> UTCTime
-      -- ^ next epoch
-      -> EraIndex (CardanoEras crypto)
-      -> m (ClientStAcquired
-             (CardanoBlock crypto)
-             (Point (CardanoBlock crypto))
-             (Query (CardanoBlock crypto))
-             m
-             Void)
-    queryStakeSnapshots systemStart nextEpoch era =
-        case era of
-          EraByron{}    -> throwIO UnsupportedEra
-          EraShelley{}  -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentShelley (GetStakeSnapshots Nothing)))
-                                  $ wrappingMismatch handleStakeSnapshots
-          EraAllegra{}  -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentAllegra (GetStakeSnapshots Nothing)))
-                                  $ wrappingMismatch handleStakeSnapshots
-          EraMary{}     -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentMary (GetStakeSnapshots Nothing)))
-                                  $ wrappingMismatch handleStakeSnapshots
-          EraAlonzo{}   -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentAlonzo (GetStakeSnapshots Nothing)))
-                                  $ wrappingMismatch handleStakeSnapshots
-          EraBabbage{}  -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentBabbage (GetStakeSnapshots Nothing)))
-                                  $ wrappingMismatch handleStakeSnapshots
-          EraConway{}   -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentConway (GetStakeSnapshots Nothing)))
-                                  $ wrappingMismatch handleStakeSnapshots
-          EraDijkstra{} -> return $ SendMsgQuery (BlockQuery (QueryIfCurrentDijkstra (GetStakeSnapshots Nothing)))
-                                  $ wrappingMismatch handleStakeSnapshots
-      where
-        handleStakeSnapshots
-          :: StakeSnapshots
-          -> m (ClientStAcquired
-                  (CardanoBlock crypto)
-                  (Point (CardanoBlock crypto))
-                  (Query (CardanoBlock crypto))
-                  m
-                  Void)
-        handleStakeSnapshots StakeSnapshots { ssStakeSnapshots } = do
-          atomically do
-            writeTVar stakePoolsVar ssStakeSnapshots
-            writeTVar readyVar Ready
-          pure
-            if ledgerPeers
-            then
-            -- continue with ledger peers query
-            queryLedgerPeers systemStart nextEpoch
-            else
-            -- release and continue in the idle state
-            release systemStart nextEpoch
+
+    getInterpreter :: SystemStart
+                   -> QueryInEra crypto proto era
+                   -> EpochNo
+                   -> ClientStQuerying block point query m Void (Interpreter xs)
+    getInterpreter systemStart qie epoch =
+      ClientStQuerying \interpreter -> do
+        let ei  = interpreterToEpochInfo interpreter
+            res =
+              runExcept do
+                lastSlot <- snd <$> epochInfoRange ei epoch
+                lastSlotTime <- epochInfoSlotToRelativeTime ei lastSlot
+                lastSlotLength <- epochInfoSlotLength ei lastSlot
+                pure $ addRelativeTime (getSlotLength lastSlotLength) lastSlotTime
+
+        traceWith tracer $ CurrentEpoch epoch
+        case res of
+          Left err ->
+            pure $ SendMsgRelease do
+              traceWith tracer $ PastHorizon err
+              threadDelay 86400
+              idle $ Just systemStart
+          Right relativeTime -> do
+            let nextEpoch = fromRelativeTime systemStart relativeTime
+            -- continue with stake snapshot query
+            queryStakeSnapshots systemStart nextEpoch qie
+
+
+    queryStakeSnapshots :: SystemStart
+                        -> UTCTime
+                        -> QueryInEra crypto proto era
+                        -> m (ClientStAcquired block point query m Void)
+    queryStakeSnapshots systemStart nextEpoch qie@(QueryInEra f) =
+      pure . SendMsgQuery (BlockQuery . f $ GetStakeSnapshots Nothing)
+       $ wrappingMismatch \StakeSnapshots { ssStakeSnapshots } -> do
+           atomically do
+             writeTVar stakePoolsVar ssStakeSnapshots
+             writeTVar readyVar Ready
+           pure
+             if ledgerPeers
+               then
+                 -- continue with ledger peers query
+                 queryLedgerPeers systemStart nextEpoch qie
+               else
+                 -- release and continue in the idle state
+                 release systemStart nextEpoch
 
 
     -- query ledger peer snapshot
     queryLedgerPeers
       :: SystemStart
       -> UTCTime
-      -- ^ next epoch
-      -> ClientStAcquired
-           (CardanoBlock crypto)
-           (Point (CardanoBlock crypto))
-           (Query (CardanoBlock crypto))
-           m
-           Void
-    queryLedgerPeers systemStart nextEpoch =
-        SendMsgQuery (BlockQuery . QueryIfCurrentConway $ GetLedgerPeerSnapshot SingAllLedgerPeers)
+      -> QueryInEra crypto proto era
+      -> ClientStAcquired block point query m Void
+    queryLedgerPeers systemStart nextEpoch (QueryInEra f) =
+        SendMsgQuery (BlockQuery . f $ GetLedgerPeerSnapshot SingAllLedgerPeers)
         $ wrappingMismatch handleLedgerPeers
       where
         handleLedgerPeers
           :: LedgerPeerSnapshot AllLedgerPeers
-          -> m (ClientStAcquired
-                  (CardanoBlock crypto)
-                  (Point (CardanoBlock crypto))
-                  (Query (CardanoBlock crypto))
-                  m
-                  Void)
+          -> m (ClientStAcquired block point query m Void)
         handleLedgerPeers (LedgerAllPeerSnapshotV23 pt magic peers) = do
           let bigSrvRelays = force
                 [(accStake, (stake, NonEmpty.fromList relays'))
@@ -262,12 +248,7 @@ cardanoClient tracer ledgerPeers
     release :: SystemStart
             -> UTCTime
             -- ^ next epoch
-            -> ClientStAcquired
-                 (CardanoBlock crypto)
-                 (Point (CardanoBlock crypto))
-                 (Query (CardanoBlock crypto))
-                 m
-                 Void
+            -> ClientStAcquired block point query m Void
     release systemStart nextEpoch = SendMsgRelease do
       toNextEpoch <- diffUTCTime nextEpoch <$> getCurrentTime
       let toNextEpoch' :: DiffTime
