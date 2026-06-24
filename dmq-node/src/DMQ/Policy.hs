@@ -3,7 +3,7 @@ module DMQ.Policy
   , sigSubmissionIngressLimit
   , peerMetricConfiguration
   , maxSigSize
-  , maxSigsInflight
+  , maxSigIdsInflight
   ) where
 
 import DMQ.Diffusion.PeerSelection.PeerMetric (PeerMetricConfiguration (..))
@@ -18,7 +18,7 @@ import Ouroboros.Network.TxSubmission.Inbound.V2
 maxSigSize :: SizeInBytes
 maxSigSize = 2800
 
--- | Maximum numbers signatures in-flight per peer.
+-- | Maximum numbers signature id's in-flight per peer.
 --
 -- NOTE: it is used by:
 -- * `sigDecisionPolicy`
@@ -31,8 +31,8 @@ maxSigSize = 2800
 -- protocol version.
 --
 -- TODO: make it configurable
-maxSigsInflight :: NumTxIdsToReq
-maxSigsInflight = 33
+maxSigIdsInflight :: NumTxIdsToReq
+maxSigIdsInflight = 33
 
 -- | The `TxDecisionPolicy` used by `SigSubmission`.
 --
@@ -46,9 +46,9 @@ maxSigsInflight = 33
 --
 sigDecisionPolicy :: TxDecisionPolicy
 sigDecisionPolicy = TxDecisionPolicy {
-    maxNumTxIdsToRequest   = maxSigsInflight,
-    maxUnacknowledgedTxIds = 4 * maxSigsInflight,
-    txsSizeInflightPerPeer = maxSigSize * fromIntegral maxSigsInflight,
+    maxNumTxIdsToRequest   = maxSigIdsInflight,
+    maxUnacknowledgedTxIds = 4 * maxSigIdsInflight,
+    txsSizeInflightPerPeer = maxSigSize * fromIntegral maxSigIdsInflight,
     txInflightMultiplicity = 1,
     bufferedTxsMinLifetime = 0,
     scoreRate              = 0.1,
