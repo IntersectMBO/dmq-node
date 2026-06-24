@@ -24,7 +24,7 @@ module DMQ.Diffusion.PeerSelection.PeerMetric
     -- * Pure API exported for testing purposes
   , PeerMetricState (..)
   , emptyPeerMetricState
-  , reportSigIdImpl
+  , reportSigIdsImpl
   , reportSigImpl
   , erasePeerImpl
   , announcinessImpl
@@ -63,16 +63,16 @@ emptyLocalPeerMetricState
   :: LocalPeerMetricState sigid
 emptyLocalPeerMetricState = LocalPeerMetricState { localState = OrdPSQ.empty }
 
-reportSigIdImpl
+reportSigIdsImpl
   :: Ord sigid
   => PeerMetricConfiguration
-  -> sigid
+  -> [sigid]
   -> Time
   -> LocalPeerMetricState sigid
   -> LocalPeerMetricState sigid
-reportSigIdImpl
+reportSigIdsImpl
     PeerMetricConfiguration { timeWindowToKeep }
-    sigid
+    sigids
     time
     LocalPeerMetricState { localState }
     =
@@ -85,8 +85,8 @@ reportSigIdImpl
         -- there, keeping the most recent announcement time.  This prevents a
         -- peer from announcing sigids early to bank a good timestamp and then
         -- sending the sigs only once they are forged.
-      . OrdPSQ.insert sigid time ()
-      $ localState
+      $ List.foldl' (\st sigid -> OrdPSQ.insert sigid time () st)
+                    localState sigids
 
 
 -- | Internal, used by `reportSig` to remove an entry from
@@ -136,10 +136,10 @@ mkPeerMetric =
 
 data ReportPeerMetric' m sigid f = ReportPeerMetric {
     -- | Report a received `sigid`
-    reportSigId :: sigid
-                -> Time
-                -> LocalPeerMetricState sigid
-                -> LocalPeerMetricState sigid,
+    reportSigIds :: [sigid]
+                 -> Time
+                 -> LocalPeerMetricState sigid
+                 -> LocalPeerMetricState sigid,
 
     -- | Report a received `sig`
     reportSig :: LocalPeerMetricState sigid
@@ -157,19 +157,19 @@ hoist
 hoist
   nat
   ReportPeerMetric {
-    reportSigId,
+    reportSigIds,
     reportSig
   }
   =
   ReportPeerMetric {
-    reportSigId,
+    reportSigIds,
     reportSig = \localState -> reportSig localState . nat
   }
 
 
 nullMetrics :: Applicative (STM m) => ReportPeerMetric' m sigid f
 nullMetrics = ReportPeerMetric {
-    reportSigId = \_ _ localState -> localState,
+    reportSigIds = \_ _ localState -> localState,
     reportSig   = \localState _ -> pure localState
   }
 
@@ -184,7 +184,7 @@ reportMetric
    -> ReportPeerMetric m sigid peeraddr
 reportMetric config PeerMetric { peerMetricVar } =
   ReportPeerMetric {
-    reportSigId = reportSigIdImpl config,
+    reportSigIds = reportSigIdsImpl config,
     reportSig = \localState ->
       stateTVar peerMetricVar
     . reportSigImpl config localState

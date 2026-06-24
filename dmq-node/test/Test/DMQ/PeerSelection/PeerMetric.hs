@@ -124,16 +124,16 @@ reportSigType config (localStMap, st) = \case
     SigAnnounced { sigId, peerAddr, sigTime } ->
       let alterFn :: Maybe (LocalPeerMetricState SigId)
                   -> Maybe (LocalPeerMetricState SigId)
-          alterFn Nothing  = Just $ reportSigIdImpl config sigId sigTime emptyLocalPeerMetricState
-          alterFn (Just s) = Just $ reportSigIdImpl config sigId sigTime s
+          alterFn Nothing  = Just $ reportSigIdsImpl config [sigId] sigTime emptyLocalPeerMetricState
+          alterFn (Just s) = Just $ reportSigIdsImpl config [sigId] sigTime s
       in (Map.alter alterFn peerAddr localStMap, st)
     SigValid { sigId, peerAddr, sigTime } ->
-      let localSt = reportSigIdImpl config sigId sigTime
+      let localSt = reportSigIdsImpl config [sigId] sigTime
                   $ Map.findWithDefault emptyLocalPeerMetricState peerAddr localStMap
           (localSt', st') = reportSigImpl config localSt (TraceLabelPeer peerAddr (sigId, TxAccepted)) st
       in (Map.insert peerAddr localSt' localStMap, st')
     SigInvalid { sigId, peerAddr, sigTime } ->
-      let localSt = reportSigIdImpl config sigId sigTime
+      let localSt = reportSigIdsImpl config [sigId] sigTime
                   $ Map.findWithDefault emptyLocalPeerMetricState peerAddr localStMap
           (localSt', st') = reportSigImpl config localSt (TraceLabelPeer peerAddr (sigId, TxRejected)) st
       in (Map.insert peerAddr localSt' localStMap, st')
@@ -162,7 +162,7 @@ prop_reportSigId config@PeerMetricConfiguration { timeWindowToKeep } (Sigs sigs)
 
         lst, lst' :: LocalPeerMetricState SigId
         lst   = Map.findWithDefault emptyLocalPeerMetricState peer localStMap
-        lst'  = reportSigIdImpl config (sigId sig) (sigTime sig) lst
+        lst'  = reportSigIdsImpl config [sigId sig] (sigTime sig) lst
 
         lstM, lstM' :: Map SigId Time
         lstM  = Map.fromList
@@ -232,7 +232,7 @@ instance Arbitrary SigsFirstValid where
   shrink (SigsFirstValid as) = fromSigs `map` shrink (Sigs as)
 
 
--- | Verify that `reportSigId` and `reportSig` are pruning old entries.
+-- | Verify that `reportSigIds` and `reportSig` are pruning old entries.
 --
 prop_expired :: PeerMetricConfiguration -> SigsFirstValid -> Property
 prop_expired config@PeerMetricConfiguration { timeWindowToKeep } (SigsFirstValid sigs) =
@@ -387,8 +387,8 @@ prop_competingPeers ConfigWithTimes { cwtConfig = config
                                     , cwtTime2  = time2
                                     }
                     sigId (TwoPeerAddrs peer1 peer2) =
-  let lst1     = reportSigIdImpl config sigId time1 emptyLocalPeerMetricState
-      lst2     = reportSigIdImpl config sigId time2 emptyLocalPeerMetricState
+  let lst1     = reportSigIdsImpl config [sigId] time1 emptyLocalPeerMetricState
+      lst2     = reportSigIdsImpl config [sigId] time2 emptyLocalPeerMetricState
       -- peer1 is accepted first, claiming the entry
       (_, st1) = reportSigImpl config lst1 (TraceLabelPeer peer1 (sigId, TxAccepted)) emptyPeerMetricState
       -- peer2 is accepted second
