@@ -22,6 +22,7 @@ import "contra-tracer" Control.Tracer (nullTracer)
 import Data.Function (on)
 import Data.Hashable
 import Data.Map.Strict qualified as Map
+import Data.OrdPSQ qualified as OrdPSQ
 import Data.Proxy
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
@@ -35,7 +36,6 @@ import System.Random qualified as Random
 
 import Network.Mux qualified as Mx
 
-import Cardano.Chain.Slotting (EpochSlots (..))
 import Cardano.Network.NodeToClient qualified as Cardano.NtoC
 import Cardano.Protocol.Crypto qualified as Cardano (StandardCrypto)
 
@@ -94,23 +94,32 @@ newNodeKernel rng ShelleyGenesis {sgMaxKESEvolutions} = do
   sigMempoolSem <- newTxMempoolSem
   let (rng', rng'') = Random.splitGen rng
   sigSharedTxStateVar <- newSharedTxStateVar rng'
-  (readinessVar, ocertCountersVar, stakePoolsVar, ledgerBigPeersVar, ledgerPeersVar) <- atomically $
-    (,,,,) <$> newTVar NotReady
-           <*> newTVar Map.empty
-           <*> newTVar Map.empty
-           <*> newTVar Nothing
-           <*> newEmptyTMVar
+  (readinessVar,
+    ocertCountersVar,
+    stakePoolsVar,
+    ledgerBigPeersVar,
+    ledgerPeersVar,
+    lastSigByPoolIdVar)
+    <- atomically $
+    (,,,,,) <$> newTVar NotReady
+            <*> newTVar Map.empty
+            <*> newTVar Map.empty
+            <*> newTVar Nothing
+            <*> newEmptyTMVar
+            <*> newTVar OrdPSQ.empty
 
   let withPoolValidationCtx
-        :: forall a. UTCTime -> (PoolValidationCtx -> (a, PoolValidationCtx)) -> STM m a
-      withPoolValidationCtx now f = do
-        ctx <- PoolValidationCtx now
+        :: forall a. UTCTime -> Time -> (PoolValidationCtx -> (a, PoolValidationCtx)) -> STM m a
+      withPoolValidationCtx utcNow now f = do
+        ctx <- PoolValidationCtx utcNow now
                 <$> readTVar readinessVar
                 <*> readTVar stakePoolsVar
                 <*> readTVar ocertCountersVar
                 <*> pure sgMaxKESEvolutions
-        let (a, PoolValidationCtx {vctxOcertMap}) = f ctx
+                <*> readTVar lastSigByPoolIdVar
+        let (a, PoolValidationCtx {vctxOcertMap, vctxLastSigByPoolId}) = f ctx
         writeTVar ocertCountersVar vctxOcertMap
+        writeTVar lastSigByPoolIdVar vctxLastSigByPoolId
         return a
 
       stakePools = StakePools {
@@ -139,6 +148,7 @@ newNodeKernel rng ShelleyGenesis {sgMaxKESEvolutions} = do
                   , readinessVar
                   , stakePools
                   , peerMetric
+                  , lastSigByPoolIdVar
                   }
 
 
@@ -259,7 +269,7 @@ withNodeKernel DMQTracers { sigSubmissionLogicTracer,
                   supportedNodeToClientVersions (Proxy :: Proxy (CardanoBlock Cardano.StandardCrypto))
                 blk = supportedVersionMap Map.! version
                 Codecs {cStateQueryCodec} =
-                  clientCodecs (pClientInfoCodecConfig . protocolClientInfoCardano $ EpochSlots 21600)
+                  clientCodecs (pClientInfoCodecConfig . protocolClientInfoCardano $ Policy.cardanoEpochSlots)
                   blk version
           ])
         Nothing

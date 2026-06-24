@@ -68,6 +68,7 @@ library
     DMQ.Diffusion.PeerSelectionPolicy
     DMQ.Genesis
     DMQ.Handlers.TopLevel
+    DMQ.Mempool
     DMQ.NodeToClient
     DMQ.NodeToClient.LocalMsgNotification
     DMQ.NodeToClient.LocalMsgSubmission

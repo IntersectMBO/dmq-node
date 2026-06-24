@@ -13,11 +13,11 @@ import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadTime.SI
 
 import Data.Map.Strict (Map)
+import Data.OrdPSQ (OrdPSQ)
 import Data.Word
 import System.Random (StdGen)
 
 import Cardano.Ledger.Api.State.Query qualified as LedgerQuery
-import Cardano.Ledger.Shelley.API qualified as Ledger
 
 import Ouroboros.Network.ConnectionId (ConnectionId (..))
 import Ouroboros.Network.KeepAlive (KeepAliveRegistry)
@@ -28,7 +28,7 @@ import Ouroboros.Network.TxSubmission.Inbound.V2
 import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool (..))
 
 import DMQ.Diffusion.PeerSelection.PeerMetric (PeerMetric)
-import DMQ.Protocol.SigSubmission.Type (Sig, SigId)
+import DMQ.Protocol.SigSubmission.Type (PoolId, Sig, SigId)
 
 
 -- | A signal when a dmq-node becomes ready to validate signatures, e.g. when
@@ -54,12 +54,8 @@ data NodeKernel crypto ntnAddr m =
   , stakePools          :: !(StakePools m)
   , readinessVar        :: !(StrictTVar m Readiness)
   , peerMetric          :: !(PeerMetric m SigId ntnAddr)
+  , lastSigByPoolIdVar  :: !(StrictTVar m (OrdPSQ PoolId Time ()))
   }
-
-
--- | Cardano pool id's are hashes of the cold verification key
---
-type PoolId = Ledger.KeyHash Ledger.StakePool
 
 data StakePools m = StakePools {
     -- | contains map of cardano pool stake snapshot obtained
@@ -76,7 +72,7 @@ data StakePools m = StakePools {
     -- First argument is the current time inserted into `PoolValidationCtx`,
     -- other fields are read from share state available in `STM` action.
   , withPoolValidationCtx
-      :: forall a. UTCTime -> (PoolValidationCtx -> (a, PoolValidationCtx)) ->  STM m a
+      :: forall a. UTCTime -> Time -> (PoolValidationCtx -> (a, PoolValidationCtx)) ->  STM m a
 
      -- | provides only those big peers which provide SRV endpoints
      -- as otherwise those are cardano-nodes
@@ -90,16 +86,21 @@ data StakePools m = StakePools {
 
 data PoolValidationCtx =
   PoolValidationCtx {
-      vctxNow            :: UTCTime
+      vctxUTCNow          :: !UTCTime
+      -- ^ current UTC time
+    , vctxNow             :: !Time
       -- ^ current time
-    , vctxReadiness      :: !Readiness
+    , vctxReadiness       :: !Readiness
       -- ^ if pool validation ctx was initialised by local state query
       -- mini-prototocol
-    , vctxStakeMap       :: !(Map PoolId LedgerQuery.StakeSnapshot)
+    , vctxStakeMap        :: !(Map PoolId LedgerQuery.StakeSnapshot)
       -- ^ for signature validation
-    , vctxOcertMap       :: !(Map PoolId Word64)
+    , vctxOcertMap        :: !(Map PoolId Word64)
       -- ^ ocert counters to check monotonicity
-    , vctxPraosMaxKESEvo :: !Word64
+    , vctxPraosMaxKESEvo  :: !Word64
       -- ^ maximum number of KES iterations (read from the Shelley genesis file)
+    , vctxLastSigByPoolId :: !(OrdPSQ PoolId Time ())
+      -- ^ last valid signature by PoolId, to limit frequency of submitted
+      -- signatures
     }
   deriving Show

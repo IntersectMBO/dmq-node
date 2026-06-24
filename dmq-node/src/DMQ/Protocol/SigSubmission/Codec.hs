@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE MultiWayIf          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE PolyKinds           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -22,6 +23,7 @@ module DMQ.Protocol.SigSubmission.Codec
 import Control.Monad (when)
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadTime.SI
+import Data.ByteString qualified as BS
 import Data.ByteString.Lazy as BS.Lazy
 import Data.ByteString.Short qualified as BS.Short
 import Text.Printf
@@ -190,11 +192,22 @@ decodeSig = do
         }
       }
   where
+    decodeBody :: CBOR.Decoder s SigBody
+    decodeBody = do
+      body <- CBOR.decodeBytes
+      let len = BS.length body
+      if | len > fromIntegral Policy.maxSigBodySize
+         -> fail ("decodeSig: body exceeded its maximum size: " ++ show (BS.length body))
+         | len < fromIntegral Policy.minSigBodySize
+         -> fail ("decodeSig: body smaller than its minimum size: " ++ show (BS.length body))
+         | otherwise
+         -> pure (SigBody body)
+
     decodePayload :: CBOR.Decoder s (SigBody, KESPeriod, POSIXTime)
     decodePayload = do
       a <- CBOR.decodeListLen
       when (a /= 3) $ fail (printf "decodeSig: unexpected number of parameters %d for Sig's payload" a)
-      (,,) <$> (SigBody <$> CBOR.decodeBytes)
+      (,,) <$> decodeBody
            <*> (KESPeriod <$> CBOR.decodeWord)
            <*> (realToFrac <$> CBOR.decodeWord32)
 

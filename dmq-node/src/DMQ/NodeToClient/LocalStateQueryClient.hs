@@ -31,8 +31,6 @@ import Cardano.Slotting.EpochInfo.API
 import Cardano.Slotting.Slot (EpochNo)
 import Cardano.Slotting.Time
 
-import DMQ.Diffusion.NodeKernel.Types (Readiness (..), StakePools (..))
-
 import Ouroboros.Consensus.Cardano.Block
 import Ouroboros.Consensus.HardFork.Combinator.AcrossEras (mkEraMismatch)
 import Ouroboros.Consensus.HardFork.Combinator.Ledger.Query
@@ -49,7 +47,9 @@ import Ouroboros.Network.PeerSelection.LedgerPeers (LedgerPeersKind (..),
 import Ouroboros.Network.Protocol.LocalStateQuery.Client
 import Ouroboros.Network.Protocol.LocalStateQuery.Type
 
+import DMQ.Diffusion.NodeKernel.Types
 import DMQ.NodeToClient.LocalStateQueryClient.Types
+
 
 data QueryError = UnsupportedEra
   deriving Show

@@ -12,7 +12,7 @@ messagePayload = [
 ]
 
 messageId    = bstr .size 32
-messageBody  = bstr
+messageBody  = bstr .size (360..2000)
 messageSize  = word32
 kesSignature = bstr .size 448
 kesPeriod    = word64

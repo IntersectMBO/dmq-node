@@ -12,7 +12,6 @@ module DMQ.SigSubmissionV2.Inbound
     sigSubmissionInbound
   ) where
 
-import Data.Foldable qualified as Foldable
 import Data.Functor.Identity (Identity (..))
 import Data.Map.Strict qualified as Map
 import Data.Sequence.Strict qualified as StrictSeq
@@ -73,7 +72,7 @@ sigSubmissionInbound
       submitTxToMempool
     }
     ReportPeerMetric {
-      reportSigId,
+      reportSigIds,
       reportSig
     }
     controlMessageSTM
@@ -177,14 +176,12 @@ sigSubmissionInbound
                 (NumIdsReq . getNumTxIdsToReq $ sigIdsToReq)
                 (\sigids -> do
                    time <- getMonotonicTime
-                   let sigidsSeq = StrictSeq.fromList $ fst <$> sigids
+                   let sigidsLst = fst <$> sigids
+                       sigidsSeq = StrictSeq.fromList sigidsLst
                        sigidsMap = Map.fromList sigids
                    unless (StrictSeq.length sigidsSeq <= fromIntegral sigIdsToReq) $
                      throwIO ProtocolErrorSigIdsNotRequested
-                   let localState' =
-                         Foldable.foldl' (\st (sigid, _) -> reportSigId sigid time st)
-                                         localState
-                                         sigids
+                   let localState' = reportSigIds sigidsLst time localState
                    handleReceivedTxIds sigIdsToReq sigidsSeq sigidsMap
                    inboundIdle localState'
                 )
@@ -242,14 +239,12 @@ sigSubmissionInbound
     handleReply localState k = \case
       CollectSigIds sigIdsToReq sigids -> do
         time <- getMonotonicTime
-        let sigidsSeq = StrictSeq.fromList $ fst <$> sigids
+        let sigidsLst = fst <$> sigids
+            sigidsSeq = StrictSeq.fromList sigidsLst
             sigidsMap = Map.fromList sigids
         unless (StrictSeq.length sigidsSeq <= fromIntegral sigIdsToReq) $
           throwIO ProtocolErrorSigIdsNotRequested
-        let localState' =
-              Foldable.foldl' (\st (sigid, _) -> reportSigId sigid time st)
-                              localState
-                              sigids
+        let localState' = reportSigIds sigidsLst time localState
         handleReceivedTxIds (NumTxIdsToReq . getNumIdsReq $ sigIdsToReq) sigidsSeq sigidsMap
         k localState'
 

@@ -65,8 +65,7 @@ import DMQ.SigSubmissionV2.Inbound (sigSubmissionInbound)
 import DMQ.SigSubmissionV2.Outbound (sigSubmissionOutbound)
 
 import Test.DMQ.PeerSelection.PeerMetric ()
-import Test.DMQ.SigSubmission.Types (SigStateTrace (..),
-           SigSubmissionState (..), TestVersion, sigSubmissionCodec2)
+import Test.DMQ.SigSubmission.Types
 
 import Test.Ouroboros.Network.Data.Signal ()
 import Test.Ouroboros.Network.TxSubmission.Types
@@ -483,7 +482,7 @@ runSigSubmissionV2WithMetric tracer tracerSigLogic config st0 sigDecisionPolicy 
       pure $ case prev of
         Just p | PeerMetric.announcinessImpl p == PeerMetric.announcinessImpl new
                -> DontTrace
-        _      -> TraceDynamic (SimMetricSnapshot new)
+        _      -> TraceValue (Just (SimMetricSnapshot new)) (Just $ show new)
 
     withAsync (decisionLogicThreads tracerSigLogic sayTracer
                                     sigDecisionPolicy sigChannelsVar sharedSigStateVar) $ \a -> do
@@ -517,7 +516,7 @@ runSigSubmissionV2WithMetric tracer tracerSigLogic config st0 sigDecisionPolicy 
                                 addr $ \(api :: PeerTxAPI (IOSim s) TxId (Tx TxId)) -> do
                                   let inbound = sigSubmissionInbound
                                                   (contramap (SimAppEvent . TraceLabelPeer addr)
-                                                    (dynamicTracer :: Tracer (IOSim s) SimTraceEvent))
+                                                    (dynamicTracer <> sayTracer :: Tracer (IOSim s) SimTraceEvent))
                                                   (getMempoolWriter duplicateSigsVar inboundMempool)
                                                   api
                                                   (PeerMetric.hoist
@@ -528,7 +527,7 @@ runSigSubmissionV2WithMetric tracer tracerSigLogic config st0 sigDecisionPolicy 
                                                   ctrlMsgSTM
                                   runPipelinedPeerWithLimits
                                     (contramap (SimProtocolEvent . TraceLabelPeer addr)
-                                      (dynamicTracer :: Tracer (IOSim s) SimTraceEvent))
+                                      (dynamicTracer <> sayTracer :: Tracer (IOSim s) SimTraceEvent))
                                     sigSubmissionCodec2
                                     (byteLimitsSigSubmissionV2 (fromIntegral . BSL.length))
                                     timeLimitsSigSubmissionV2
@@ -572,6 +571,7 @@ prop_sigSubmissionV2_metric :: PeerMetric.PeerMetricConfiguration
 prop_sigSubmissionV2_metric config st@(SigSubmissionState peers _) =
     let tr = runSimTrace (sigSubmissionSimulationWithMetric config st)
     in  label ("number of peers: " ++ renderRanges 3 (Map.size peers))
+      $ counterexample (ppTrace tr)
       $ case traceResult True tr of
           Left e ->
               counterexample (show e)
@@ -628,19 +628,36 @@ emptyPureModelState = PureModelState Map.empty Map.empty
 -- Only 'TraceRecvMsg' of 'MsgReplySigIds' matters: it records the IOSim time at
 -- which the inbound peer received the sigid announcement.
 --
+-- Mirrors 'reportSigIdsImpl': prune stale per-peer announced entries (those
+-- older than @timeWindowToKeep@ relative to the new announcement time) before
+-- inserting the fresh ones.  Without this, the model diverges from production
+-- when a channel delay pushes the gap between two consecutive announcements
+-- for the same peer beyond the window.
+--
 updatePureModelOnSigAnnounced
-  :: Time
+  :: PeerMetric.PeerMetricConfiguration
+  -> Time
   -> SimProtocolEvent
   -> PureModelState
   -> PureModelState
-updatePureModelOnSigAnnounced t (TraceLabelPeer addr (TraceRecvMsg (AnyMessage msg))) st =
+updatePureModelOnSigAnnounced
+    (PeerMetric.PeerMetricConfiguration window)
+    t
+    (TraceLabelPeer addr (TraceRecvMsg (AnyMessage msg)))
+    st =
   case msg of
     MsgReplySigIds sigids ->
-      let txids = fst <$> toList sigids
+      -- Mirror reportSigIdsImpl: pruning only happens when reportSigIds is
+      -- called.
+      let sigidsLst = fst <$> toList sigids
+          threshold  = (-window) `addTime` t
+          announced' = Map.filterWithKey
+                         (\(_, a) tann -> a /= addr || tann > threshold)
+                         (announced st)
       in  st { announced = Foldable.foldl' (\m txid -> Map.insert (txid, addr) t m)
-                                           (announced st) txids }
+                                           announced' sigidsLst }
     _ -> st
-updatePureModelOnSigAnnounced _ _ st = st
+updatePureModelOnSigAnnounced _ _ _ st = st
 
 
 -- | Advance the pure model when on mempool submission result.  Only
@@ -721,14 +738,15 @@ checkTrace config evs =
     step :: (PureModelState, Property, Int)
          -> (Time, SimTraceEvent)
          -> (PureModelState, Property, Int)
-    step (st, prop, maxScore) (t, SimProtocolEvent event)  = (updatePureModelOnSigAnnounced t event st, prop, maxScore)
+    step (st, prop, maxScore) (t, SimProtocolEvent event)  = (updatePureModelOnSigAnnounced config t event st, prop, maxScore)
     step (st, prop, maxScore) (_, SimAppEvent event)       = (updatePureModelOnMempoolResult config event st, prop, maxScore)
-    step (st, prop, maxScore) (_, SimMetricSnapshot snapshot) =
+    step (st, prop, maxScore) (t, SimMetricSnapshot snapshot) =
       let expected  = expectedAnnounciness st
           actual    = announcinessImpl snapshot
           maxScore' = if Map.null actual then maxScore else maximum actual
       in  ( st
-          , prop .&&. ( counterexample ("actual:   " ++ show actual)
+          , prop .&&. ( counterexample ("property violated at " ++ show t)
+                      . counterexample ("actual:   " ++ show actual)
                       . counterexample ("expected: " ++ show expected)
                       $ actual === expected
                       )

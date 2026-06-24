@@ -14,6 +14,8 @@ module Test.DMQ.SigSubmission.Types
   , SigSubmissionState (..)
   , SigStateTrace (..)
   , sigSubmissionCodec2
+    -- * Re-exports
+  , SizeInBytes (..)
   ) where
 
 import Prelude hiding (seq)
@@ -42,7 +44,7 @@ import DMQ.Protocol.SigSubmissionV2.Type (SigSubmissionV2)
 import Test.Ouroboros.Network.TxSubmission.TxLogic (ArbTxDecisionPolicy (..))
 import Test.Ouroboros.Network.TxSubmission.Types (Tx (..), TxId)
 import Test.Ouroboros.Network.Utils (SmallDelay)
-import Test.QuickCheck (Arbitrary (..), Positive, choose, vectorOf)
+import Test.QuickCheck
 
 
 data TestVersion = TestVersion
@@ -92,6 +94,7 @@ sigSubmissionCodec2 =
 data SigSubmissionState =
   SigSubmissionState {
       peerMap :: Map Int ( [Tx Int]
+                         -- ^ mempool state
                          , Maybe (Positive SmallDelay)
                          , Maybe (Positive SmallDelay)
                          -- ^ The delay must be smaller (<) than 5s, so that overall
@@ -105,13 +108,17 @@ instance Arbitrary SigSubmissionState where
   arbitrary = do
     ArbTxDecisionPolicy decisionPolicy <- arbitrary
     peersN <- choose (1, 10)
-    txsN <- choose (1, 10)
+    txsN <- frequency [ (1, choose (1, 10))
+                      , (2, choose (10, 20))
+                      , (4, choose (20, 100))
+                      ]
+
     -- NOTE: using sortOn would forces tx-decision logic to download txs in the
     -- order of unacknowledgedTxIds.  This could be useful to get better
     -- properties when wrongly sized txs are present.
     txs <- divvy txsN . nubBy (on (==) getTxId) {- . List.sortOn getTxId -} <$> vectorOf (peersN * txsN) arbitrary
     peers <- vectorOf peersN arbitrary
-    peersState <- zipWith (curry (\(a, (b, c)) -> (a, b, c))) txs
+    peersState <- zipWith (\a (b, c) -> (a, b, c)) txs
               <$> vectorOf peersN arbitrary
     return SigSubmissionState  { peerMap = Map.fromList (zip peers peersState),
                                  decisionPolicy
@@ -124,18 +131,11 @@ instance Arbitrary SigSubmissionState where
       divvy n as = take n as : divvy n (drop n as)
 
   shrink SigSubmissionState { peerMap, decisionPolicy } =
-    SigSubmissionState <$> shrinkMap1 peerMap
-                      <*> [ policy
-                          | ArbTxDecisionPolicy policy <- shrink (ArbTxDecisionPolicy decisionPolicy)
-                          ]
-    where
-      shrinkMap1 :: Ord k => Map k v -> [Map k v]
-      shrinkMap1 m
-        | Map.size m <= 1 = [m]
-        | otherwise       = [Map.delete k m | k <- Map.keys m] ++ singletonMaps
-        where
-          singletonMaps = [Map.singleton k v | (k, v) <- Map.toList m]
-
+    SigSubmissionState
+      <$> shrinkMapBy Map.fromList Map.toList (shrinkList shrink) peerMap
+      <*> [ policy
+          | ArbTxDecisionPolicy policy <- shrink (ArbTxDecisionPolicy decisionPolicy)
+          ]
 
 newtype SigStateTrace peeraddr sigid =
     SigStateTrace (SharedTxState peeraddr sigid (Tx sigid))
