@@ -1,5 +1,6 @@
-{-# LANGUAGE DataKinds  #-}
-{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE DataKinds         #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes        #-}
 
 module DMQ.Diffusion.NodeKernel.Types
   ( NodeKernel (..)
@@ -7,11 +8,13 @@ module DMQ.Diffusion.NodeKernel.Types
   , PoolId
   , StakePools (..)
   , PoolValidationCtx (..)
+  , ValidationCfg (..)
   ) where
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Control.Monad.Class.MonadTime.SI
 
+import Data.Aeson qualified as Aeson
 import Data.Map.Strict (Map)
 import Data.OrdPSQ (OrdPSQ)
 import Data.Word
@@ -104,3 +107,16 @@ data PoolValidationCtx =
       -- signatures
     }
   deriving Show
+
+
+newtype ValidationCfg = ValidationCfg {
+    vcMinSigDelay :: DiffTime
+    -- ^ minimal delay between signatures created by the same SPO.  It can be
+    -- modified with an internal CLI option.  The default value is
+    -- `DMQ.Policy.minSigDelay`.
+  }
+  deriving Eq
+
+instance Aeson.ToJSON ValidationCfg where
+  toJSON ValidationCfg { vcMinSigDelay } =
+    Aeson.object [ "minSigDelay" Aeson..= vcMinSigDelay ]

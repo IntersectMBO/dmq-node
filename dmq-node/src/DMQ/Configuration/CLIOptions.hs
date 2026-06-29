@@ -97,6 +97,12 @@ parseCLIOptions =
           <> help "Show dmq-node version"
           )
         )
+    <*> optional (
+          option auto
+          (  long "min-sig-delay"
+          <> internal
+          )
+        )
   where
     -- NOTE: we cannot simply use `value <> showDefault`, because configuration
     -- will always overwrite values provided by configuration file.
@@ -108,9 +114,15 @@ parseCLIOptions =
         , Help.paragraph ("(default: " ++ show a ++ ")")
         ]
 
-    mkConfiguration ipv4 ipv6 portNumber localAddress
-                    configFile topologyFile cardanoNodeSocket cardanoNetworkMagic dmqNetworkMagic
-                    version =
+    mkConfiguration ipv4 ipv6 portNumber
+                    localAddress
+                    configFile
+                    topologyFile
+                    cardanoNodeSocket
+                    cardanoNetworkMagic
+                    dmqNetworkMagic
+                    version
+                    minSigDelay =
       mempty { dmqcIPv4                = Last (Just <$> ipv4),
                dmqcIPv6                = Last (Just <$> ipv6),
                dmqcLocalAddress        = Last (LocalAddress <$> localAddress),
@@ -120,5 +132,6 @@ parseCLIOptions =
                dmqcCardanoNodeSocket   = Last cardanoNodeSocket,
                dmqcCardanoNetworkMagic = Last (NetworkMagic <$> cardanoNetworkMagic),
                dmqcNetworkMagic        = Last (NetworkMagic <$> dmqNetworkMagic),
-               dmqcVersion             = Last version
+               dmqcVersion             = Last version,
+               dmqcMinSigDelay         = Last minSigDelay
              }

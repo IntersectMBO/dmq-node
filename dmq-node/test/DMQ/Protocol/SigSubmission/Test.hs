@@ -1057,11 +1057,17 @@ prop_validateSig constr validity = labelValidity validity $ ioProperty do
             vctxLastSigByPoolId
           }
 
+        validationCfg :: ValidationCfg
+        validationCfg =
+          ValidationCfg {
+            vcMinSigDelay = Policy.minSigDelay
+          }
+
     return
       . counterexample ("KES seed: " ++ show (ctx constr))
       . counterexample ("KES vk key: " ++ show (ocertVkHot . getSigOpCertificate . sigOpCertificate $ sig))
       . counterexample (show sig)
-      $ case (validity, fst $ validateSig [sig] validationCtx) of
+      $ case (validity, fst $ validateSig validationCfg [sig] validationCtx) of
           (Valid {}, Left (_, err) : _) -> counterexample (show err) False
           (Valid {}, Right _ : _)       -> property True
 

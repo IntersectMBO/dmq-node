@@ -1,3 +1,5 @@
+{-# LANGUAGE NumericUnderscores #-}
+
 module DMQ.Policy
   ( sigDecisionPolicy
   , sigSubmissionIngressLimit
@@ -9,17 +11,21 @@ module DMQ.Policy
   , maxSigExpiresAtDelay
   , maxSigIdsInflight
   , cardanoEpochSlots
+  , defaultValidationCfg
+  , dmqMainnetNetworkMagic
   ) where
 
 import Data.Time (DiffTime, NominalDiffTime)
 
 import Cardano.Chain.Slotting (EpochSlots (..))
 
+import DMQ.Diffusion.NodeKernel.Types (ValidationCfg (..))
 import DMQ.Diffusion.PeerSelection.PeerMetric (PeerMetricConfiguration (..))
 import DMQ.Protocol.SigSubmission.Type (NumTxIdsToReq)
 
 import Network.Mux.Types (MiniProtocolLimits (..))
 
+import Ouroboros.Network.Magic (NetworkMagic (..))
 import Ouroboros.Network.SizeInBytes (SizeInBytes)
 import Ouroboros.Network.TxSubmission.Inbound.V2
 
@@ -53,6 +59,12 @@ minSigDelay = 60
 --
 maxSigExpiresAtDelay :: NominalDiffTime
 maxSigExpiresAtDelay = 1800
+
+
+defaultValidationCfg :: ValidationCfg
+defaultValidationCfg = ValidationCfg {
+    vcMinSigDelay = minSigDelay
+  }
 
 
 -- | Maximum numbers signatures in-flight per peer.
@@ -128,3 +140,9 @@ cardanoEpochSlots :: EpochSlots
 cardanoEpochSlots = EpochSlots $ 10 * k
   where
     k = 2160
+
+
+-- | Mainnet `NetworkMagic` for dmq according to CIP#0137.
+--
+dmqMainnetNetworkMagic :: NetworkMagic
+dmqMainnetNetworkMagic = NetworkMagic 2_912_307_721

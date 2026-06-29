@@ -15,6 +15,7 @@ module DMQ.Protocol.SigSubmission.Validate
   , SigValidationException (..)
   , SigValidationError (..)
   , SigValidationTrace (..)
+  , ValidationCfg (..)
   ) where
 
 import Control.Monad.Class.MonadTime.SI
@@ -41,7 +42,8 @@ import Cardano.Ledger.Api.State.Query (StakeSnapshot (ssSetPool))
 import Cardano.Ledger.BaseTypes.NonZero qualified as Ledger
 import Cardano.Ledger.Keys qualified as Ledger
 
-import DMQ.Diffusion.NodeKernel (PoolValidationCtx (..), Readiness (..))
+import DMQ.Diffusion.NodeKernel (PoolValidationCtx (..), Readiness (..),
+           ValidationCfg (..))
 import DMQ.Policy qualified as Policy
 import DMQ.Protocol.SigSubmission.Type
 
@@ -62,6 +64,7 @@ validateSigId Sig { sigId = SigId hash, sigSignedBytes } =
   castHash (hashWith id (LBS.toStrict sigSignedBytes))
 
 
+
 validateSig :: forall crypto.
                ( Crypto crypto
                , DSIGN crypto ~ Ledger.DSIGN
@@ -69,10 +72,12 @@ validateSig :: forall crypto.
                , ContextKES (KES crypto) ~ ()
                , Signable (KES crypto) ByteString
                )
-            => [Sig crypto]
+            => ValidationCfg
+            -- ^ minimum signature delay produced by the same stake pool
+            -> [Sig crypto]
             -> PoolValidationCtx
             -> ([Either (SigId, SigValidationError) (Sig crypto)], PoolValidationCtx)
-validateSig sigs = State.runState (traverse (commute . validate) sigs)
+validateSig ValidationCfg { vcMinSigDelay } sigs = State.runState (traverse (commute . validate) sigs)
   where
     -- Commute `StateT` and `ExceptT` monads, e.g. a natural transformation
     -- `StateT s (Except e) ~> ExceptT e (State s)`. The latter monad allows us
@@ -127,7 +132,7 @@ validateSig sigs = State.runState (traverse (commute . validate) sigs)
                 = (Right (), Just (now, ()))
 
             fn a@(Just (lastSeen, _))
-                | sinceLast >= Policy.minSigDelay
+                | sinceLast >= vcMinSigDelay
                 = (Right (), Just (now, ()))
 
                 | otherwise
