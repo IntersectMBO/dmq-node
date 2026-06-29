@@ -34,7 +34,7 @@ maxSigSize = 2800
 --
 -- See: https://cips.cardano.org/cip/CIP-0137#mithril-extra-network-usage
 minSigBodySize :: SizeInBytes
-minSigBodySize = 360
+minSigBodySize = 90
 
 -- | Maximum `sigBody` size, it must be smaller than `maxSigSize`.
 --
