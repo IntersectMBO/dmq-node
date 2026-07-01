@@ -33,7 +33,7 @@ import Data.Version (showVersion)
 import Data.Void (Void)
 import Options.Applicative
 import System.Directory qualified as Dir
-import System.Exit (die, exitSuccess)
+import System.Exit (die, exitFailure, exitSuccess)
 import System.IOManager (withIOManager)
 import System.Metrics qualified as EKG
 import System.Random qualified as Random
@@ -93,15 +93,24 @@ runDMQ commandLineConfig = do
     -- options
     let dmqConfig :: Configuration
         dmqConfig@Configuration {
+          dmqcNetworkMagic          = I dmqNetworkMagic,
           dmqcTopologyFile          = I topologyFile,
           dmqcCardanoNodeSocket     = I socketPath,
           dmqcVersion               = I version,
           dmqcShelleyGenesisFile    = I genesisFile,
-          dmqcShelleyGenesisHash    = I genesisHash
+          dmqcShelleyGenesisHash    = I genesisHash,
+          dmqcMinSigDelay           = I minSigDelay
+
         } =     fromRight mempty config'
              <> commandLineConfig
             `act`
             defaultConfiguration
+
+        validationCfg :: ValidationCfg
+        validationCfg =
+          ValidationCfg {
+            vcMinSigDelay = minSigDelay
+          }
 
     when version $ do
       let gitrev :: Text.Text
@@ -134,6 +143,11 @@ runDMQ commandLineConfig = do
       )
       <- mkDMQTracers ekgStore configFilePath
 
+    when (validationCfg /= Policy.defaultValidationCfg) $ do
+      traceWith dmqStartupTracer (DMQValidationCfgWarning dmqNetworkMagic validationCfg)
+      -- one cannot run on mainnet with a custom `ValidationCfg`
+      unless (dmqNetworkMagic == Policy.dmqMainnetNetworkMagic)
+        exitFailure
 
     case config' of
       Left e   -> traceWith dmqStartupTracer (DMQConfigurationError e)
@@ -193,7 +207,11 @@ runDMQ commandLineConfig = do
                     Mempool.getWriter SigDuplicate
                                       sigId
                                       (\(utcNow, now) sigs ->
-                                        withPoolValidationCtx (stakePools nodeKernel) utcNow now (validateSig sigs)
+                                        withPoolValidationCtx
+                                          (stakePools nodeKernel)
+                                          utcNow
+                                          now
+                                          (validateSig validationCfg sigs)
                                       )
                                       (traverse_ $ \(sigid, reason) -> do
                                         traceWith sigValidationTracer $ InvalidSignature sigid reason
@@ -222,7 +240,11 @@ runDMQ commandLineConfig = do
                     Mempool.getWriter SigDuplicate
                                       sigId
                                       (\(utcNow, now) sigs ->
-                                        withPoolValidationCtx (stakePools nodeKernel) utcNow now (validateSig sigs)
+                                        withPoolValidationCtx
+                                          (stakePools nodeKernel)
+                                          utcNow
+                                          now
+                                          (validateSig validationCfg sigs)
                                       )
                                       (traverse_ $ \(sigid, reason) ->
                                          traceWith localSigValidationTracer $ InvalidSignature sigid reason

@@ -46,6 +46,7 @@ import Ouroboros.Network.ConnectionId
 import Ouroboros.Network.Diffusion qualified as Diffusion
 import Ouroboros.Network.Diffusion.Topology (NetworkTopology)
 import Ouroboros.Network.Driver (TraceSendRecv)
+import Ouroboros.Network.Magic (NetworkMagic (..))
 import Ouroboros.Network.OrphanInstances ()
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
@@ -67,12 +68,14 @@ import Cardano.Logging qualified as Logging
 import Cardano.Logging.Prometheus.TCPServer qualified as Logging
 
 import DMQ.Configuration
+import DMQ.Diffusion.NodeKernel.Types (ValidationCfg)
 import DMQ.NodeToClient.LocalMsgNotification qualified as LMN
 import DMQ.NodeToClient.LocalMsgSubmission (TraceLocalMsgSubmission)
 import DMQ.NodeToClient.LocalStateQueryClient.Types
            (TraceLocalStateQueryClient (..))
 import DMQ.NodeToClient.Version as NtC
 import DMQ.NodeToNode.Version as NtN
+import DMQ.Policy qualified as Policy
 import DMQ.Protocol.LocalMsgNotification.Type (LocalMsgNotification)
 import DMQ.Protocol.LocalMsgNotification.Type qualified as LMN
 import DMQ.Protocol.LocalMsgSubmission.Type (LocalMsgSubmission,
@@ -132,6 +135,7 @@ data DMQStartupTrace
   | DMQTopology (NetworkTopology NoExtraConfig Diffusion.NoExtraFlags)
   | DMQTopologyError Text
   | DMQPrometheus Logging.TracePrometheusSimple
+  | DMQValidationCfgWarning NetworkMagic ValidationCfg
 
 
 instance Logging.LogFormatting DMQStartupTrace where
@@ -157,6 +161,11 @@ instance Logging.LogFormatting DMQStartupTrace where
             , "error" .= e
             ]
   forMachine dtal (DMQPrometheus msg) = Logging.forMachine dtal msg
+  forMachine _dtal (DMQValidationCfgWarning magic cfg) =
+    mconcat [ "kind" .= String "NonStandardValidationCfg"
+            , "networkMagic" .= unNetworkMagic magic
+            , "cfg"  .= cfg
+            ]
 
 instance Logging.MetaTrace DMQStartupTrace where
   namespaceFor DMQConfiguration{}          = Logging.Namespace [] ["Configuration"]
@@ -165,9 +174,15 @@ instance Logging.MetaTrace DMQStartupTrace where
   namespaceFor DMQTopology{}               = Logging.Namespace [] ["Topology"]
   namespaceFor DMQTopologyError{}          = Logging.Namespace [] ["Topology", "Error"]
   namespaceFor DMQPrometheus {}            = Logging.Namespace [] ["Prometheus"]
+  namespaceFor DMQValidationCfgWarning {}  = Logging.Namespace [] ["ValidationCfg"]
   severityFor _ (Just DMQConfigurationError{})     = Just Logging.Critical
   severityFor _ (Just DMQCardanoNodeSocketError{}) = Just Logging.Critical
   severityFor _ (Just DMQTopologyError{})          = Just Logging.Critical
+  severityFor _ (Just (DMQValidationCfgWarning magic _))
+                                                   | magic == Policy.dmqMainnetNetworkMagic
+                                                   = Just Logging.Critical
+                                                   | otherwise
+                                                   = Just Logging.Warning
   severityFor _ _                                  = Just Logging.Info
   documentFor _ = Nothing
   allNamespaces =

@@ -76,6 +76,7 @@ import Ouroboros.Network.Snocket (LocalAddress (..), RemoteAddress)
 
 import DMQ.Configuration.Topology (NoExtraConfig (..), NoExtraFlags (..))
 import DMQ.Genesis
+import DMQ.Policy qualified as Policy
 
 -- | Configuration comes in two flavours depending on the `f` functor:
 -- `PartialConfig` is using `Last` and `Configuration` is using an identity
@@ -136,6 +137,10 @@ data Configuration' f =
     dmqcTargetOfEstablishedBigLedgerPeers :: f Int,
     dmqcTargetOfActiveBigLedgerPeers      :: f Int,
 
+    -- | Minimal delay between signatures from the same peer.
+    --
+    dmqcMinSigDelay                       :: f DiffTime,
+
     -- | CLI only option to show version and exit.
     dmqcVersion                           :: f Bool
   }
@@ -195,7 +200,7 @@ defaultConfiguration = Configuration {
       dmqcIPv6                              = I Nothing,
       dmqcLocalAddress                      = I (LocalAddress "dmq-node.socket"),
       -- mainnet dmq protocol magic according to CIP#137
-      dmqcNetworkMagic                      = I NetworkMagic { unNetworkMagic = 2_912_307_721 },
+      dmqcNetworkMagic                      = I Policy.dmqMainnetNetworkMagic,
       dmqcCardanoNetworkMagic               =
         I (NetworkMagic . unProtocolMagicId $ mainnetProtocolMagicId),
       dmqcPortNumber                        = I 3_141,
@@ -217,6 +222,8 @@ defaultConfiguration = Configuration {
       dmqcChurnInterval                     = I defaultDeadlineChurnInterval,
       dmqcPeerSharing                       = I PeerSharingEnabled,
       dmqcLedgerPeers                       = I False,
+
+      dmqcMinSigDelay                       = I Policy.minSigDelay,
 
       -- CLI only options
       dmqcVersion                           = I False
@@ -270,6 +277,9 @@ instance FromJSON PartialConfig where
       dmqcAcceptedConnectionsLimit <- Last <$> v .:? "AcceptedConnectionsLimit"
       dmqcProtocolIdleTimeout <- Last <$> v .:? "ProtocolIdleTimeout"
       dmqcChurnInterval <- Last <$> v .:? "ChurnInterval"
+
+      -- not configurable in a config file
+      let dmqcMinSigDelay = Last Nothing
 
       pure $
         Configuration
