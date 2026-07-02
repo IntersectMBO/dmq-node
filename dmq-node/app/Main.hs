@@ -146,7 +146,7 @@ runDMQ commandLineConfig = do
     when (validationCfg /= Policy.defaultValidationCfg) $ do
       traceWith dmqStartupTracer (DMQValidationCfgWarning dmqNetworkMagic validationCfg)
       -- one cannot run on mainnet with a custom `ValidationCfg`
-      unless (dmqNetworkMagic == Policy.dmqMainnetNetworkMagic)
+      when (dmqNetworkMagic == Policy.dmqMainnetNetworkMagic)
         exitFailure
 
     case config' of
