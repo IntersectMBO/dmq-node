@@ -2,6 +2,37 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-0.7.0.0'></a>
+## 0.7.0.0 -- 2026-07-03
+
+### Breaking
+
+- Using `KeepAliveRegistry` instead of `FetchClientRegistry` introduced in
+  a recent `ouroboros-network` PR. The `fetchClientRegistry` field of
+  `NodeKernel` was replaced with `keepAliveRegistry` field.
+
+- Lower `minSigBodySize` to `90` bytes.
+
+### Non-Breaking
+
+- Added `PrettyShow` instances for
+  - `NodeToNodeVersion`
+  - `NodeToNodeVersionData`
+  - `NodeToClientVersion`
+  - `NodeToClientVersionData`
+- Signature validation changed, we're no longer using the `mark set`, pools
+  with no stake will be able to mint signatures as long as they have non zero
+  stake in the `set set`.
+
+- Fixes local state query application to correctly query the cardano-node's
+  ledger era and re-uses that information for the relevant queries. Previous
+  implementation was hardcoded to Conway era, which would cause a crash on
+  a transition.
+
+- Bugfix: don't set block point slot to maxBound for big ledger peers in local state query client
+
+- Added `--min-sig-delay` internal flag.  One cannot use it on the mainnet.
+
 <a id='changelog-0.6.0.0'></a>
 ## 0.6.0.0 -- 2026-06-04
 
