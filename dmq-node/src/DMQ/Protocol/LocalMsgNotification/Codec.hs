@@ -139,12 +139,21 @@ codecLocalMsgNotification' mkWithBytes encodeMsg decodeMsgWithBytes =
           msgs <- CBOR.decodeSequenceLenIndef
                     (flip (:)) [] reverse
                     (Utils.decodeWithByteSpan decodeMsgWithBytes)
-          -- Issue #15
-          -- more <- bool DoesNotHaveMore HasMore <$> CBOR.decodeBool
-          -- return (Annotator \bytes ->
-          --          SomeMessage $ MsgReply (BlockingReply (mkWithBytes bytes <$> NonEmpty.fromList msgs)) more)
-          return (Annotator \bytes ->
-                   SomeMessage $ MsgReply (BlockingReply (mkWithBytes bytes <$> NonEmpty.fromList msgs)) DoesNotHaveMore)
+          case NonEmpty.nonEmpty msgs of
+            Nothing -> fail (printf "codecLocalMsgNotification (%s, %s) empty list"
+                                    (show (activeAgency :: ActiveAgency st))
+                                    (show stok)
+                            )
+            Just msgs' ->
+              -- Issue #15
+              -- more <- bool DoesNotHaveMore HasMore <$> CBOR.decodeBool
+              -- return (Annotator \bytes ->
+              --          SomeMessage $ MsgReply (BlockingReply (mkWithBytes bytes <$> msgs')) more)
+              return (Annotator \bytes ->
+                       SomeMessage $
+                         MsgReply
+                           (BlockingReply (mkWithBytes bytes <$> msgs'))
+                           DoesNotHaveMore)
 
         (SingIdle, 1, 3) -> return (Annotator \_ -> SomeMessage MsgClientDone)
 
