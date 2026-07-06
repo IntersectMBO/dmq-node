@@ -48,16 +48,17 @@ data NodeKernel crypto ntnAddr m =
 
     -- | Read the current peer sharing registry, used for interacting with
     -- the PeerSharing protocol
-  , peerSharingRegistry :: !(PeerSharingRegistry ntnAddr m)
-  , peerSharingAPI      :: !(PeerSharingAPI ntnAddr StdGen m)
-  , mempool             :: !(Mempool m SigId (Sig crypto))
-  , sigChannelVar       :: !(TxChannelsVar m ntnAddr SigId (Sig crypto))
-  , sigMempoolSem       :: !(TxMempoolSem m)
-  , sigSharedTxStateVar :: !(SharedTxStateVar m ntnAddr SigId (Sig crypto))
-  , stakePools          :: !(StakePools m)
-  , readinessVar        :: !(StrictTVar m Readiness)
-  , peerMetric          :: !(PeerMetric m SigId ntnAddr)
-  , lastSigByPoolIdVar  :: !(StrictTVar m (OrdPSQ PoolId Time ()))
+  , peerSharingRegistry       :: !(PeerSharingRegistry ntnAddr m)
+  , peerSharingAPI            :: !(PeerSharingAPI ntnAddr StdGen m)
+  , peerSelectionPolicyRngVar :: !(StrictTVar m StdGen)
+  , mempool                   :: !(Mempool m SigId (Sig crypto))
+  , sigChannelVar             :: !(TxChannelsVar m ntnAddr SigId (Sig crypto))
+  , sigMempoolSem             :: !(TxMempoolSem m)
+  , sigSharedTxStateVar       :: !(SharedTxStateVar m ntnAddr SigId (Sig crypto))
+  , stakePools                :: !(StakePools m)
+  , readinessVar              :: !(StrictTVar m Readiness)
+  , peerMetric                :: !(PeerMetric m SigId ntnAddr)
+  , lastSigByPoolIdVar        :: !(StrictTVar m (OrdPSQ PoolId Time ()))
   }
 
 data StakePools m = StakePools {

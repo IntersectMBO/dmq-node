@@ -93,6 +93,8 @@ newNodeKernel rng ShelleyGenesis {sgMaxKESEvolutions} = do
   sigChannelVar <- newTxChannelsVar
   sigMempoolSem <- newTxMempoolSem
   let (rng', rng'') = Random.splitGen rng
+      (peerSharingRng, peerSelectionPolicyRng) = Random.splitGen rng''
+  peerSelectionPolicyRngVar <- newTVarIO peerSelectionPolicyRng
   sigSharedTxStateVar <- newSharedTxStateVar rng'
   (readinessVar,
     ocertCountersVar,
@@ -132,7 +134,7 @@ newNodeKernel rng ShelleyGenesis {sgMaxKESEvolutions} = do
   peerSharingAPI <-
     newPeerSharingAPI
       publicPeerSelectionStateVar
-      rng''
+      peerSharingRng
       ps_POLICY_PEER_SHARE_STICKY_TIME
       ps_POLICY_PEER_SHARE_MAX_PEERS
 
@@ -141,6 +143,7 @@ newNodeKernel rng ShelleyGenesis {sgMaxKESEvolutions} = do
   pure NodeKernel { keepAliveRegistry
                   , peerSharingRegistry
                   , peerSharingAPI
+                  , peerSelectionPolicyRngVar
                   , mempool
                   , sigChannelVar
                   , sigMempoolSem

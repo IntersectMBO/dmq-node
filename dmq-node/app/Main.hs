@@ -48,7 +48,6 @@ import DMQ.Configuration.Topology (readTopologyFile)
 import DMQ.Diffusion.Applications (diffusionApplications)
 import DMQ.Diffusion.Arguments
 import DMQ.Diffusion.NodeKernel as NodeKernel
-import DMQ.Diffusion.PeerSelectionPolicy (policy)
 import DMQ.Genesis
 import DMQ.Handlers.TopLevel (toplevelExceptionHandler)
 import DMQ.Mempool qualified as Mempool
@@ -180,9 +179,7 @@ runDMQ commandLineConfig = do
           ekgStore ps
           >>= link
 
-    stdGen <- Random.newStdGen
-    let (psRng, policyRng) = Random.splitGen stdGen
-    policyRngVar <- newTVarIO policyRng
+    psRng <- Random.newStdGen
 
     (shelleyGenesis, _) <-
       runExceptT (readGenesis genesisFile genesisHash) >>= either throwIO pure
@@ -269,7 +266,6 @@ runDMQ commandLineConfig = do
                                     dmqLimitsAndTimeouts
                                     dmqNtNApps
                                     dmqNtCApps
-                                    (policy policyRngVar nodeKernel.peerMetric)
 
         Diffusion.run dmqDiffusionArguments
                       dmqDiffusionTracers
