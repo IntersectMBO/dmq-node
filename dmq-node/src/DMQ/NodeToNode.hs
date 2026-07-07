@@ -189,8 +189,7 @@ ntnApps
  -> Apps ntnAddr m () ()
 ntnApps
     DMQTracers {
-      sigSubmissionLogicPeerTracer
-    , sigSubmissionV2ProtocolTracer
+      sigSubmissionV2ProtocolTracer
     , sigSubmissionInboundTracer
     , sigSubmissionV1ProtocolTracer
     , sigSubmissionOutboundV1Tracer
@@ -206,9 +205,9 @@ ntnApps
       keepAliveRegistry
     , peerSharingRegistry
     , peerSharingAPI
-    , sigChannelVar
-    , sigMempoolSem
     , sigSharedTxStateVar
+    , sigPeerRegistry
+    , sigRetiredCountersVar
     , peerMetric
     }
     Codecs {
@@ -257,14 +256,11 @@ ntnApps
               $ peerMetric
         in
         withPeer
-          (Mx.WithBearer connId >$< sigSubmissionLogicPeerTracer)
-          sigChannelVar
-          sigMempoolSem
           sigDecisionPolicy
-          sigSharedTxStateVar
           mempoolReader
-          mempoolWriter
-          sigSize
+          sigSharedTxStateVar
+          sigPeerRegistry
+          sigRetiredCountersVar
           (remoteAddress connId)
           ( \(peerSigAPI :: PeerTxAPI m SigId (Sig crypto)) ->
               runPipelinedAnnotatedPeerWithLimits
@@ -276,7 +272,9 @@ ntnApps
                 $ sigSubmissionV2InboundPeerPipelined
                 $ sigSubmissionInbound
                     (Mx.WithBearer connId >$< sigSubmissionInboundTracer)
+                    sigDecisionPolicy
                     mempoolWriter
+                    sigSize
                     peerSigAPI
                     reportPeerMetrics
                     controlMessage
@@ -336,14 +334,11 @@ ntnApps
       -> m ((), Maybe BL.ByteString)
     aSigSubmissionV1Server _version ResponderContext { rcConnectionId = connId } channel =
       withPeer
-          (Mx.WithBearer connId >$< sigSubmissionLogicPeerTracer)
-          sigChannelVar
-          sigMempoolSem
           sigDecisionPolicy
-          sigSharedTxStateVar
           mempoolReader
-          mempoolWriter
-          sigSize
+          sigSharedTxStateVar
+          sigPeerRegistry
+          sigRetiredCountersVar
           (remoteAddress connId)
           $ \(peerSigAPI :: PeerTxAPI m SigId (Sig crypto)) ->
             runPipelinedAnnotatedPeerWithLimits
@@ -356,7 +351,9 @@ ntnApps
               $ txSubmissionInboundV2
                   (Mx.WithBearer connId >$< sigSubmissionInboundTracer)
                   _SIG_SUBMISSION_INIT_DELAY
+                  sigDecisionPolicy
                   mempoolWriter
+                  sigSize
                   peerSigAPI
 
 

@@ -255,7 +255,7 @@ mkDMQTracers ekgStore dmqConfigFilePath = do
         Logging.Info
         Logging.DNormal
         (Logging.Stdout Logging.MachineFormat)
-        dmqConfigFilePath
+        (Logging.FromFile dmqConfigFilePath)
         Logging.emptyTraceConfig
         { Logging.tcMetricsPrefix = Just metricsPrefix }
     else

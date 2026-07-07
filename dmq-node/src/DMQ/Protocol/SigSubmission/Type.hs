@@ -1,5 +1,6 @@
 {-# LANGUAGE DerivingStrategies   #-}
 {-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE NamedFieldPuns       #-}
 {-# LANGUAGE OverloadedStrings    #-}
@@ -35,6 +36,7 @@ module DMQ.Protocol.SigSubmission.Type
   , KESPeriod (..)
   ) where
 
+import Control.DeepSeq (NFData)
 import Control.Exception (Exception (..))
 import Control.Monad.Class.MonadTime.SI
 import Data.Aeson
@@ -46,6 +48,8 @@ import Data.Text (Text)
 import Data.Time.Clock.POSIX (POSIXTime)
 import Data.Typeable
 import Data.Word (Word64)
+
+import NoThunks.Class (NoThunks)
 
 import Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm, VerKeyDSIGN)
 import Cardano.Crypto.Hash.Blake2b (Blake2b_256)
@@ -61,6 +65,7 @@ import Cardano.Logging qualified as Logging
 import Ouroboros.Network.Protocol.TxSubmission2.Type as SigSubmission hiding
            (TxSubmission2)
 import Ouroboros.Network.Protocol.TxSubmission2.Type as TxSubmission2
+import Ouroboros.Network.Tx (HasRawTxId (..))
 import Ouroboros.Network.Util.ShowProxy
 
 
@@ -73,6 +78,11 @@ type data SigPayload
 
 newtype SigId = SigId { getSigId :: Hash Blake2b_256 SigPayload  }
   deriving stock (Show, Eq, Ord)
+  deriving newtype (NFData, NoThunks)
+
+instance HasRawTxId SigId where
+  type RawTxId SigId = SigId
+  getRawTxId = id
 
 instance ToJSON SigId where
   toJSON (SigId sigId) = toJSON sigId
