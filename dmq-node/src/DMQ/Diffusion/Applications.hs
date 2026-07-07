@@ -3,8 +3,11 @@
 
 module DMQ.Diffusion.Applications where
 
+import Control.Concurrent.Class.MonadSTM.Strict
+
 import DMQ.Configuration
 import DMQ.Diffusion.NodeKernel (NodeKernel (..))
+import DMQ.Diffusion.PeerSelectionPolicy qualified as PeerSelectionPolicy
 import DMQ.NodeToClient (NodeToClientVersion, NodeToClientVersionData,
            stdVersionDataNTC)
 import DMQ.NodeToClient qualified as NTC
@@ -14,26 +17,29 @@ import DMQ.NodeToNode qualified as NTN
 
 import Ouroboros.Network.Diffusion.Types qualified as Diffusion
 import Ouroboros.Network.ExitPolicy (RepromoteDelay (..))
-import Ouroboros.Network.PeerSelection.Governor.Types (PeerSelectionPolicy)
 import Ouroboros.Network.Protocol.Handshake.Version (combineVersions,
            simpleSingletonVersions)
 import Ouroboros.Network.RethrowPolicy (ioErrorRethrowPolicy,
            muxErrorRethrowPolicy)
 
 diffusionApplications
-  :: NodeKernel crypto ntnAddr m
+  :: ( MonadSTM m
+     , Ord ntnAddr
+     )
+  => NodeKernel crypto ntnAddr m
   -> Configuration
   -> Diffusion.Configuration NoExtraFlags m ntnFd ntnAddr ntcFd ntcAddr
   -> NTN.LimitsAndTimeouts crypto ntnAddr
   -> NTN.Apps ntnAddr m a ()
   -> NTC.Apps ntcAddr m ()
-  -> PeerSelectionPolicy ntnAddr m
   -> Diffusion.Applications ntnAddr NodeToNodeVersion   NodeToNodeVersionData
                             ntcAddr NodeToClientVersion NodeToClientVersionData
                             NoExtraFlags m a
 diffusionApplications
   NodeKernel {
-    peerSharingRegistry
+    peerSharingRegistry,
+    peerSelectionPolicyRngVar,
+    peerMetric
   }
   Configuration {
     dmqcNetworkMagic = I networkMagic
@@ -45,7 +51,7 @@ diffusionApplications
   ntnLimitsAndTimeouts
   ntnApps
   ntcApps
-  peerSelectionPolicy =
+  =
   Diffusion.Applications {
     Diffusion.daApplicationInitiatorMode =
       combineVersions
@@ -76,7 +82,7 @@ diffusionApplications
   , Diffusion.daReturnPolicy        = const dmqRepromoteDelay
   , Diffusion.daRepromoteErrorDelay = dmqRepromoteDelay
   , Diffusion.daLocalRethrowPolicy  = mempty
-  , Diffusion.daPeerSelectionPolicy = peerSelectionPolicy
+  , Diffusion.daPeerSelectionPolicy = PeerSelectionPolicy.policy peerSelectionPolicyRngVar peerMetric
   , Diffusion.daPeerSharingRegistry = peerSharingRegistry
   }
 

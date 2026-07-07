@@ -12,7 +12,7 @@ import DMQ.Diffusion.PeerSelection.PeerMetric qualified as PeerMetric
 
 import Ouroboros.Network.PeerSelection hiding (PeerMetrics)
 
--- | Trivial peer selection policy used as dummy value
+-- | DMQ PeerSelectionPolicy
 --
 policy :: forall sigId peerAddr m.
           ( MonadSTM m
@@ -34,10 +34,10 @@ policy rngVar peerMetrics =
 
     policyFindPublicRootTimeout      = 5,
     policyMaxInProgressPeerShareReqs = 0,
-    policyPeerShareRetryTime         = 0, -- seconds
-    policyPeerShareBatchWaitTime     = 0, -- seconds
-    policyPeerShareOverallTimeout    = 0, -- seconds
-    policyPeerShareActivationDelay   = 2, -- seconds
+    policyPeerShareRetryTime         = 900,  -- seconds
+    policyPeerShareBatchWaitTime     = 3,    -- seconds
+    policyPeerShareOverallTimeout    = 10,   -- seconds
+    policyPeerShareActivationDelay   = 300,  -- seconds
     policyMaxConnectionRetries       = 5,
     policyClearFailCountDelay        = 120   -- seconds
   }

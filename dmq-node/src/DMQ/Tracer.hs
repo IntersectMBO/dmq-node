@@ -50,6 +50,7 @@ import Ouroboros.Network.Magic (NetworkMagic (..))
 import Ouroboros.Network.OrphanInstances ()
 import Ouroboros.Network.PeerSelection.PublicRootPeers (PublicRootPeers)
 import Ouroboros.Network.PeerSelection.PublicRootPeers qualified as PublicRootPeers
+import Ouroboros.Network.Protocol.Handshake.Type (Handshake)
 import Ouroboros.Network.Protocol.KeepAlive.Type (KeepAlive)
 import Ouroboros.Network.Protocol.KeepAlive.Type qualified as KA
 import Ouroboros.Network.Protocol.PeerSharing.Type (PeerSharing)
@@ -66,6 +67,7 @@ import Cardano.KESAgent.KES.Crypto (Crypto)
 import Cardano.Logging (Namespace (..))
 import Cardano.Logging qualified as Logging
 import Cardano.Logging.Prometheus.TCPServer qualified as Logging
+import Cardano.Network.NodeToClient qualified as Cardano.NtC
 
 import DMQ.Configuration
 import DMQ.Diffusion.NodeKernel.Types (ValidationCfg)
@@ -125,7 +127,16 @@ data DMQTracers crypto ntnAddr ntcAddr m = DMQTracers {
     localSigValidationTracer
       :: Tracer m SigValidationTrace,
     cardanoNodeHandshakeTracer
-      :: Tracer m (NtC.HandshakeTr LocalAddress)
+      :: Tracer m (NtC.HandshakeTr LocalAddress),
+    cardanoNodeHandshakeProtocolTracer
+      :: Tracer m (Mx.WithBearer (ConnectionId LocalAddress)
+                                 (TraceSendRecv (Handshake Cardano.NtC.NodeToClientVersion Term))),
+    cardanoNodeMuxTracer
+      :: Tracer m (Mx.WithBearer (ConnectionId LocalAddress) Mx.Trace),
+    cardanoNodeChannelTracer
+      :: Tracer m (Mx.WithBearer (ConnectionId LocalAddress) Mx.ChannelTrace),
+    cardanoNodeBearerTracer
+      :: Tracer m (Mx.WithBearer (ConnectionId LocalAddress) Mx.BearerTrace)
     }
 
 data DMQStartupTrace
@@ -504,6 +515,26 @@ mkDMQTracers ekgStore dmqConfigFilePath = do
     stdoutTrace trForward mbTrEkg
     ["Net", "Local", "Cardano", "Handshake"]
 
+  !cardanoNodeHandshakeProtocolTracer <- mkTracer
+    traceConfig configReflection
+    stdoutTrace trForward mbTrEkg
+    ["Net", "Local", "Cardano", "Handshake", "Protocol"]
+
+  !cardanoNodeMuxTracer <- mkTracer
+    traceConfig configReflection
+    stdoutTrace trForward mbTrEkg
+    ["Net", "Local", "Cardano", "Mux", "Local"]
+
+  !cardanoNodeChannelTracer <- mkTracer
+    traceConfig configReflection
+    stdoutTrace trForward mbTrEkg
+    ["Net", "Local", "Cardano", "Mux", "Local", "Channel"]
+
+  !cardanoNodeBearerTracer <- mkTracer
+    traceConfig configReflection
+    stdoutTrace trForward mbTrEkg
+    ["Net", "Local", "Cardano", "Mux", "Local", "Bearer"]
+
   let dmqTracers = DMQTracers {
         sigSubmissionLogicTracer           = Tracer $ Logging.traceWith sigSubmissionLogicTracer,
         sigSubmissionLogicPeerTracer       = Tracer $ Logging.traceWith sigSubmissionLogicPeerTracer,
@@ -522,7 +553,11 @@ mkDMQTracers ekgStore dmqConfigFilePath = do
         localStateQueryClientTracer        = Tracer $ Logging.traceWith localStateQueryClientTracer,
         sigValidationTracer                = Tracer $ Logging.traceWith sigValidationTracer,
         localSigValidationTracer           = Tracer $ Logging.traceWith localSigValidationTracer,
-        cardanoNodeHandshakeTracer         = Tracer $ Logging.traceWith cardanoNodeHandshakeTracer
+        cardanoNodeHandshakeTracer         = Tracer $ Logging.traceWith cardanoNodeHandshakeTracer,
+        cardanoNodeHandshakeProtocolTracer = Tracer $ Logging.traceWith cardanoNodeHandshakeProtocolTracer,
+        cardanoNodeMuxTracer               = Tracer $ Logging.traceWith cardanoNodeMuxTracer,
+        cardanoNodeChannelTracer           = Tracer $ Logging.traceWith cardanoNodeChannelTracer,
+        cardanoNodeBearerTracer            = Tracer $ Logging.traceWith cardanoNodeBearerTracer
       }
 
   -- This backend can only be used globally, i.e. will always apply to the namespace root.

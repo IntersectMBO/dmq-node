@@ -93,6 +93,8 @@ newNodeKernel rng ShelleyGenesis {sgMaxKESEvolutions} = do
   sigChannelVar <- newTxChannelsVar
   sigMempoolSem <- newTxMempoolSem
   let (rng', rng'') = Random.splitGen rng
+      (peerSharingRng, peerSelectionPolicyRng) = Random.splitGen rng''
+  peerSelectionPolicyRngVar <- newTVarIO peerSelectionPolicyRng
   sigSharedTxStateVar <- newSharedTxStateVar rng'
   (readinessVar,
     ocertCountersVar,
@@ -132,7 +134,7 @@ newNodeKernel rng ShelleyGenesis {sgMaxKESEvolutions} = do
   peerSharingAPI <-
     newPeerSharingAPI
       publicPeerSelectionStateVar
-      rng''
+      peerSharingRng
       ps_POLICY_PEER_SHARE_STICKY_TIME
       ps_POLICY_PEER_SHARE_MAX_PEERS
 
@@ -141,6 +143,7 @@ newNodeKernel rng ShelleyGenesis {sgMaxKESEvolutions} = do
   pure NodeKernel { keepAliveRegistry
                   , peerSharingRegistry
                   , peerSharingAPI
+                  , peerSelectionPolicyRngVar
                   , mempool
                   , sigChannelVar
                   , sigMempoolSem
@@ -180,7 +183,11 @@ withNodeKernel :: forall crypto ntnAddr ntcAddr m a.
                -- decision logic threads will be killed
                -> m a
 withNodeKernel DMQTracers { sigSubmissionLogicTracer,
-                            localStateQueryClientTracer
+                            localStateQueryClientTracer,
+                            cardanoNodeHandshakeProtocolTracer,
+                            cardanoNodeMuxTracer,
+                            cardanoNodeChannelTracer,
+                            cardanoNodeBearerTracer
                           }
                localSnocket
                mkLocalBearer
@@ -223,7 +230,16 @@ withNodeKernel DMQTracers { sigSubmissionLogicTracer,
           ctaHandshakeCodec      = Cardano.NtoC.nodeToClientHandshakeCodec,
           ctaHandshakeTimeLimits = noTimeLimitsHandshake,
           ctaVersionDataCodec    = cborTermVersionDataCodec Cardano.NtoC.nodeToClientCodecCBORTerm,
-          ctaConnectTracers      = Cardano.NtoC.nullNetworkConnectTracers, --debuggingNetworkConnectTracers,
+          ctaConnectTracers      = Cardano.NtoC.NetworkConnectTracers {
+              Cardano.NtoC.nctMuxTracers =
+                Mx.Tracers {
+                  Mx.tracer        = cardanoNodeMuxTracer,
+                  Mx.channelTracer = cardanoNodeChannelTracer,
+                  Mx.bearerTracer  = cardanoNodeBearerTracer
+                },
+              Cardano.NtoC.nctHandshakeTracer =
+                cardanoNodeHandshakeProtocolTracer
+            },
           ctaHandshakeCallbacks  = HandshakeCallbacks acceptableVersion queryVersion
         }
         (\_ -> return ())
