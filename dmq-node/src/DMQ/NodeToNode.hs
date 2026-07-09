@@ -99,8 +99,8 @@ import Ouroboros.Network.TxSubmission.Mempool.Reader
 import Ouroboros.Network.OrphanInstances ()
 
 import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
-import Ouroboros.Network.Protocol.Handshake.Codec (mkVersionedCodecCBORTerm,
-           codecHandshake, timeLimitsHandshake)
+import Ouroboros.Network.Protocol.Handshake.Codec (codecHandshake,
+           mkVersionedCodecCBORTerm, timeLimitsHandshake)
 import Ouroboros.Network.Protocol.KeepAlive.Client (keepAliveClientPeer)
 import Ouroboros.Network.Protocol.KeepAlive.Codec (byteLimitsKeepAlive,
            codecKeepAlive_v2, timeLimitsKeepAlive)
@@ -207,7 +207,7 @@ ntnApps
     , peerSharingAPI
     , sigSharedTxStateVar
     , sigPeerRegistry
-    , sigRetiredCountersVar
+    , sigCountersVar
     , peerMetric
     }
     Codecs {
@@ -260,7 +260,7 @@ ntnApps
           mempoolReader
           sigSharedTxStateVar
           sigPeerRegistry
-          sigRetiredCountersVar
+          sigCountersVar
           (remoteAddress connId)
           ( \(peerSigAPI :: PeerTxAPI m SigId (Sig crypto)) ->
               runPipelinedAnnotatedPeerWithLimits
@@ -338,7 +338,7 @@ ntnApps
           mempoolReader
           sigSharedTxStateVar
           sigPeerRegistry
-          sigRetiredCountersVar
+          sigCountersVar
           (remoteAddress connId)
           $ \(peerSigAPI :: PeerTxAPI m SigId (Sig crypto)) ->
             runPipelinedAnnotatedPeerWithLimits

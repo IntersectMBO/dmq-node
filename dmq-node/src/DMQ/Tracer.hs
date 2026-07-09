@@ -17,9 +17,9 @@ module DMQ.Tracer
   , Diffusion.NoExtraState (..)
   , Diffusion.NoExtraDebugState (..)
   , Diffusion.NoExtraFlags (..)
-  , NoExtraConfig (..)
-  , NoExtraAPI (..)
-  , NoExtraChurnArgs (..)
+  , Diffusion.NoExtraConfig (..)
+  , Diffusion.NoExtraAPI (..)
+  , Diffusion.NoExtraChurnArgs (..)
   ) where
 
 import Codec.CBOR.Term (Term)
@@ -60,7 +60,7 @@ import Ouroboros.Network.Protocol.TxSubmission2.Type qualified as STX
 import Ouroboros.Network.Snocket (RemoteAddress)
 import Ouroboros.Network.TxSubmission.Inbound.V2 (TraceTxLogic)
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types
-           (TraceTxSubmissionInbound)
+           (TraceTxSubmissionInbound, TxSubmissionCounters)
 import Ouroboros.Network.TxSubmission.Outbound (TraceTxSubmissionOutbound)
 
 import Cardano.KESAgent.KES.Crypto (Crypto)
@@ -93,6 +93,8 @@ import DMQ.SigSubmissionV2.Outbound qualified as SigSubV2
 data DMQTracers crypto ntnAddr ntcAddr m = DMQTracers {
     sigSubmissionLogicTracer
       :: Tracer m (TraceTxLogic ntnAddr SigId (Sig crypto)),
+    sigCountersTracer
+      :: Tracer m TxSubmissionCounters,
     sigSubmissionLogicPeerTracer
       :: Tracer m (Mx.WithBearer (ConnectionId ntnAddr) (TraceTxLogic ntnAddr SigId (Sig crypto))),
     localMsgSubmissionProtocolTracer
@@ -430,6 +432,11 @@ mkDMQTracers ekgStore dmqConfigFilePath = do
     stdoutTrace trForward mbTrEkg
     ["Net", "SigSubmission", "Logic"]
 
+  !sigCountersTracer <- mkLoggingTracer
+    traceConfig configReflection
+    stdoutTrace trForward mbTrEkg
+    ["Net", "SigSubmission", "Counters"]
+
   !sigSubmissionLogicPeerTracer <- mkLoggingTracer
     traceConfig configReflection
     stdoutTrace trForward mbTrEkg
@@ -537,6 +544,7 @@ mkDMQTracers ekgStore dmqConfigFilePath = do
 
   let dmqTracers = DMQTracers {
         sigSubmissionLogicTracer           = mkTracer $ Logging.traceWith sigSubmissionLogicTracer,
+        sigCountersTracer                  = mkTracer $ Logging.traceWith sigCountersTracer,
         sigSubmissionLogicPeerTracer       = mkTracer $ Logging.traceWith sigSubmissionLogicPeerTracer,
         localMsgSubmissionProtocolTracer   = mkTracer $ Logging.traceWith localMsgSubmissionProtocolTracer,
         localMsgSubmissionServerTracer     = mkTracer $ Logging.traceWith localMsgSubmissionServerTracer,
@@ -1102,9 +1110,6 @@ instance Logging.MetaTrace (AnyMessage (PS.PeerSharing addr)) where
       , Namespace [] ["PeerShareDone"]
       ]
 
--- An orphan instance needed for `Handshake versionNumber Term`
-instance ToJSON Term where
-  toJSON term = String (Text.pack . show $ term)
 
 instance ToJSON (PublicRootPeers (Diffusion.NoExtraPeers RemoteAddress) RemoteAddress) where
   toJSON prp =
@@ -1112,9 +1117,3 @@ instance ToJSON (PublicRootPeers (Diffusion.NoExtraPeers RemoteAddress) RemoteAd
            , "ledgerPeers"       .= PublicRootPeers.getLedgerPeers prp
            , "bigLedgerPeers"    .= PublicRootPeers.getBigLedgerPeers prp
            ]
-
--- TODO: move `NoExtraChurnArgs` and `NoExtraAPI` to
--- `Ouroboros.Network.Diffusion.Types`.
-
-data NoExtraChurnArgs  = NoExtraChurnArgs
-data NoExtraAPI        = NoExtraAPI

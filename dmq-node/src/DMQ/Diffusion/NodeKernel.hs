@@ -20,7 +20,6 @@ import Control.Monad.Class.MonadTimer.SI
 import "contra-tracer" Control.Tracer (nullTracer)
 
 import Data.Function (on)
-import Data.Hashable
 import Data.Map.Strict qualified as Map
 import Data.OrdPSQ qualified as OrdPSQ
 import Data.Proxy
@@ -93,7 +92,7 @@ newNodeKernel rng ShelleyGenesis {sgMaxKESEvolutions} = do
   peerSelectionPolicyRngVar <- newTVarIO peerSelectionPolicyRng
   sigSharedTxStateVar <- newSharedTxStateVar emptySharedTxState
   sigPeerRegistry <- newPeerTxRegistry
-  sigRetiredCountersVar <- newTxSubmissionCountersVar mempty
+  sigCountersVar <- newTxSubmissionCountersVar mempty
   (readinessVar,
     ocertCountersVar,
     stakePoolsVar,
@@ -145,7 +144,7 @@ newNodeKernel rng ShelleyGenesis {sgMaxKESEvolutions} = do
                   , mempool
                   , sigSharedTxStateVar
                   , sigPeerRegistry
-                  , sigRetiredCountersVar
+                  , sigCountersVar
                   , readinessVar
                   , stakePools
                   , peerMetric
@@ -168,7 +167,6 @@ withNodeKernel :: forall crypto ntnAddr ntcAddr m a.
                   , MonadTime          m
                   , MonadTimer         m
                   , Ord ntnAddr
-                  , Hashable ntnAddr
                   )
                => DMQTracers crypto ntnAddr ntcAddr m
                -> Snocket m Cardano.NtoC.LocalSocket LocalAddress
@@ -181,6 +179,7 @@ withNodeKernel :: forall crypto ntnAddr ntcAddr m a.
                -- decision logic threads will be killed
                -> m a
 withNodeKernel DMQTracers { sigSubmissionLogicTracer,
+                            sigCountersTracer,
                             localStateQueryClientTracer,
                             cardanoNodeHandshakeProtocolTracer,
                             cardanoNodeMuxTracer,
@@ -200,16 +199,16 @@ withNodeKernel DMQTracers { sigSubmissionLogicTracer,
   nodeKernel@NodeKernel { mempool,
                           sigSharedTxStateVar,
                           sigPeerRegistry,
-                          sigRetiredCountersVar
+                          sigCountersVar
                         }
     <- newNodeKernel rng shelleyGenesis
   withAsync (mempoolWorker mempool)
           $ \mempoolThread ->
     withAsync (txCountersThreadV2
                 Policy.sigDecisionPolicy
-                nullTracer
+                sigCountersTracer
                 sigSubmissionLogicTracer
-                sigRetiredCountersVar
+                sigCountersVar
                 sigSharedTxStateVar
                 sigPeerRegistry)
             $ \sigLogicThread ->

@@ -282,11 +282,11 @@ runSigSubmissionV2 tracer tracerSigLogic st0 sigDecisionPolicy = do
     traceTVarIO sharedSigStateVar \_ -> return . TraceDynamic . SigStateTrace
     labelTVarIO sharedSigStateVar "shared-sig-state"
     sigPeerRegistry <- newPeerTxRegistry
-    sigRetiredCountersVar <- newTxSubmissionCountersVar mempty
+    sigCountersVar <- newTxSubmissionCountersVar mempty
     duplicateSigsVar <- LazySTM.newTVarIO []
 
     withAsync (txCountersThreadV2 sigDecisionPolicy sayTracer tracerSigLogic
-                                  sigRetiredCountersVar sharedSigStateVar sigPeerRegistry) $ \a -> do
+                                  sigCountersVar sharedSigStateVar sigPeerRegistry) $ \a -> do
       let outbounds = (\(addr, (mempool, _, outDelay, _, outChannel, _)) -> do
                       labelThisThread ("outbound-" ++ show addr)
                       let outbound = sigSubmissionOutbound
@@ -310,7 +310,7 @@ runSigSubmissionV2 tracer tracerSigLogic st0 sigDecisionPolicy = do
                                 (getMempoolReader inboundMempool)
                                 sharedSigStateVar
                                 sigPeerRegistry
-                                sigRetiredCountersVar
+                                sigCountersVar
                                 addr $ \(api :: PeerTxAPI m TxId (Tx TxId))-> do
                                   let inbound = sigSubmissionInbound
                                                   verboseTracer
@@ -466,7 +466,7 @@ runSigSubmissionV2WithMetric tracer tracerSigLogic config st0 sigDecisionPolicy 
     traceTVarIO sharedSigStateVar \_ -> return . TraceDynamic . SigStateTrace
     labelTVarIO sharedSigStateVar "shared-sig-state"
     sigPeerRegistry <- newPeerTxRegistry
-    sigRetiredCountersVar <- newTxSubmissionCountersVar mempty
+    sigCountersVar <- newTxSubmissionCountersVar mempty
     duplicateSigsVar <- LazySTM.newTVarIO []
 
     peerMetric <- PeerMetric.mkPeerMetric
@@ -477,7 +477,7 @@ runSigSubmissionV2WithMetric tracer tracerSigLogic config st0 sigDecisionPolicy 
         _      -> TraceValue (Just (SimMetricSnapshot new)) (Just $ show new)
 
     withAsync (txCountersThreadV2 sigDecisionPolicy sayTracer tracerSigLogic
-                                  sigRetiredCountersVar sharedSigStateVar sigPeerRegistry) $ \a -> do
+                                  sigCountersVar sharedSigStateVar sigPeerRegistry) $ \a -> do
       let outbounds = (\(addr, (mempool, _, outDelay, _, outChannel, _)) -> do
                       labelThisThread ("outbound-" ++ show addr)
                       let outbound = sigSubmissionOutbound
@@ -501,7 +501,7 @@ runSigSubmissionV2WithMetric tracer tracerSigLogic config st0 sigDecisionPolicy 
                                 (getMempoolReader inboundMempool)
                                 sharedSigStateVar
                                 sigPeerRegistry
-                                sigRetiredCountersVar
+                                sigCountersVar
                                 addr $ \(api :: PeerTxAPI (IOSim s) TxId (Tx TxId)) -> do
                                   let inbound = sigSubmissionInbound
                                                   (contramap (SimAppEvent . TraceLabelPeer addr)
