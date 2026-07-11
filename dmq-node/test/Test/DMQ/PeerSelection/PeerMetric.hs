@@ -130,12 +130,12 @@ reportSigType config (localStMap, st) = \case
     SigValid { sigId, peerAddr, sigTime } ->
       let localSt = reportSigIdsImpl config [sigId] sigTime
                   $ Map.findWithDefault emptyLocalPeerMetricState peerAddr localStMap
-          (localSt', st') = reportSigImpl config localSt (TraceLabelPeer peerAddr (sigId, TxAccepted)) st
+          (localSt', st') = reportSigImpl config localSt (TraceLabelPeer peerAddr (sigId, SigAccepted)) st
       in (Map.insert peerAddr localSt' localStMap, st')
     SigInvalid { sigId, peerAddr, sigTime } ->
       let localSt = reportSigIdsImpl config [sigId] sigTime
                   $ Map.findWithDefault emptyLocalPeerMetricState peerAddr localStMap
-          (localSt', st') = reportSigImpl config localSt (TraceLabelPeer peerAddr (sigId, TxRejected)) st
+          (localSt', st') = reportSigImpl config localSt (TraceLabelPeer peerAddr (sigId, SigRejected)) st
       in (Map.insert peerAddr localSt' localStMap, st')
 
 
@@ -376,7 +376,7 @@ instance Arbitrary ConfigWithTimes where
     ]
 
 
--- | When two peers both get 'TxAccepted' for the same sigid (e.g. after a
+-- | When two peers both get 'SigAccepted' for the same sigid (e.g. after a
 -- mempool eviction and re-submission), the peer with the *earlier* announcement
 -- time keeps the entry.  'peer1' is accepted first, 'peer2' second; the times
 -- are independent so the test covers both displacement and no-displacement.
@@ -390,9 +390,9 @@ prop_competingPeers ConfigWithTimes { cwtConfig = config
   let lst1     = reportSigIdsImpl config [sigId] time1 emptyLocalPeerMetricState
       lst2     = reportSigIdsImpl config [sigId] time2 emptyLocalPeerMetricState
       -- peer1 is accepted first, claiming the entry
-      (_, st1) = reportSigImpl config lst1 (TraceLabelPeer peer1 (sigId, TxAccepted)) emptyPeerMetricState
+      (_, st1) = reportSigImpl config lst1 (TraceLabelPeer peer1 (sigId, SigAccepted)) emptyPeerMetricState
       -- peer2 is accepted second
-      (_, st2) = reportSigImpl config lst2 (TraceLabelPeer peer2 (sigId, TxAccepted)) st1
+      (_, st2) = reportSigImpl config lst2 (TraceLabelPeer peer2 (sigId, SigAccepted)) st1
       a        = announcinessImpl st2
       PeerMetricConfiguration { timeWindowToKeep } = config
       cutoff = (-timeWindowToKeep) `addTime` time2

@@ -18,7 +18,7 @@ module DMQ.Diffusion.PeerSelection.PeerMetric
   , announciness
     -- * Re-exports
   , TraceLabelPeer (..)
-  , TxMempoolResult (..)
+  , SigMempoolResult (..)
     -- * For testing purposes
   , peerMetricVar
     -- * Pure API exported for testing purposes
@@ -42,8 +42,9 @@ import Data.OrdPSQ qualified as OrdPSQ
 
 import Network.Mux.Trace (TraceLabelPeer (..))
 
-import Ouroboros.Network.TxSubmission.Inbound.V2 (TxMempoolResult (..))
 
+data SigMempoolResult = SigAccepted | SigRejected
+  deriving (Eq, Show)
 
 newtype PeerMetricConfiguration = PeerMetricConfiguration {
     timeWindowToKeep :: DiffTime
@@ -143,7 +144,7 @@ data ReportPeerMetric' m sigid f = ReportPeerMetric {
 
     -- | Report a received `sig`
     reportSig :: LocalPeerMetricState sigid
-              -> f (sigid, TxMempoolResult)
+              -> f (sigid, SigMempoolResult)
               -> STM m (LocalPeerMetricState sigid)
   }
 
@@ -220,13 +221,13 @@ reportSigImpl
      Ord sigid
   => PeerMetricConfiguration
   -> LocalPeerMetricState sigid
-  -> TraceLabelPeer peeraddr (sigid, TxMempoolResult)
+  -> TraceLabelPeer peeraddr (sigid, SigMempoolResult)
   -> PeerMetricState sigid peeraddr
   -> (LocalPeerMetricState sigid, PeerMetricState sigid peeraddr)
 reportSigImpl
     config
     localState
-    (TraceLabelPeer _peeraddr (sigid, TxRejected))
+    (TraceLabelPeer _peeraddr (sigid, SigRejected))
     metricState
     =
     ( localState'
@@ -238,7 +239,7 @@ reportSigImpl
 reportSigImpl
     config
     localState
-    (TraceLabelPeer peeraddr (sigid, TxAccepted))
+    (TraceLabelPeer peeraddr (sigid, SigAccepted))
     st
     =
     ( localState'

@@ -138,4 +138,4 @@ instance Arbitrary SigSubmissionState where
           ]
 
 newtype SigStateTrace peeraddr sigid =
-    SigStateTrace (SharedTxState peeraddr sigid (Tx sigid))
+    SigStateTrace (SharedTxState peeraddr sigid)

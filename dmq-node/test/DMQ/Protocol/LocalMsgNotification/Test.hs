@@ -45,7 +45,7 @@ import Ouroboros.Network.Protocol.Codec.Utils qualified as Utils
 import Test.Ouroboros.Network.Protocol.Utils
 import Test.Ouroboros.Network.Utils
 
-testTracer :: ({-Show a,-}Applicative m) => Tracer m a
+testTracer :: ({-Show a,-}Monad m) => Tracer m a
 testTracer = nullTracer -- debugTracer
 
 tests :: TestTree

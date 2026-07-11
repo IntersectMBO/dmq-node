@@ -44,7 +44,7 @@ data Readiness = NotReady | Ready
 data NodeKernel crypto ntnAddr m =
   NodeKernel {
     -- | The keep alive registry, used for the keep alive clients.
-    keepAliveRegistry   :: !(KeepAliveRegistry (ConnectionId ntnAddr) m)
+    keepAliveRegistry         :: !(KeepAliveRegistry (ConnectionId ntnAddr) m)
 
     -- | Read the current peer sharing registry, used for interacting with
     -- the PeerSharing protocol
@@ -52,9 +52,9 @@ data NodeKernel crypto ntnAddr m =
   , peerSharingAPI            :: !(PeerSharingAPI ntnAddr StdGen m)
   , peerSelectionPolicyRngVar :: !(StrictTVar m StdGen)
   , mempool                   :: !(Mempool m SigId (Sig crypto))
-  , sigChannelVar             :: !(TxChannelsVar m ntnAddr SigId (Sig crypto))
-  , sigMempoolSem             :: !(TxMempoolSem m)
-  , sigSharedTxStateVar       :: !(SharedTxStateVar m ntnAddr SigId (Sig crypto))
+  , sigSharedTxStateVar       :: !(SharedTxStateVar m ntnAddr SigId)
+  , sigPeerRegistry           :: !(PeerTxRegistry m ntnAddr)
+  , sigCountersVar            :: !(TxSubmissionCountersVar m)
   , stakePools                :: !(StakePools m)
   , readinessVar              :: !(StrictTVar m Readiness)
   , peerMetric                :: !(PeerMetric m SigId ntnAddr)

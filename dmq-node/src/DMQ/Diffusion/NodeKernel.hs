@@ -20,7 +20,6 @@ import Control.Monad.Class.MonadTimer.SI
 import "contra-tracer" Control.Tracer (nullTracer)
 
 import Data.Function (on)
-import Data.Hashable
 import Data.Map.Strict qualified as Map
 import Data.OrdPSQ qualified as OrdPSQ
 import Data.Proxy
@@ -53,8 +52,7 @@ import Ouroboros.Network.PeerSelection.Governor.Types
 import Ouroboros.Network.PeerSharing (newPeerSharingAPI, newPeerSharingRegistry,
            ps_POLICY_PEER_SHARE_MAX_PEERS, ps_POLICY_PEER_SHARE_STICKY_TIME)
 import Ouroboros.Network.Protocol.Handshake (Acceptable (..))
-import Ouroboros.Network.Protocol.Handshake.Codec (cborTermVersionDataCodec,
-           noTimeLimitsHandshake)
+import Ouroboros.Network.Protocol.Handshake.Codec (noTimeLimitsHandshake)
 import Ouroboros.Network.Protocol.LocalStateQuery.Client
 import Ouroboros.Network.Protocol.LocalStateQuery.Type
 import Ouroboros.Network.Snocket (Snocket, localAddressFromPath)
@@ -90,12 +88,11 @@ newNodeKernel rng ShelleyGenesis {sgMaxKESEvolutions} = do
   peerSharingRegistry <- newPeerSharingRegistry
 
   mempool <- Mempool.empty
-  sigChannelVar <- newTxChannelsVar
-  sigMempoolSem <- newTxMempoolSem
-  let (rng', rng'') = Random.splitGen rng
-      (peerSharingRng, peerSelectionPolicyRng) = Random.splitGen rng''
+  let (peerSharingRng, peerSelectionPolicyRng) = Random.splitGen rng
   peerSelectionPolicyRngVar <- newTVarIO peerSelectionPolicyRng
-  sigSharedTxStateVar <- newSharedTxStateVar rng'
+  sigSharedTxStateVar <- newSharedTxStateVar emptySharedTxState
+  sigPeerRegistry <- newPeerTxRegistry
+  sigCountersVar <- newTxSubmissionCountersVar mempty
   (readinessVar,
     ocertCountersVar,
     stakePoolsVar,
@@ -145,9 +142,9 @@ newNodeKernel rng ShelleyGenesis {sgMaxKESEvolutions} = do
                   , peerSharingAPI
                   , peerSelectionPolicyRngVar
                   , mempool
-                  , sigChannelVar
-                  , sigMempoolSem
                   , sigSharedTxStateVar
+                  , sigPeerRegistry
+                  , sigCountersVar
                   , readinessVar
                   , stakePools
                   , peerMetric
@@ -170,7 +167,6 @@ withNodeKernel :: forall crypto ntnAddr ntcAddr m a.
                   , MonadTime          m
                   , MonadTimer         m
                   , Ord ntnAddr
-                  , Hashable ntnAddr
                   )
                => DMQTracers crypto ntnAddr ntcAddr m
                -> Snocket m Cardano.NtoC.LocalSocket LocalAddress
@@ -183,6 +179,7 @@ withNodeKernel :: forall crypto ntnAddr ntcAddr m a.
                -- decision logic threads will be killed
                -> m a
 withNodeKernel DMQTracers { sigSubmissionLogicTracer,
+                            sigCountersTracer,
                             localStateQueryClientTracer,
                             cardanoNodeHandshakeProtocolTracer,
                             cardanoNodeMuxTracer,
@@ -200,18 +197,20 @@ withNodeKernel DMQTracers { sigSubmissionLogicTracer,
                rng
                k = do
   nodeKernel@NodeKernel { mempool,
-                          sigChannelVar,
-                          sigSharedTxStateVar
+                          sigSharedTxStateVar,
+                          sigPeerRegistry,
+                          sigCountersVar
                         }
     <- newNodeKernel rng shelleyGenesis
   withAsync (mempoolWorker mempool)
           $ \mempoolThread ->
-    withAsync (decisionLogicThreads
-                sigSubmissionLogicTracer
-                nullTracer
+    withAsync (txCountersThreadV2
                 Policy.sigDecisionPolicy
-                sigChannelVar
-                sigSharedTxStateVar)
+                sigCountersTracer
+                sigSubmissionLogicTracer
+                sigCountersVar
+                sigSharedTxStateVar
+                sigPeerRegistry)
             $ \sigLogicThread ->
       withAsync (connectToCardanoNode nodeKernel) \spmAid -> do
         link mempoolThread
@@ -229,7 +228,7 @@ withNodeKernel DMQTracers { sigSubmissionLogicTracer,
         ConnectToArgs {
           ctaHandshakeCodec      = Cardano.NtoC.nodeToClientHandshakeCodec,
           ctaHandshakeTimeLimits = noTimeLimitsHandshake,
-          ctaVersionDataCodec    = cborTermVersionDataCodec Cardano.NtoC.nodeToClientCodecCBORTerm,
+          ctaVersionDataCodec    = Cardano.NtoC.nodeToClientVersionDataCodec,
           ctaConnectTracers      = Cardano.NtoC.NetworkConnectTracers {
               Cardano.NtoC.nctMuxTracers =
                 Mx.Tracers {

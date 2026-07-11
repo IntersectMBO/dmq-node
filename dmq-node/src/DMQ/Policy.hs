@@ -95,13 +95,19 @@ maxSigIdsInflight = 33
 --
 sigDecisionPolicy :: TxDecisionPolicy
 sigDecisionPolicy = TxDecisionPolicy {
-    maxNumTxIdsToRequest   = maxSigIdsInflight,
-    maxUnacknowledgedTxIds = 4 * maxSigIdsInflight,
-    txsSizeInflightPerPeer = maxSigSize * fromIntegral maxSigIdsInflight,
-    txInflightMultiplicity = 1,
-    bufferedTxsMinLifetime = 0,
-    scoreRate              = 0.1,
-    scoreMax               = 15 * 60
+    maxNumTxIdsToRequest           = maxSigIdsInflight,
+    maxUnacknowledgedTxIds         = 4 * maxSigIdsInflight,
+    txsSizeInflightPerPeer         = maxSigSize * fromIntegral maxSigIdsInflight,
+    maxOutstandingTxBatchesPerPeer = 4,
+    txInflightMultiplicity         = 1,
+    bufferedTxsMinLifetime         = 0,
+    scoreRate                      = 0.1,
+    scoreMax                       = 15 * 60,
+    scoreAcceptDecrement           = 3,
+    interTxSpace                   = 0.250,
+    inflightTimeout                = 0.600,
+    maxPeerClaimDelay              = 0.250,
+    disablePipelinedTxIdRequests   = False
   }
 
 

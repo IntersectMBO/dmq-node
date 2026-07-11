@@ -18,20 +18,11 @@ import Data.ByteString.Lazy qualified as LBS
 import Data.Text (Text)
 import Data.Text qualified as Text
 import Ouroboros.Network.Diffusion.Topology (NetworkTopology (..))
-import Ouroboros.Network.Diffusion.Types (NoExtraFlags (..))
+import Ouroboros.Network.Diffusion.Types (NoExtraConfig (..), NoExtraFlags (..))
 import Ouroboros.Network.OrphanInstances (localRootPeersGroupsFromJSON,
            networkTopologyFromJSON, networkTopologyToJSON)
 import System.Exit (die)
 
--- TODO: move `NoExtraConfig` and the `ToJSON NoExtraFlags` to
--- `ouroboros-network`.
-
-data NoExtraConfig = NoExtraConfig
-  deriving Show
-
-instance ToJSON NoExtraFlags where
-  toJSON _ = Null
-  omitField _ = True
 
 instance FromJSON (NetworkTopology NoExtraConfig NoExtraFlags) where
   parseJSON = networkTopologyFromJSON

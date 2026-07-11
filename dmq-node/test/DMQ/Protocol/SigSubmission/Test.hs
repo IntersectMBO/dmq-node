@@ -97,11 +97,11 @@ tests =
           , testProperty "codec"               prop_codec_mockcrypto
           , testProperty "codec id"            prop_codec_id_mockcrypto
           , testProperty "codec 2-splits"    $ withMaxSize 20
-                                             $ withMaxSuccess 20
+                                             $ withNumTests 20
                                                prop_codec_splits2_mockcrypto
           -- MockCrypto produces too large messages for this test to run:
           -- , testProperty "codec 3-splits"    $ withMaxSize 10
-          --                                    $ withMaxSuccess 10
+          --                                    $ withNumTests 10
           --                                      prop_codec_splits3_mockcrypto
           , testProperty "codec cbor"          prop_codec_cbor_mockcrypto
           , testProperty "codec valid cbor"    prop_codec_valid_cbor_mockcrypto
@@ -115,12 +115,12 @@ tests =
           , testProperty "codec"               prop_codec_standardcrypto
           , testProperty "codec id"            prop_codec_id_standardcrypto
           , testProperty "codec 2-splits"    $ withMaxSize 20
-                                             $ withMaxSuccess 20
+                                             $ withNumTests 20
                                                prop_codec_splits2_standardcrypto
           -- StandardCrypto produces too large messages for this test to run:
           {-
           , testProperty "codec 3-splits"    $ withMaxSize 10
-                                             $ withMaxSuccess 10
+                                             $ withNumTests 10
                                                prop_codec_splits3_standardcrypto
           -}
           , testProperty "codec cbor"          prop_codec_cbor_standardcrypto
