@@ -3,9 +3,18 @@
 <!-- scriv-insert-here -->
 
 <a id='changelog-0.7.0.0'></a>
-## 0.7.0.0 -- 2026-07-03
+## 0.7.0.0 -- 2026-07-31
 
 ### Breaking
+
+- Added PeerSelectionPolicy's rng to `NodeKernel`.  This allowed to create the
+  policy in `diffusionApplications` rather than in the `main` module.
+
+- Using `tx-submission` undecision logic:
+  - `NodeKernel` data type changed to adapt to the new tx-submission logic
+  - `SigMempoolResult` is provided by `DMQ.Diffusion.PeerSelection.PeerMetric` module.
+  - `sigSubmissionLogicPeerTracer` was removed from `DMQTracers`
+  - `sigDecisionPolicy :: TxDecisionPolicy` was adapted to the new tx-submission logic
 
 - Using `KeepAliveRegistry` instead of `FetchClientRegistry` introduced in
   a recent `ouroboros-network` PR. The `fetchClientRegistry` field of
@@ -14,6 +23,16 @@
 - Lower `minSigBodySize` to `90` bytes.
 
 ### Non-Breaking
+
+- Peer sharing delays and timeouts in `PeerSelectionPolicy`
+- Explicit cborg error in local-msg-notification protocol
+- Added tracers for NtC connection with `cardano-node`:
+  - hanshake mini-protocol tracer
+  - mux tracer
+  - mux channel tracer
+  - mux bearer tracer
+
+- Integrated with `trace-dispatcher ^>= 2.13.0` and `contra-tracer >= 0.2.1.0`
 
 - Added `PrettyShow` instances for
   - `NodeToNodeVersion`
