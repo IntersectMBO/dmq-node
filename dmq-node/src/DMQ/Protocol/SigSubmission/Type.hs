@@ -149,8 +149,7 @@ deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
                   )
                => Eq (SigRaw crypto)
 
-instance Crypto crypto
-      => ToJSON (SigRaw crypto) where
+instance ToJSON (SigRaw crypto) where
   toJSON SigRaw { sigRawId
                 , sigRawKESPeriod
                 , sigRawExpiresAt
@@ -207,8 +206,7 @@ deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
                   )
                => Eq (SigRawWithSignedBytes crypto)
 
-instance Crypto crypto
-      => ToJSON (SigRawWithSignedBytes crypto) where
+instance ToJSON (SigRawWithSignedBytes crypto) where
   toJSON SigRawWithSignedBytes {sigRaw} = toJSON sigRaw
 
 instance Crypto crypto
@@ -247,8 +245,7 @@ deriving instance ( DSIGNAlgorithm (KES.DSIGN crypto)
                   )
                => Eq (Sig crypto)
 
-instance Crypto crypto
-      => ToJSON (Sig crypto) where
+instance ToJSON (Sig crypto) where
   toJSON SigWithBytes {sigRawWithSignedBytes} = toJSON sigRawWithSignedBytes
 
 instance Crypto crypto

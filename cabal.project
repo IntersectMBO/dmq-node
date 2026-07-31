@@ -33,11 +33,43 @@ if(os(windows))
   constraints:
     bitvec -simd
 
-if impl(ghc >= 9.12.0)
-  allow-newer: *:time,
-               *:nothunks,
+if impl(ghc >= 9.14.0)
+  allow-newer:
+    -- https://github.com/well-typed/canonical-json/issues/12
+    , canonical-json:containers
 
-constraints: semialign >= 1.4,
-             validation >= 1.2 && < 2.0
-allow-newer: hedgehog-quickcheck:QuickCheck,
-             monoidal-containers:semialign
+    -- https://github.com/well-typed/cborg/issues/373
+    , cborg:base
+    , cborg:containers
+    , cborg-json:base
+
+    -- https://github.com/well-typed/cborg/issues/373
+    , serialise:base
+    , serialise:containers
+
+    -- https://github.com/IntersectMBO/ouroboros-network/issues/5407
+    , serialise:time
+    , directory:time
+
+    -- https://github.com/phadej/tdigest/issues/50
+    , tdigest:base
+
+    -- https://github.com/serokell/haskell-with-utf8/issues/41
+    , with-utf8:base
+
+    -- https://github.com/ezyang/compact/issues/24
+    , compact:base
+
+    -- https://github.com/amesgen/safe-wild-cards/issues/5
+    , safe-wild-cards:template-haskell
+
+    , serdoc-core:template-haskell
+
+    --  https://github.com/JonasDuregard/dictionary-sharing/issues/4
+    , dictionary-sharing:containers
+
+    -- https://github.com/obsidiansystems/dependent-map/issues/59
+    , dependent-map:containers
+
+    -- https://github.com/dmwit/ordered-containers/issues/33
+    , ordered-containers:containers
