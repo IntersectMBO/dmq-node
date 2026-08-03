@@ -47,7 +47,6 @@ import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
 import Ouroboros.Network.Driver
 import Ouroboros.Network.Protocol.TxSubmission2.Type (NumTxIdsToReq (..))
 import Ouroboros.Network.TxSubmission.Inbound.V2
-import Ouroboros.Network.Util.ShowProxy
 
 import DMQ.Diffusion.PeerSelection.PeerMetric (PeerMetricState (..),
            TraceLabelPeer (..), announcinessImpl, peerMetricVar)
@@ -253,8 +252,6 @@ runSigSubmissionV2
      , MonadTime        m
      , MonadTimer       m
      , MonadTraceSTM    m
-     , ShowProxy sigid
-     , Typeable sigid
      , Show peeraddr
      , Ord peeraddr
      , Typeable peeraddr

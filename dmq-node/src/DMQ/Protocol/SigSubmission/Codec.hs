@@ -37,9 +37,7 @@ import Cardano.Crypto.Hash.Class (hashFromBytes, hashToBytesShort)
 import Network.TypedProtocol.Codec.CBOR
 
 import Cardano.Binary (FromCBOR (..), ToCBOR (..))
-import Cardano.Crypto.DSIGN.Class (decodeSignedDSIGN, decodeVerKeyDSIGN,
-           encodeSignedDSIGN)
-import Cardano.Crypto.KES.Class (decodeSigKES, decodeVerKeyKES, encodeVerKeyKES)
+import Cardano.Binary.FixedSizeCodec (decodeFixedSized, encodeFixedSized)
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
 import Cardano.KESAgent.KES.OCert (OCert (..))
 
@@ -119,10 +117,10 @@ encodeSigOpCertificate :: Crypto crypto
                        => SigOpCertificate crypto -> CBOR.Encoding
 encodeSigOpCertificate (SigOpCertificate ocert) =
        CBOR.encodeListLen 4
-    <> encodeVerKeyKES (ocertVkHot ocert)
+    <> encodeFixedSized (ocertVkHot ocert)
     <> toCBOR (ocertN ocert)
     <> toCBOR (ocertKESPeriod ocert)
-    <> encodeSignedDSIGN (ocertSigma ocert)
+    <> encodeFixedSized (ocertSigma ocert)
 
 
 decodeSigOpCertificate :: forall s crypto. Crypto crypto
@@ -130,10 +128,10 @@ decodeSigOpCertificate :: forall s crypto. Crypto crypto
 decodeSigOpCertificate = do
     len <- CBOR.decodeListLen
     when (len /= 4) $ fail (printf "decodeSigOpCertificate: unexpected number of parameters %d" len)
-    ocertVkHot <- decodeVerKeyKES
+    ocertVkHot <- decodeFixedSized
     ocertN <- fromCBOR
     ocertKESPeriod <- fromCBOR
-    ocertSigma <- decodeSignedDSIGN
+    ocertSigma <- decodeFixedSized
     return $ SigOpCertificate $ OCert {
         ocertVkHot,
         ocertN,
@@ -175,9 +173,9 @@ decodeSig = do
     endOffset <- CBOR.peekByteOffset
     -- end of signed data
 
-    sigRawKESSignature <- SigKESSignature <$> decodeSigKES
+    sigRawKESSignature <- SigKESSignature <$> decodeFixedSized
     sigRawOpCertificate <- decodeSigOpCertificate
-    sigRawColdKey <- SigColdKey <$> decodeVerKeyDSIGN
+    sigRawColdKey <- SigColdKey <$> decodeFixedSized
     return $ \bytes -- ^ full bytes of the message, not just the sig part
            -> SigRawWithSignedBytes {
         sigRawSignedBytes = Utils.bytesBetweenOffsets startOffset endOffset bytes,

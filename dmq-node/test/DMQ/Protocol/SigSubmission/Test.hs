@@ -46,13 +46,14 @@ import System.IO.Unsafe (unsafePerformIO)
 import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Codec.Properties hiding (prop_codec)
 
+import Cardano.Binary.FixedSizeCodec (encodeFixedSized)
 import Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm, SignKeyDSIGN,
-           deriveVerKeyDSIGN, encodeVerKeyDSIGN)
+           deriveVerKeyDSIGN)
 import Cardano.Crypto.DSIGN.Class qualified as DSIGN
 import Cardano.Crypto.Hash.Blake2b (Blake2b_256)
 import Cardano.Crypto.Hash.Class (Hash, castHash, hashFromBytes, hashSize,
            hashWith)
-import Cardano.Crypto.KES.Class (KESAlgorithm (..), VerKeyKES, encodeSigKES)
+import Cardano.Crypto.KES.Class (KESAlgorithm (..), VerKeyKES)
 import Cardano.Crypto.KES.Class qualified as KES
 import Cardano.Crypto.PinnedSizedBytes (PinnedSizedBytes, psbToByteString)
 import Cardano.Crypto.Seed (mkSeedFromBytes)
@@ -540,9 +541,9 @@ encodeSigRaw sigRaw@SigRaw { sigRawId, sigRawKESSignature, sigRawOpCertificate, 
      CBOR.encodeListLen 5
   <> encodeSigId sigRawId
   <> encodeSigPayload sigRaw
-  <> encodeSigKES (getSigKESSignature sigRawKESSignature)
+  <> encodeFixedSized (getSigKESSignature sigRawKESSignature)
   <> encodeSigOpCertificate sigRawOpCertificate
-  <> encodeVerKeyDSIGN (getSigColdKey sigRawColdKey)
+  <> encodeFixedSized (getSigColdKey sigRawColdKey)
 
 -- note: KES signature is updated by updateSigFn
 shrinkSigFn :: forall crypto.
