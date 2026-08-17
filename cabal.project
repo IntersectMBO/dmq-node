@@ -18,7 +18,7 @@ index-state:
   , hackage.haskell.org 2026-07-30T07:30:12Z
 
   -- Bump this if you need newer packages from CHaP
-  , cardano-haskell-packages 2026-07-30T16:22:40Z
+  , cardano-haskell-packages 2026-08-11T14:53:43Z
 
 packages:
   ./dmq-node
