@@ -12,6 +12,14 @@ let
 
   buildSystem = pkgs.stdenv.buildPlatform.system;
 
+  # Fully static, natively-built variant for each system we support it on.
+  # Both are libc swaps for the build platform's own arch, not a cross-arch
+  # build (see `crossPlatforms` in nix/dmq-node.nix).
+  staticCrossTarget = {
+    "x86_64-linux" = "musl64";
+    "aarch64-linux" = "aarch64-multiplatform-musl";
+  };
+
   packages = rec {
     # TODO: `nix build .\#dmq-node` will have the git revision set in the binary,
     # `nib build .\#hydraJobs.x86_64-linux.packages.dmq-node:exe:dmq-node` won't
@@ -21,11 +29,11 @@ let
       # (inputs.self.rev or inputs.self.dirtyShortRev)
       pkgs.dmq-node.hsPkgs.dmq-node.components.exes.dmq-node;
     default = dmq-node;
-  } // lib.optionalAttrs (buildSystem == "x86_64-linux") {
+  } // lib.optionalAttrs (builtins.hasAttr buildSystem staticCrossTarget) {
     dmq-node-static =
       # pkgs.setGitRev
       # (inputs.self.rev or inputs.self.dirtyShortRev)
-      pkgs.dmq-node.projectCross.musl64.hsPkgs.dmq-node.components.exes.dmq-node;
+      pkgs.dmq-node.projectCross.${staticCrossTarget.${buildSystem}}.hsPkgs.dmq-node.components.exes.dmq-node;
     docker-dmq = pkgs.dockerTools.buildImage {
       name = "docker-dmq-node";
       tag = "latest";
@@ -70,7 +78,7 @@ let
       {
         "x86_64-linux" = defaultHydraJobs;
         "x86_64-darwin" = { };
-        "aarch64-linux" = { };
+        "aarch64-linux" = defaultHydraJobs;
         "aarch64-darwin" = defaultHydraJobs;
       }.${system};
 in
