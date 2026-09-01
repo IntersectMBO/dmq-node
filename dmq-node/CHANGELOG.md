@@ -2,6 +2,15 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-0.7.1.0'></a>
+## 0.7.1.0 -- 2026-09-01
+
+### Non-Breaking
+
+- Bump `ouroboros-consensus` to `v4.1`.
+
+- Build natively on `aarch64-linux`, included the build artifact it in a release.
+
 <a id='changelog-0.7.0.0'></a>
 ## 0.7.0.0 -- 2026-07-31
 
