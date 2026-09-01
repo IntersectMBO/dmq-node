@@ -25,10 +25,10 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.IOSim
-import Control.Tracer (Tracer (..), contramap, mkTracer)
+import Control.Tracer (Tracer (..), contramap, mkTracer, traceWith)
 
 import Data.ByteString.Lazy qualified as BSL
-import Data.Foldable (toList, traverse_)
+import Data.Foldable (traverse_)
 import Data.Foldable qualified as Foldable
 import Data.Function (on)
 import Data.Functor.Identity (runIdentity)
@@ -39,8 +39,6 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Set qualified as Set
 import Data.Typeable (Typeable)
-
-import Network.TypedProtocol.Codec (AnyMessage (..))
 
 import Ouroboros.Network.Channel
 import Ouroboros.Network.ControlMessage (ControlMessage (..), ControlMessageSTM)
@@ -56,8 +54,7 @@ import DMQ.Protocol.SigSubmissionV2.Codec (byteLimitsSigSubmissionV2,
 import DMQ.Protocol.SigSubmissionV2.Inbound
            (sigSubmissionV2InboundPeerPipelined)
 import DMQ.Protocol.SigSubmissionV2.Outbound (sigSubmissionV2OutboundPeer)
-import DMQ.Protocol.SigSubmissionV2.Type (Message (..), NumIdsAck (..),
-           SigSubmissionV2)
+import DMQ.Protocol.SigSubmissionV2.Type (NumIdsAck (..), SigSubmissionV2)
 import DMQ.SigSubmissionV2.Inbound (sigSubmissionInbound)
 import DMQ.SigSubmissionV2.Outbound (sigSubmissionOutbound)
 
@@ -366,6 +363,21 @@ type SimPeerAddr = Int
 type SimProtocolEvent = TraceLabelPeer SimPeerAddr
                           (TraceSendRecv (SigSubmissionV2 TxId (Tx TxId)))
 
+-- | Dynamic-trace type for sigid announcements as the peer metric sees them:
+-- the peer, the time the announcement is stamped with and the announced
+-- sigids.
+--
+-- Note: this is deliberately not derived from 'SimProtocolEvent'.
+-- 'sigSubmissionInbound' stamps an announcement with the time at which it
+-- /collects/ the pipelined @MsgReplySigIds@ reply, which can be strictly later
+-- than the time that reply was decoded off the wire — e.g. while the
+-- application is still blocked on an earlier reply of a peer behind a delayed
+-- channel.  Both times feed the pruning cut-offs of 'reportSigIdsImpl' and
+-- 'reportSigImpl', so a model driven by the wire time prunes at a different
+-- boundary than the implementation and disagrees whenever an entry falls
+-- between the two.
+type SimAnnouncedEvent = TraceLabelPeer SimPeerAddr (Time, [TxId])
+
 -- | Dynamic-trace type for inbound application-layer events (emitted by the
 -- per-peer application tracer in 'runSigSubmissionV2WithMetric').
 type SimAppEvent = TraceLabelPeer SimPeerAddr
@@ -381,6 +393,7 @@ type SimMetricSnapshot = PeerMetricState TxId SimPeerAddr
 -- (sig_add → snapshot → sig_add → snapshot …) that separate calls would lose.
 data SimTraceEvent
   = SimProtocolEvent  SimProtocolEvent
+  | SimAnnouncedEvent SimAnnouncedEvent
   | SimAppEvent       SimAppEvent
   | SimMetricSnapshot SimMetricSnapshot
   deriving Show
@@ -437,9 +450,11 @@ sigSubmissionSimulationWithMetric config (SigSubmissionState state sigDecisionPo
 -- meaningful change to the metric state is emitted into the IOSim dynamic
 -- trace as a 'SimMetricSnapshot'.
 --
--- The inbound protocol tracer emits 'SimProtocolEvent' and the application
--- tracer emits 'SimAppEvent'; all three event kinds are consumed by
--- 'prop_sigSubmissionV2_metric'.
+-- It also wraps 'applyReceivedTxIds' so that each announcement is emitted as
+-- a 'SimAnnouncedEvent' carrying the time the metric stamps it with.  The
+-- inbound protocol tracer emits 'SimProtocolEvent' and the application tracer
+-- emits 'SimAppEvent'; 'prop_sigSubmissionV2_metric' consumes all but the
+-- former.
 runSigSubmissionV2WithMetric
   :: forall s.
      Tracer (IOSim s) (String, TraceSendRecv (SigSubmissionV2 TxId (Tx TxId)))
@@ -500,13 +515,31 @@ runSigSubmissionV2WithMetric tracer tracerSigLogic config st0 sigDecisionPolicy 
                                 sigPeerRegistry
                                 sigCountersVar
                                 addr $ \(api :: PeerTxAPI (IOSim s) TxId (Tx TxId)) -> do
-                                  let inbound = sigSubmissionInbound
+                                  let simTracer :: Tracer (IOSim s) SimTraceEvent
+                                      simTracer = dynamicTracer <> sayTracer
+
+                                      -- `sigSubmissionInbound` reports received
+                                      -- sigids to the peer metric and passes the
+                                      -- very same time and sigids on to
+                                      -- `applyReceivedTxIds`; wrapping the latter
+                                      -- is what makes the time the metric is
+                                      -- stamped with observable, see
+                                      -- 'SimAnnouncedEvent'.
+                                      api' = api {
+                                          applyReceivedTxIds = \time numIdsToReq sigids peerState -> do
+                                            traceWith simTracer
+                                              (SimAnnouncedEvent
+                                                (TraceLabelPeer addr (time, fst <$> sigids)))
+                                            applyReceivedTxIds api time numIdsToReq sigids peerState
+                                        }
+
+                                      inbound = sigSubmissionInbound
                                                   (contramap (SimAppEvent . TraceLabelPeer addr)
-                                                    (dynamicTracer <> sayTracer :: Tracer (IOSim s) SimTraceEvent))
+                                                    simTracer)
                                                   sigDecisionPolicy
                                                   (getMempoolWriter duplicateSigsVar inboundMempool)
                                                   getTxSize
-                                                  api
+                                                  api'
                                                   (PeerMetric.hoist
                                                     (TraceLabelPeer addr . runIdentity)
                                                     (PeerMetric.reportMetric
@@ -515,7 +548,7 @@ runSigSubmissionV2WithMetric tracer tracerSigLogic config st0 sigDecisionPolicy 
                                                   ctrlMsgSTM
                                   runPipelinedPeerWithLimits
                                     (contramap (SimProtocolEvent . TraceLabelPeer addr)
-                                      (dynamicTracer <> sayTracer :: Tracer (IOSim s) SimTraceEvent))
+                                      simTracer)
                                     sigSubmissionCodec2
                                     (byteLimitsSigSubmissionV2 (fromIntegral . BSL.length))
                                     timeLimitsSigSubmissionV2
@@ -551,8 +584,8 @@ runSigSubmissionV2WithMetric tracer tracerSigLogic config st0 sigDecisionPolicy 
 
 
 -- | Checks that on every 'SimMetricSnapshot' in the merged trace the actual
--- 'announcinessImpl' agrees with the pure model rebuilt from 'SimProtocolEvent'
--- and 'SimAppEvent' events seen so far.
+-- 'announcinessImpl' agrees with the pure model rebuilt from
+-- 'SimAnnouncedEvent' and 'SimAppEvent' events seen so far.
 prop_sigSubmissionV2_metric :: PeerMetric.PeerMetricConfiguration
                             -> SigSubmissionState
                             -> Property
@@ -612,9 +645,9 @@ data PureModelState = PureModelState
 emptyPureModelState :: PureModelState
 emptyPureModelState = PureModelState Map.empty Map.empty
 
--- | Advance the pure model when a sigid is announced using a protocol message.
--- Only 'TraceRecvMsg' of 'MsgReplySigIds' matters: it records the IOSim time at
--- which the inbound peer received the sigid announcement.
+-- | Advance the pure model when a peer announces sigids.  The event records
+-- the sigids together with the time that 'sigSubmissionInbound' stamps them
+-- with, which is the time the metric uses as well.
 --
 -- Mirrors 'reportSigIdsImpl': prune stale per-peer announced entries (those
 -- older than @timeWindowToKeep@ relative to the new announcement time) before
@@ -624,28 +657,21 @@ emptyPureModelState = PureModelState Map.empty Map.empty
 --
 updatePureModelOnSigAnnounced
   :: PeerMetric.PeerMetricConfiguration
-  -> Time
-  -> SimProtocolEvent
+  -> SimAnnouncedEvent
   -> PureModelState
   -> PureModelState
 updatePureModelOnSigAnnounced
     (PeerMetric.PeerMetricConfiguration window)
-    t
-    (TraceLabelPeer addr (TraceRecvMsg (AnyMessage msg)))
+    (TraceLabelPeer addr (t, sigids))
     st =
-  case msg of
-    MsgReplySigIds sigids ->
-      -- Mirror reportSigIdsImpl: pruning only happens when reportSigIds is
-      -- called.
-      let sigidsLst = fst <$> toList sigids
-          threshold  = (-window) `addTime` t
-          announced' = Map.filterWithKey
-                         (\(_, a) tann -> a /= addr || tann > threshold)
-                         (announced st)
-      in  st { announced = Foldable.foldl' (\m txid -> Map.insert (txid, addr) t m)
-                                           announced' sigidsLst }
-    _ -> st
-updatePureModelOnSigAnnounced _ _ _ st = st
+    -- Mirror reportSigIdsImpl: pruning only happens when reportSigIds is
+    -- called.
+    let threshold  = (-window) `addTime` t
+        announced' = Map.filterWithKey
+                       (\(_, a) tann -> a /= addr || tann > threshold)
+                       (announced st)
+    in  st { announced = Foldable.foldl' (\m sigid -> Map.insert (sigid, addr) t m)
+                                         announced' sigids }
 
 
 -- | Advance the pure model when on mempool submission result.  Only
@@ -726,7 +752,10 @@ checkTrace config evs =
     step :: (PureModelState, Property, Int)
          -> (Time, SimTraceEvent)
          -> (PureModelState, Property, Int)
-    step (st, prop, maxScore) (t, SimProtocolEvent event)  = (updatePureModelOnSigAnnounced config t event st, prop, maxScore)
+    -- protocol events are traced to make counterexamples readable; the model
+    -- must not take announcement times from them, see 'SimAnnouncedEvent'.
+    step acc                  (_, SimProtocolEvent _)      = acc
+    step (st, prop, maxScore) (_, SimAnnouncedEvent event) = (updatePureModelOnSigAnnounced config event st, prop, maxScore)
     step (st, prop, maxScore) (_, SimAppEvent event)       = (updatePureModelOnMempoolResult config event st, prop, maxScore)
     step (st, prop, maxScore) (t, SimMetricSnapshot snapshot) =
       let expected  = expectedAnnounciness st
