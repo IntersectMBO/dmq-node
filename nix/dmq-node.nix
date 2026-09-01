@@ -41,9 +41,15 @@ let
       inputMap = { "https://chap.intersectmbo.org/" = inputs.CHaP; };
 
       # TODO: enable cross compilation for windows by adding `p.ucrt64`.
+      #
+      # Both of these are libc swaps for the build platform's own arch (not a
+      # cross-arch build), giving a fully static, natively-built executable:
+      # `musl64` on x86_64-linux, `aarch64-multiplatform-musl` on aarch64-linux.
       crossPlatforms = p:
-        lib.optionals (pkgs.stdenv.hostPlatform.isLinux && config.compiler-nix-name == defaultCompiler)
-          [ p.musl64 ];
+        lib.optionals (pkgs.stdenv.hostPlatform.isLinux && config.compiler-nix-name == defaultCompiler) (
+          lib.optional pkgs.stdenv.hostPlatform.isx86_64 p.musl64
+          ++ lib.optional pkgs.stdenv.hostPlatform.isAarch64 p.aarch64-multiplatform-musl
+        );
 
       modules = [
         (forAllProjectPackages ({ ... }: {

@@ -22,13 +22,16 @@ env:
 
 jobs:
   wait-for-hydra:
-    name: "Wait for hydra check-runs"
+    name: "Wait for hydra check-runs (${{ matrix.system }})"
+    strategy:
+      matrix:
+        system: [x86_64-linux, aarch64-linux]
     runs-on: ubuntu-latest
     steps:
-      - name: Waiting for ci/hydra-build:x86_64-linux.required to complete
+      - name: Waiting for ci/hydra-build:${{ matrix.system }}.required to complete
         run: |
           while [[ true ]]; do
-            check_name='ci/hydra-build:x86_64-linux.required'
+            check_name='ci/hydra-build:${{ matrix.system }}.required'
             conclusion=$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs?check_name=$check_name" --paginate --jq '.check_runs[].conclusion')
             case "$conclusion" in
               success)
@@ -47,8 +50,12 @@ jobs:
     needs: [wait-for-hydra]
     strategy:
       matrix:
-        arch: [linux]
-    name: "Download Asset from the Cache"
+        include:
+          - system: x86_64-linux
+            asset_name: dmq-node-linux
+          - system: aarch64-linux
+            asset_name: dmq-node-linux-aarch64
+    name: "Download Asset from the Cache (${{ matrix.system }})"
     runs-on: ubuntu-latest
     steps:
       - name: Install Nix with good defaults
@@ -67,20 +74,17 @@ jobs:
 
       - name: Build
         run: |
-          case ${{ matrix.arch }} in
-            linux)
-              nix build \
-                --builders "" \
-                --max-jobs 0 \
-                .#packages.x86_64-linux.dmq-node-static
-          esac
+          nix build \
+            --builders "" \
+            --max-jobs 0 \
+            .#packages.${{ matrix.system }}.dmq-node-static
 
       - name: Compress binary
-        run: tar -czf dmq-node-linux.tar.gz result/bin/dmq-node
+        run: tar -czf ${{ matrix.asset_name }}.tar.gz result/bin/dmq-node
 
       - name: Checksums
         run: |
-          sha256sum dmq-node-linux.tar.gz >> "dmq-node-linux.tar.gz.sha256sum.txt"
+          sha256sum ${{ matrix.asset_name }}.tar.gz >> "${{ matrix.asset_name }}.tar.gz.sha256sum.txt"
 
       - name: Release
         uses: input-output-hk/action-gh-release@v1
@@ -88,5 +92,5 @@ jobs:
           draft: true
           name: "Release dmq-node-${{ github.ref_name }}"
           files: |
-            dmq-node-linux.tar.gz
-            dmq-node-linux.tar.gz.sha256sum.txt
+            ${{ matrix.asset_name }}.tar.gz
+            ${{ matrix.asset_name }}.tar.gz.sha256sum.txt
