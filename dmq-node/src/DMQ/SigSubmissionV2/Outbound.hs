@@ -14,10 +14,11 @@ module DMQ.SigSubmissionV2.Outbound
   ) where
 
 import Data.Aeson (KeyValue ((.=)), ToJSON (toJSON), Value (String), object)
-import Data.Foldable (find)
 import Data.Foldable qualified as Foldable
 import Data.List.NonEmpty qualified as NonEmpty
-import Data.Maybe (catMaybes, isNothing, mapMaybe)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Maybe (mapMaybe)
 import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as Seq
 import Data.Set (Set)
@@ -175,24 +176,31 @@ sigSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version =
 
           MempoolSnapshot{mempoolLookupTx} <- atomically mempoolGetSnapshot
 
-          -- The window size is expected to be small (currently 10) so the find is acceptable.
-          let sigIdxs  = [ find (\(t,_,_) -> t == sigId) unackedSeq | sigId <- sigIds ]
-              sigIdxs' = (\(sigId,idx,_) -> (sigId, idx)) <$> catMaybes sigIdxs
+          -- The window size is expected to be small (currently 132, and might
+          -- increase in the future); thus using `sets` and `maps` rather than
+          -- lists.
+          let unackedMap, requestedMap :: Map sigId (idx, Delivered)
+              unackedSet, requestedSet :: Set sigId
 
-          when (any isNothing sigIdxs) $
+              unackedMap   = Map.fromList
+                           $ map (\(sigId, idx, delivered) -> (sigId, (idx, delivered)))
+                           $ Foldable.toList unackedSeq
+              unackedSet   = Map.keysSet unackedMap
+
+              requestedSet = Set.fromList sigIds
+              requestedMap = unackedMap `Map.restrictKeys` requestedSet
+
+          unless (requestedSet `Set.isSubsetOf` unackedSet) $
             throwIO ProtocolErrorRequestedUnavailableSig
 
-          let deliveredSet, requestedSet, requestedAndDeliveredSet :: Set sigId
+          let deliveredSet, requestedAndDeliveredSet :: Set sigId
               deliveredSet =
-                  Set.fromList
-                . map (\(a, _, _) -> a)
-                . Foldable.toList
-                . Seq.filter (\(_, _, a) -> case a of Delivered -> True; NotDelivered -> False )
-                $ unackedSeq
-
-              requestedSet =
-                  Set.fromList [sigId | (sigId, _) <- sigIdxs']
-
+                  Map.keysSet
+                . Map.filter (\case
+                                (_, Delivered) -> True
+                                (_, NotDelivered) -> False
+                             )
+                $ unackedMap
               requestedAndDeliveredSet =
                 requestedSet `Set.intersection` deliveredSet
 
@@ -205,7 +213,7 @@ sigSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version =
           -- The 'mempoolLookupTx' will return nothing if the signature is no
           -- longer in the mempool. This is good. Neither the sending nor
           -- receiving side wants to forward sigs that are no longer of interest.
-          let sigs    = mapMaybe (mempoolLookupTx . snd) sigIdxs'
+          let sigs    = mapMaybe (mempoolLookupTx . fst) $ Map.elems requestedMap
               -- flip delivered flags
               unackedSeq' =
                 (\case
