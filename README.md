@@ -137,7 +137,7 @@ The `Prometheus` requires a different port number than `cardano-node`'s
 ```json
 { "LedgerPeers": true,
   "CardanoNodeSocket": "/var/run/cardano-node.socket",
-  "TraceOptions": {
+  "Options": {
     "": {
       "backends": [
         "Stdout MachineFormat",
@@ -150,10 +150,10 @@ The `Prometheus` requires a different port number than `cardano-node`'s
 ```
 
 By default all counters are prefixed with `dmq_node_`, this can be changed with
-`TraceOptionMetricsPrefix` option in the configuration file, e.g.
+`MetricsPrefix` option in the configuration file, e.g.
 ```json
 {
-  "TraceOptionMetricsPrefix": "dmq_aggregator."
+  "MetricsPrefix": "dmq_aggregator."
 }
 ```
 

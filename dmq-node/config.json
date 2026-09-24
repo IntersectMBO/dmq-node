@@ -1,5 +1,5 @@
 { "NetworkMagic": 12
-, "TraceOptions": {
+, "Options": {
     "": {
       "backends": [
         "Stdout MachineFormat"
