@@ -6,9 +6,9 @@ import Control.Monad.Class.MonadTime.SI
 import Data.Aeson ((.=))
 import Data.Aeson qualified as Aeson
 
-import Cardano.Logging qualified as Logging
 import Cardano.Slotting.Slot (EpochNo)
 import Cardano.Slotting.Time (SystemStart)
+import Hermod.Tracing qualified as Logging
 import Ouroboros.Consensus.HardFork.History.Qry (PastHorizonException)
 
 -- | Trace type

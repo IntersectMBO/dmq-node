@@ -1,9 +1,9 @@
 {-# LANGUAGE DataKinds           #-}
+{-# LANGUAGE PackageImports    #-}
 {-# LANGUAGE GADTs               #-}
 {-# LANGUAGE KindSignatures      #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module DMQ.SigSubmissionV2.Inbound

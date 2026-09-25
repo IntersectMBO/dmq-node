@@ -1,19 +1,19 @@
 {-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE PackageImports    #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE PackageImports       #-}
 {-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE UndecidableInstances #-}
 
 module DMQ.NodeToClient.LocalMsgSubmission where
 
 import Control.Monad.Class.MonadThrow
-import "contra-tracer" Control.Tracer (Tracer, traceWith)
 import Data.Aeson ((.=))
 import Data.Aeson qualified as Aeson
 import Data.Typeable
+import "contra-tracer" Control.Tracer (Tracer, traceWith)
 
-import Cardano.Logging qualified as Logging
+import Hermod.Tracing qualified as Logging
 
 import DMQ.Protocol.LocalMsgSubmission.Server
 import DMQ.Protocol.LocalMsgSubmission.Type

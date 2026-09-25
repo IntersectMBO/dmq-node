@@ -1,10 +1,10 @@
 {-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE PackageImports    #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE MultiWayIf               #-}
 {-# LANGUAGE NamedFieldPuns           #-}
 {-# LANGUAGE OverloadedRecordDot      #-}
 {-# LANGUAGE OverloadedStrings        #-}
-{-# LANGUAGE PackageImports           #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 {-# LANGUAGE TemplateHaskell          #-}
 {-# LANGUAGE TypeApplications         #-}
@@ -19,6 +19,7 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Trans.Except (runExceptT)
 import "contra-tracer" Control.Tracer (nullTracer, traceWith)
+import Hermod.Tracing qualified as Logging
 
 import Data.Act
 import Data.ByteString.Lazy qualified as BSL
@@ -40,7 +41,7 @@ import System.Random qualified as Random
 
 import Cardano.Git.Rev (gitRev)
 import Cardano.KESAgent.Protocols.StandardCrypto (StandardCrypto)
-import Cardano.Logging.Prometheus.TCPServer qualified as Prometheus
+import Hermod.Tracing.Prometheus.TCPServer qualified as Prometheus
 
 import DMQ.Configuration
 import DMQ.Configuration.CLIOptions (parseCLIOptions)
@@ -143,30 +144,30 @@ runDMQ commandLineConfig = do
       <- mkDMQTracers ekgStore configFilePath
 
     when (validationCfg /= Policy.defaultValidationCfg) $ do
-      traceWith dmqStartupTracer (DMQValidationCfgWarning dmqNetworkMagic validationCfg)
+      Logging.traceWith dmqStartupTracer (DMQValidationCfgWarning dmqNetworkMagic validationCfg)
       -- one cannot run on mainnet with a custom `ValidationCfg`
       when (dmqNetworkMagic == Policy.dmqMainnetNetworkMagic)
         exitFailure
 
     case config' of
-      Left e   -> traceWith dmqStartupTracer (DMQConfigurationError e)
+      Left e   -> Logging.traceWith dmqStartupTracer (DMQConfigurationError e)
                -- TODO: flush `dmqStartupTracer`
                >> threadDelay 0.01
                >> die (Text.unpack e)
-      Right {} -> traceWith dmqStartupTracer (DMQConfiguration dmqConfig)
+      Right {} -> Logging.traceWith dmqStartupTracer (DMQConfiguration dmqConfig)
 
     Dir.doesFileExist socketPath >>= \a ->
       unless a $ do
-        traceWith dmqStartupTracer (DMQCardanoNodeSocketError socketPath)
+        Logging.traceWith dmqStartupTracer (DMQCardanoNodeSocketError socketPath)
         -- TODO: flush `dmqStartupTracer`
         threadDelay 0.01
         die $ "CardanoNodeSocket " ++ show socketPath ++": file does not exist"
     nt <- readTopologyFile topologyFile >>= \case
-      Left e -> traceWith dmqStartupTracer (DMQTopologyError e)
+      Left e -> Logging.traceWith dmqStartupTracer (DMQTopologyError e)
              -- TODO: flush `dmqStartupTracer`
              >> threadDelay 0.01
              >> die (Text.unpack e)
-      Right a -> traceWith dmqStartupTracer (DMQTopology a)
+      Right a -> Logging.traceWith dmqStartupTracer (DMQTopology a)
               >> return a
 
     -- start prometheus after we know we have valid configuration

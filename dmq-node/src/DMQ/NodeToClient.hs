@@ -1,6 +1,6 @@
 {-# LANGUAGE DataKinds        #-}
+{-# LANGUAGE PackageImports    #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE PackageImports   #-}
 {-# LANGUAGE RankNTypes       #-}
 
 module DMQ.NodeToClient

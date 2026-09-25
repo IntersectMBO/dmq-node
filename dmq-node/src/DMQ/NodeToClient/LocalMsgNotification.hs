@@ -9,13 +9,13 @@ module DMQ.NodeToClient.LocalMsgNotification
 
 import Control.Concurrent.Class.MonadSTM
 import Control.Monad.Class.MonadThrow
-import "contra-tracer" Control.Tracer (Tracer, traceWith)
 import Data.Aeson ((.=))
 import Data.Aeson qualified as Aeson
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Maybe (fromJust)
 import Data.Traversable (mapAccumR)
 import Data.Word
+import "contra-tracer" Control.Tracer (Tracer, traceWith)
 
 import DMQ.Protocol.LocalMsgNotification.Server
 import DMQ.Protocol.LocalMsgNotification.Type

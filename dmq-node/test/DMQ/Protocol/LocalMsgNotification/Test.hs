@@ -17,11 +17,11 @@ import Control.Monad.Class.MonadST (MonadST)
 import Control.Monad.Class.MonadThrow
 import Control.Monad.IOSim
 import Control.Monad.ST (runST)
-import Control.Tracer (Tracer, contramap, nullTracer)
 import Data.ByteString.Lazy (ByteString)
 import Data.List.NonEmpty (NonEmpty)
 import Data.List.NonEmpty qualified as NE
 import Data.Word
+import Control.Tracer (Tracer, contramap, nullTracer)
 import Test.QuickCheck qualified as QC
 import Test.Tasty
 import Test.Tasty.QuickCheck

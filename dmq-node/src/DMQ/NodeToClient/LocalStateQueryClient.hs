@@ -1,8 +1,8 @@
 {-# LANGUAGE DataKinds                #-}
+{-# LANGUAGE PackageImports    #-}
 {-# LANGUAGE DisambiguateRecordFields #-}
 {-# LANGUAGE FlexibleContexts         #-}
 {-# LANGUAGE LambdaCase               #-}
-{-# LANGUAGE PackageImports           #-}
 {-# LANGUAGE RankNTypes               #-}
 {-# LANGUAGE ScopedTypeVariables      #-}
 
@@ -19,9 +19,9 @@ import Control.Monad.Class.MonadThrow
 import Control.Monad.Class.MonadTime.SI
 import Control.Monad.Class.MonadTimer.SI
 import Control.Monad.Trans.Except
-import "contra-tracer" Control.Tracer (Tracer, traceWith)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Void
+import "contra-tracer" Control.Tracer (Tracer, traceWith)
 
 import Cardano.Ledger.Api (EraGov)
 import Cardano.Ledger.Api.State.Query (StakeSnapshots (..))

@@ -123,7 +123,7 @@ enable them by default.
 
 ### Tracing
 
-`dmq-node` is using `trace-dispatcher` framework for logging (i.e. the same as
+`dmq-node` is using the `hermod-tracing` framework for logging (i.e. the same as
 the new tracing system for `cardano-node`).
 
 ### Configuration example

@@ -1,7 +1,7 @@
 {-# LANGUAGE DataKinds             #-}
+{-# LANGUAGE PackageImports    #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE PackageImports        #-}
 {-# LANGUAGE RankNTypes            #-}
 
 module DMQ.Diffusion.NodeKernel

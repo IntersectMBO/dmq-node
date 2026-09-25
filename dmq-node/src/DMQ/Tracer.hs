@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE PackageImports    #-}
 {-# LANGUAGE FlexibleInstances   #-}
 {-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -64,10 +64,10 @@ import Ouroboros.Network.TxSubmission.Inbound.V2.Types
 import Ouroboros.Network.TxSubmission.Outbound (TraceTxSubmissionOutbound)
 
 import Cardano.KESAgent.KES.Crypto (Crypto)
-import Cardano.Logging (Namespace (..))
-import Cardano.Logging qualified as Logging
-import Cardano.Logging.Prometheus.TCPServer qualified as Logging
 import Cardano.Network.NodeToClient qualified as Cardano.NtC
+import Hermod.Tracing (Namespace (..))
+import Hermod.Tracing qualified as Logging
+import Hermod.Tracing.Prometheus.TCPServer qualified as Logging
 
 import DMQ.Configuration
 import DMQ.Diffusion.NodeKernel.Types (ValidationCfg)
@@ -120,8 +120,10 @@ data DMQTracers crypto ntnAddr ntcAddr m = DMQTracers {
     peerSharingProtocolTracer
       :: Tracer m (Mx.WithBearer (ConnectionId ntnAddr) (TraceSendRecv (PeerSharing ntnAddr))),
 
+    -- | dmq's own startup trace: consumed in @Main@ and handed to
+    -- hermod-tracing-prometheus, which takes a hermod 'Logging.Trace'.
     dmqStartupTracer
-      :: Tracer m DMQStartupTrace,
+      :: Logging.Trace m DMQStartupTrace,
     localStateQueryClientTracer
       :: Tracer m TraceLocalStateQueryClient,
     sigValidationTracer
@@ -557,7 +559,7 @@ mkDMQTracers ekgStore dmqConfigFilePath = do
         sigSubmissionOutboundV2Tracer      = mkTracer $ Logging.traceWith sigSubmissionOutboundV2Tracer,
         keepAliveProtocolTracer            = mkTracer $ Logging.traceWith keepAliveProtocolTracer,
         peerSharingProtocolTracer          = mkTracer $ Logging.traceWith peerSharingProtocolTracer,
-        dmqStartupTracer                   = mkTracer $ Logging.traceWith dmqStartupTracer',
+        dmqStartupTracer                   = dmqStartupTracer',
         localStateQueryClientTracer        = mkTracer $ Logging.traceWith localStateQueryClientTracer,
         sigValidationTracer                = mkTracer $ Logging.traceWith sigValidationTracer,
         localSigValidationTracer           = mkTracer $ Logging.traceWith localSigValidationTracer,
@@ -593,7 +595,7 @@ mkLoggingTracer :: Logging.LogFormatting a
          -> [Text]
          -> IO (Logging.Trace IO a)
 mkLoggingTracer traceConfig configReflection stdoutTrace trForward mbTrEkg as = do
-  tracer <- Logging.mkCardanoTracer stdoutTrace trForward mbTrEkg as
+  tracer <- Logging.mkHermodTracer stdoutTrace trForward mbTrEkg as
   Logging.configureTracers configReflection traceConfig [tracer]
   return tracer
 

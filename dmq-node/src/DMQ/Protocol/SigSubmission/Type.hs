@@ -60,7 +60,7 @@ import Cardano.KESAgent.KES.Crypto as KES
 import Cardano.KESAgent.KES.OCert (KESPeriod (..), OCert (..),
            OCertSignable (..))
 import Cardano.Ledger.Shelley.API qualified as Ledger
-import Cardano.Logging qualified as Logging
+import Hermod.Tracing qualified as Logging
 
 import Ouroboros.Network.Protocol.TxSubmission2.Type as SigSubmission hiding
            (TxSubmission2)
