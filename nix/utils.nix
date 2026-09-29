@@ -23,6 +23,23 @@ rec {
   mapAttrsValues = f: lib.mapAttrs (_name: f);
 
 
+  # Collect all derivations in a job tree, skipping test runs, i.e. `checks`
+  # attributes at any depth.
+  collectDerivationsWithoutChecks =
+    let
+      go = value:
+        if lib.isDerivation value then
+          [ value ]
+        else if lib.isAttrs value then
+          lib.concatLists
+            (lib.mapAttrsToList (_: go)
+              (removeAttrs value [ "checks" "recurseForDerivations" ]))
+        else
+          [ ];
+    in
+    go;
+
+
   makeHydraRequiredJob = hydraJobs:
     let
       cleanJobs = lib.filterAttrsRecursive

@@ -1,21 +1,25 @@
+{-# LANGUAGE StandaloneDeriving #-}
+
 module DMQ.SigSubmissionV2.Types (SigSubmissionProtocolError (..)) where
 
 import Control.Exception (Exception)
 import Control.Monad.Class.MonadThrow (Exception (..))
-import Data.Word (Word16)
 
 import DMQ.Protocol.SigSubmissionV2.Type
 
 data SigSubmissionProtocolError =
        ProtocolErrorAckedTooManySigIds
      | ProtocolErrorRequestedNothing
-     | ProtocolErrorRequestedTooManySigIds NumIdsReq Word16 NumIdsAck
+     | ProtocolErrorRequestedTooManySigIds NumIdsReq Int NumIdsAck
      | ProtocolErrorRequestBlocking
      | ProtocolErrorRequestNonBlocking
      | ProtocolErrorRequestedUnavailableSig
      | ProtocolErrorSigIdsNotRequested
      | ProtocolErrorSigNotRequested
-  deriving Show
+     | forall sigId. Show sigId => ProtocolErrorDuplicateRequest [sigId]
+     | forall sigId. Show sigId => ProtocolErrorDuplicateSigIds [sigId]
+
+deriving instance Show SigSubmissionProtocolError
 
 instance Exception SigSubmissionProtocolError where
   displayException ProtocolErrorAckedTooManySigIds =
@@ -46,3 +50,9 @@ instance Exception SigSubmissionProtocolError where
 
   displayException ProtocolErrorSigNotRequested =
       "The peer replied with a transaction we did not ask for."
+
+  displayException (ProtocolErrorDuplicateRequest sigIds) =
+      "The peer requested the same sigs twice: " ++ show sigIds
+
+  displayException (ProtocolErrorDuplicateSigIds sigIds) =
+      "The peer requested duplicate sigIds: " ++ show sigIds

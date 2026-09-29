@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns        #-}
 {-# LANGUAGE DataKinds           #-}
 {-# LANGUAGE GADTs               #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE NamedFieldPuns      #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE PackageImports      #-}
@@ -13,11 +14,15 @@ module DMQ.SigSubmissionV2.Outbound
   ) where
 
 import Data.Aeson (KeyValue ((.=)), ToJSON (toJSON), Value (String), object)
-import Data.Foldable (find)
+import Data.Foldable qualified as Foldable
 import Data.List.NonEmpty qualified as NonEmpty
-import Data.Maybe (catMaybes, isNothing, mapMaybe)
+import Data.Map.Strict (Map)
+import Data.Map.Strict qualified as Map
+import Data.Maybe (mapMaybe)
 import Data.Sequence.Strict (StrictSeq)
 import Data.Sequence.Strict qualified as Seq
+import Data.Set (Set)
+import Data.Set qualified as Set
 
 import Control.Concurrent.Class.MonadSTM (MonadSTM (..))
 import Control.Exception (assert)
@@ -57,9 +62,11 @@ instance (ToJSON sigId, ToJSON sig)
       , "sigs"  .= sigs
       ]
 
+data Delivered = Delivered | NotDelivered
+
 sigSubmissionOutbound
   :: forall version sigId sig idx m.
-     (Ord sigId, Ord idx, MonadTimer m, MonadThrow m)
+     (Ord sigId, Show sigId, Ord idx, MonadTimer m, MonadThrow m)
   => Tracer m (TraceSigSubmissionOutbound sigId sig)
   -> NumIdsAck  -- ^ Maximum number of unacknowledged sigIds allowed
   -> TxSubmissionMempoolReader sigId sig idx m
@@ -68,7 +75,7 @@ sigSubmissionOutbound
 sigSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version =
     SigSubmissionOutbound (pure (server Seq.empty mempoolZeroIdx))
   where
-    server :: StrictSeq (sigId, idx) -> idx -> OutboundStIdle sigId sig m ()
+    server :: StrictSeq (sigId, idx, Delivered) -> idx -> OutboundStIdle sigId sig m ()
     server !unackedSeq !lastIdx =
         OutboundStIdle { recvMsgRequestSigIds, recvMsgRequestSigs, recvMsgDone }
       where
@@ -84,11 +91,11 @@ sigSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version =
           when (getNumIdsAck ackNo > fromIntegral (Seq.length unackedSeq)) $
             throwIO ProtocolErrorAckedTooManySigIds
 
-          let unackedNo = fromIntegral (Seq.length unackedSeq)
+          let unackedNo = Seq.length unackedSeq
           when (  unackedNo
-                - getNumIdsAck ackNo
-                + getNumIdsReq reqNo
-                > getNumIdsAck maxUnacked) $
+                - fromIntegral (getNumIdsAck ackNo)
+                + fromIntegral (getNumIdsReq reqNo)
+                > fromIntegral (getNumIdsAck maxUnacked)) $
             throwIO (ProtocolErrorRequestedTooManySigIds reqNo unackedNo maxUnacked)
 
           -- Update our tracking state to remove the number of sigIds that the
@@ -100,7 +107,7 @@ sigSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version =
                 -- These sigs should all be fresh
                 assert (all (\(_, idx, _) -> idx > lastIdx) sigs) $
                   let !unackedSeq'' = unackedSeq' <> Seq.fromList
-                                        [ (sigId, idx) | (sigId, idx, _) <- sigs ]
+                                        [ (sigId, idx, NotDelivered) | (sigId, idx, _) <- sigs ]
                       !lastIdx'
                         | null sigs = lastIdx
                         | otherwise = idx where (_, idx, _) = last sigs
@@ -169,18 +176,56 @@ sigSubmissionOutbound tracer maxUnacked TxSubmissionMempoolReader{..} _version =
 
           MempoolSnapshot{mempoolLookupTx} <- atomically mempoolGetSnapshot
 
-          -- The window size is expected to be small (currently 10) so the find is acceptable.
-          let sigIdxs  = [ find (\(t,_) -> t == sigId) unackedSeq | sigId <- sigIds ]
-              sigIdxs' = map snd $ catMaybes sigIdxs
+          -- The window size is expected to be small (currently 132, and might
+          -- increase in the future); thus using `sets` and `maps` rather than
+          -- lists.
+          let unackedMap, requestedMap :: Map sigId (idx, Delivered)
+              unackedSet, requestedSet :: Set sigId
 
-          when (any isNothing sigIdxs) $
+              unackedMap   = Map.fromList
+                           $ map (\(sigId, idx, delivered) -> (sigId, (idx, delivered)))
+                           $ Foldable.toList unackedSeq
+              unackedSet   = Map.keysSet unackedMap
+
+              requestedSet = Set.fromList sigIds
+              requestedMap = unackedMap `Map.restrictKeys` requestedSet
+
+          unless (requestedSet `Set.isSubsetOf` unackedSet) $
             throwIO ProtocolErrorRequestedUnavailableSig
+
+          let deliveredSet, requestedAndDeliveredSet :: Set sigId
+              deliveredSet =
+                  Map.keysSet
+                . Map.filter (\case
+                                (_, Delivered) -> True
+                                (_, NotDelivered) -> False
+                             )
+                $ unackedMap
+              requestedAndDeliveredSet =
+                requestedSet `Set.intersection` deliveredSet
+
+          unless (length requestedSet == length sigIds) $
+            throwIO $ ProtocolErrorDuplicateSigIds sigIds
+
+          unless (Set.null $ requestedAndDeliveredSet) $
+            throwIO $ ProtocolErrorDuplicateRequest (Set.toList requestedAndDeliveredSet)
 
           -- The 'mempoolLookupTx' will return nothing if the signature is no
           -- longer in the mempool. This is good. Neither the sending nor
           -- receiving side wants to forward sigs that are no longer of interest.
-          let sigs    = mapMaybe mempoolLookupTx sigIdxs'
-              server' = server unackedSeq lastIdx
+          let sigs    = mapMaybe (mempoolLookupTx . fst) $ Map.elems requestedMap
+              -- flip delivered flags
+              unackedSeq' =
+                (\case
+                  (sigId, idx, NotDelivered)
+                    | sigId `Set.member` requestedSet
+                    -> (sigId, idx, Delivered)
+
+                  a -> a
+                )
+                <$>
+                unackedSeq
+              server' = server unackedSeq' lastIdx
 
           -- Trace the sigs to be sent in the response.
           traceWith tracer (TraceSigSubmissionOutboundSendMsgReplySigs sigs)
