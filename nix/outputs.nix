@@ -63,14 +63,58 @@ let
   flake = pkgs.dmq-node.flake { };
   format = pkgs.callPackage ./formatting.nix pkgs;
 
-  defaultHydraJobs =
+  ciJobs =
     flake.hydraJobs
     //
     {
-      inherit packages;
+      # Keep haskell.nix component builds (`dmq-node:lib:dmq-node`,
+      # `dmq-node:test:*`, …) alongside our own packages.
+      packages = flake.hydraJobs.packages // packages;
       inherit devShells;
       inherit format;
-      required = utils.makeHydraRequiredJob hydraJobs;
+    };
+
+  # Sub-groups in `flake.hydraJobs` are compiler variants (e.g. `ghc9122`) and
+  # cross-compilation targets (e.g. `x86_64-unknown-linux-musl`).  They are
+  # distinguished from native job categories (`packages`, `checks`, …) by
+  # having nested attrsets as values rather than derivations.
+  subGroups = lib.filterAttrs
+    (_: v:
+      lib.isAttrs v
+      && !lib.isDerivation v
+      && lib.any (x: lib.isAttrs x && !lib.isDerivation x)
+        (lib.attrValues v))
+    flake.hydraJobs;
+
+  # Native-only jobs: `ciJobs` without the sub-groups, so that the top-level
+  # `all` is symmetric across systems.
+  nativeJobs = removeAttrs ciJobs (builtins.attrNames subGroups);
+
+  defaultHydraJobs =
+    ciJobs
+    # For each sub-group expose an `all` aggregate, e.g.:
+    #   nix build .\#hydraJobs.x86_64-linux.ghc9122-all
+    #   nix build .\#hydraJobs.x86_64-linux.x86_64-unknown-linux-musl-all
+    // lib.mapAttrs
+      (name: jobs: jobs // {
+        all = pkgs.releaseTools.aggregate {
+          name = "${name}-all";
+          meta.description = "All jobs for ${name} (no tests)";
+          constituents = utils.collectDerivationsWithoutChecks jobs;
+        };
+      })
+      subGroups
+    //
+    {
+      # An `all` aggregate covering every native job on this system,
+      # excluding tests, e.g.:
+      #   nix build .\#hydraJobs.x86_64-linux.all
+      all = pkgs.releaseTools.aggregate {
+        name = "all";
+        meta.description = "All native jobs for ${system} (no tests)";
+        constituents = utils.collectDerivationsWithoutChecks nativeJobs;
+      };
+      required = utils.makeHydraRequiredJob ciJobs;
     };
 
   hydraJobs =
