@@ -15,10 +15,10 @@ repository cardano-haskell-packages
 -- repeat the index-state for hackage to work around haskell.nix parsing limitation
 index-state:
   -- Bump this if you need newer packages from Hackage
-  , hackage.haskell.org 2026-07-30T07:30:12Z
+  , hackage.haskell.org 2026-07-31T11:39:47Z
 
   -- Bump this if you need newer packages from CHaP
-  , cardano-haskell-packages 2026-08-11T14:53:43Z
+  , cardano-haskell-packages 2026-10-02T13:31:03Z
 
 packages:
   ./dmq-node
@@ -32,6 +32,9 @@ multi-repl: True
 if(os(windows))
   constraints:
     bitvec -simd
+
+constraints:
+  acts -finitary
 
 if impl(ghc >= 9.14.0)
   allow-newer:
