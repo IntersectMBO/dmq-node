@@ -1,7 +1,10 @@
+{-# LANGUAGE TupleSections #-}
+
 module DMQ.Diffusion.PeerSelectionPolicy where
 
 import Control.Concurrent.Class.MonadSTM.Strict
 import Data.List (sortOn, unfoldr)
+import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Word (Word32)
@@ -10,6 +13,8 @@ import System.Random (Random (..), StdGen, splitGen)
 import DMQ.Diffusion.PeerSelection.PeerMetric (PeerMetric)
 import DMQ.Diffusion.PeerSelection.PeerMetric qualified as PeerMetric
 
+import Ouroboros.Network.Block (SlotNo)
+import Ouroboros.Network.Diffusion.Policies (mkHotDemotionPolicy)
 import Ouroboros.Network.PeerSelection hiding (PeerMetrics)
 
 -- | DMQ PeerSelectionPolicy
@@ -28,13 +33,14 @@ policy rngVar peerMetrics =
     policyPickWarmPeersToPromote     = simplePromotionPolicy,
     policyPickInboundPeers           = simplePromotionPolicy,
 
-    policyPickHotPeersToDemote       = hotDemotionPolicy,
+    policyPickHotPeersToDemote       = mkHotDemotionPolicy rngVar hotScores,
     policyPickWarmPeersToDemote      = warmDemotionPolicy,
     policyPickColdPeersToForget      = coldForgetPolicy,
 
     policyFindPublicRootTimeout      = 5,
     policyMaxInProgressPeerShareReqs = 0,
     policyPeerShareRetryTime         = 900,  -- seconds
+    policyPeerShareFailureRetryTime  = 3600, -- seconds (4x)
     policyPeerShareBatchWaitTime     = 3,    -- seconds
     policyPeerShareOverallTimeout    = 10,   -- seconds
     policyPeerShareActivationDelay   = 300,  -- seconds
@@ -42,16 +48,10 @@ policy rngVar peerMetrics =
     policyClearFailCountDelay        = 120   -- seconds
   }
   where
-    hotDemotionPolicy :: PickPolicy peerAddr (STM m)
-    hotDemotionPolicy _ _ _ available pickNum = do
-      available' <- addRand rngVar available (,)
-      scores <- PeerMetric.announciness peerMetrics
-      return $ Set.fromList
-             . map fst
-             . take pickNum
-             . sortOn (\(peer, rn) -> (Map.findWithDefault 0 peer scores , rn))
-             . Map.assocs
-             $ available'
+    hotScores :: STM m (Map peerAddr (Int, Maybe SlotNo))
+    hotScores = fmap (Map.map (,Nothing))
+              . PeerMetric.announciness
+              $ peerMetrics
 
     -- Randomly pick peers to demote, peers with knownPeerTepid set are twice
     -- as likely to be demoted.

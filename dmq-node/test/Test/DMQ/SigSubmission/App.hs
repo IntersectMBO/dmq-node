@@ -526,11 +526,11 @@ runSigSubmissionV2WithMetric tracer tracerSigLogic config st0 sigDecisionPolicy 
                                       -- stamped with observable, see
                                       -- 'SimAnnouncedEvent'.
                                       api' = api {
-                                          applyReceivedTxIds = \time numIdsToReq sigids peerState -> do
+                                          applyReceivedTxIds = \time blockingWait_m numIdsToReq sigids peerState -> do
                                             traceWith simTracer
                                               (SimAnnouncedEvent
                                                 (TraceLabelPeer addr (time, fst <$> sigids)))
-                                            applyReceivedTxIds api time numIdsToReq sigids peerState
+                                            applyReceivedTxIds api time blockingWait_m numIdsToReq sigids peerState
                                         }
 
                                       inbound = sigSubmissionInbound
