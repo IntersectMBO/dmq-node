@@ -1,6 +1,8 @@
 # dmq-node changelog
 
 <!-- scriv-insert-here -->
+<a id='changelog-0.7.3.0'></a>
+## 0.7.2.0 -- 2026-10-02
 
 <a id='changelog-0.7.1.0'></a>
 ## 0.7.1.0 -- 2026-09-01

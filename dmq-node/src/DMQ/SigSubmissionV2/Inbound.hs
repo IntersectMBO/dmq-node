@@ -38,9 +38,8 @@ import Ouroboros.Network.TxSubmission.Inbound.V2 (PeerTxAPI (..),
 import Ouroboros.Network.TxSubmission.Inbound.V2.State qualified as State
 import Ouroboros.Network.TxSubmission.Inbound.V2.Types (PeerAction (..),
            PeerPhase (..), PeerTxLocalState (..), ProcessedTxCount (..),
-           TraceTxSubmissionInbound (..), TxKey, TxSubmissionCounters (..),
-           TxSubmissionMempoolWriter (..), TxSubmissionProtocolError (..),
-           const_MAX_TX_SIZE_DISCREPANCY, diffTimeToMilliseconds,
+           TraceTxSubmissionInbound (..), TxKey, TxSubmissionMempoolWriter (..),
+           TxSubmissionProtocolError (..), const_MAX_TX_SIZE_DISCREPANCY,
            emptyPeerTxLocalState)
 
 import DMQ.Diffusion.PeerSelection.PeerMetric (LocalPeerMetricState,
@@ -85,8 +84,7 @@ sigSubmissionInbound
       applyReceivedTxs,
       applySubmittedTxs,
       resolveTxRequest,
-      resolveBufferedTxs,
-      addCounters
+      resolveBufferedTxs
     }
     ReportPeerMetric {
       reportSigIds,
@@ -110,17 +108,16 @@ sigSubmissionInbound
           now <- getMonotonicTime
           -- when the pipeline fully drained, emit the body-download episode
           -- duration
-          peerState' <- case peerDownloadStartTime peerState of
-                             Nothing        -> pure peerState
-                             Just startTime -> do
-                               addCounters mempty {
-                                   txPipelineWaitMs =
-                                     diffTimeToMilliseconds (now `diffTime` startTime)
-                                 }
-                               pure peerState { peerDownloadStartTime = Nothing }
+          let (mDownloadTime, peerState') =
+                case peerDownloadStartTime peerState of
+                  Nothing -> (Nothing, peerState)
+                  Just startTime ->
+                    ( Just (now `diffTime` startTime)
+                    , peerState { peerDownloadStartTime = Nothing } )
           -- traceCanRequest Zero peerState'
           (peerAction, peerState'') <-
-            runNextPeerAction now (State.drainPeerScore policy now peerState')
+            runNextPeerAction now mDownloadTime
+              (State.drainPeerScore policy now peerState')
           case peerAction of
             PeerDoNothing generation mDelay -> do
               -- An Active->Idle transition means this peer has just become
@@ -174,8 +171,8 @@ sigSubmissionInbound
           rejectedCount    = length rejectedSigs
           delta            = end `diffTime` start
 
-      addCounters mempty { txSubmissionWaitMs = diffTimeToMilliseconds delta }
-      peerState' <- applySubmittedTxs end resolvedKeys rejectedKeys peerState
+      peerState' <- applySubmittedTxs end delta resolvedKeys rejectedKeys
+                                      peerState
       let (score, peerState'') =
             State.applyPeerEvents policy end acceptedCount rejectedCount peerState'
       traceWith tracer $
@@ -278,23 +275,19 @@ sigSubmissionInbound
       if StrictSeq.null (peerUnacknowledgedTxIds peerState)
         then do
           sendTime <- getMonotonicTime
-          addCounters mempty { txIdBlockingReqsSent = 1 }
           pure $ SendMsgRequestSigIdsBlocking
                    (NumIdsAck (getNumTxIdsToAck txIdsToAck))
                    (NumIdsReq (getNumTxIdsToReq txIdsToReq))
                    (\sigids -> do
                        now <- getMonotonicTime
-                       addCounters mempty {
-                           txIdBlockingWaitMs =
-                             diffTimeToMilliseconds (now `diffTime` sendTime)
-                         }
                        unless (length sigids <= fromIntegral txIdsToReq) $
                          throwIO ProtocolErrorSigIdsNotRequested
                        let metricState' = reportSigIds (fst <$> sigids) now metricState
-                       peerState' <- applyReceivedTxIds now txIdsToReq sigids peerState
+                       peerState' <- applyReceivedTxIds now
+                                       (Just (now `diffTime` sendTime))
+                                       txIdsToReq sigids peerState
                        serverIdle peerState' metricState')
         else do
-          addCounters mempty { txIdPipelinedReqsSent = 1 }
           pure $ SendMsgRequestSigIdsPipelined
                    (NumIdsAck (getNumTxIdsToAck txIdsToAck))
                    (NumIdsReq (getNumTxIdsToReq txIdsToReq))
@@ -302,7 +295,6 @@ sigSubmissionInbound
 
     -- pipelined request at depth > 0
     serverReqSigIds n@Succ{} txIdsToAck txIdsToReq peerState metricState = do
-      addCounters mempty { txIdPipelinedReqsSent = 1 }
       pure $ SendMsgRequestSigIdsPipelined
                (NumIdsAck (getNumTxIdsToAck txIdsToAck))
                (NumIdsReq (getNumTxIdsToReq txIdsToReq))
@@ -332,7 +324,9 @@ sigSubmissionInbound
         let metricState' = reportSigIds (fst <$> sigids) now metricState
         peerState' <-
           applyReceivedTxIds now
-            (NumTxIdsToReq (getNumIdsReq sigIdsToReq)) sigids peerState
+            Nothing
+            (NumTxIdsToReq (getNumIdsReq sigIdsToReq))
+            sigids peerState
         continueAfterReplies n peerState' metricState'
 
       CollectSigs requested sigs -> do
