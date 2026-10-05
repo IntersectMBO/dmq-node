@@ -33,9 +33,6 @@ if(os(windows))
   constraints:
     bitvec -simd
 
-constraints:
-  acts -finitary
-
 if impl(ghc >= 9.14.0)
   allow-newer:
     -- https://github.com/well-typed/canonical-json/issues/12
