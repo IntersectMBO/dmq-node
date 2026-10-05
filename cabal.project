@@ -18,7 +18,7 @@ index-state:
   , hackage.haskell.org 2026-07-31T11:39:47Z
 
   -- Bump this if you need newer packages from CHaP
-  , cardano-haskell-packages 2026-10-02T13:31:03Z
+  , cardano-haskell-packages 2026-10-05T13:20:29Z
 
 packages:
   ./dmq-node
@@ -32,9 +32,6 @@ multi-repl: True
 if(os(windows))
   constraints:
     bitvec -simd
-
-constraints:
-  acts -finitary
 
 if impl(ghc >= 9.14.0)
   allow-newer:
