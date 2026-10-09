@@ -1,6 +1,13 @@
 # dmq-node changelog
 
 <!-- scriv-insert-here -->
+
+<a id='changelog-0.7.2.1'></a>
+## 0.7.2.1 -- 2026-10-09
+
+### Patch
+
+- Upgraded ouroboros-consensus to `5.1.0.1`
 <a id='changelog-0.7.3.0'></a>
 ## 0.7.2.0 -- 2026-10-02
 
