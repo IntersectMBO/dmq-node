@@ -73,3 +73,36 @@ if impl(ghc >= 9.14.0)
 
     -- https://github.com/dmwit/ordered-containers/issues/33
     , ordered-containers:containers
+
+-- TEMPORARY, for review only: remove before merging.
+--
+-- hermod-tracing-core 1.0.1 and hermod-tracing-prometheus 1.1.0 are not on
+-- CHaP yet; they are IntersectMBO/hermod-tracing#21. hermod-tracing-api is
+-- listed because hermod-tracing-prometheus depends on its internal
+-- sublibrary; dmq-node itself does not depend on it.
+--
+-- ouroboros-network is pinned for a different reason: its tracing
+-- sublibraries provide their LogFormatting instances against
+-- hermod-tracing-api rather than trace-dispatcher, and no version bound can
+-- express that, because the flipped packages keep their released version
+-- numbers. Without it DMQ.Tracer does not compile -- 40 errors of the shape
+-- "Could not deduce LogFormatting (Mx.WithBearer ... Mx.Trace)".
+source-repository-package
+  type: git
+  location: https://github.com/IntersectMBO/hermod-tracing.git
+  tag: 669277989719e9da50e7dad3945355fbd69ac7a8
+  subdir:
+    hermod-tracing-api
+    hermod-tracing-core
+    hermod-tracing-prometheus
+  --sha256: sha256-Na/GlZVp+HtxKz4ClKRO6DxD0o/Zb3tspmUV2IpVZMI=
+
+source-repository-package
+  type: git
+  location: https://github.com/IntersectMBO/ouroboros-network.git
+  tag: 746dcc2c4fe0edc58f19eeaa8e6e4012b59a9e6b
+  subdir:
+    network-mux
+    ouroboros-network
+    cardano-diffusion
+  --sha256: sha256-aZr/KWYWXKPGEkhoOplZmS3Q/6vG5oOAkKdCEWS1E9Y=
