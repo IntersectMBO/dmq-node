@@ -92,12 +92,3 @@ jobs:
 
     - name: Build all packages
       run: cabal build all -j
-
-    # Uncomment the following back in for debugging. Remember to launch a `pwsh` from
-    # the tmux session to debug `pwsh` issues.
-    #
-    # - name: Setup tmate session
-    #   if: ${{ failure() }}
-    #   uses: mxschmitt/action-tmate@v3
-    #   with:
-    #     limit-access-to-actor: true
