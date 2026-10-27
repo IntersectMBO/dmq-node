@@ -9,9 +9,6 @@ name: Post Release Upload
 # from the IOG cache.
 on:
   workflow_dispatch:
-  release:
-    types:
-      - published
   push:
     tags:
       - '**'
