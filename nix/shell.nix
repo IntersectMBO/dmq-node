@@ -11,6 +11,8 @@ let
   };
 
   linuxPkgs = lib.optionals pkgs.stdenv.hostPlatform.isLinux [
+    pkgs.pkg-config
+    pkgs.liburing
   ];
 
   darwinPkgs = lib.optionals pkgs.stdenv.hostPlatform.isDarwin [

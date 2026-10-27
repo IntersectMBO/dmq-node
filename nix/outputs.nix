@@ -57,6 +57,7 @@ let
 
   devShells = rec {
     default = mkShell pkgs.dmq-node.args.compiler-nix-name;
+    ghc967 = mkShell "ghc967";
     # ghc9122 = mkShell "ghc9122";
   };
 

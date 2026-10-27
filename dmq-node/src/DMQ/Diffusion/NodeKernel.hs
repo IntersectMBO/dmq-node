@@ -44,6 +44,7 @@ import Ouroboros.Consensus.Network.NodeToClient
 import Ouroboros.Consensus.Node.NetworkProtocolVersion
 import Ouroboros.Consensus.Node.ProtocolInfo
 
+import Ouroboros.Network.ConnectionManager.Types (DataFlow (..))
 import Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import Ouroboros.Network.KeepAlive (newKeepAliveRegistry)
 import Ouroboros.Network.Mux qualified as Mx
@@ -287,6 +288,7 @@ withNodeKernel DMQTracers { sigSubmissionLogicTracer,
                   clientCodecs (pClientInfoCodecConfig . protocolClientInfoCardano $ Policy.cardanoEpochSlots)
                   blk version
           ])
+        (const Unidirectional)
         Nothing
         (localAddressFromPath cardanoNodeSocketPath)
       where
