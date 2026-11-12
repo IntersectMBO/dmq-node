@@ -60,14 +60,13 @@ import Ouroboros.Network.Snocket (Snocket, localAddressFromPath)
 import Ouroboros.Network.Socket (ConnectToArgs (..),
            HandshakeCallbacks (HandshakeCallbacks), connectToNode)
 import Ouroboros.Network.TxSubmission.Inbound.V2
-import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool (..),
-           MempoolSeq (..), WithIndex (..))
-import Ouroboros.Network.TxSubmission.Mempool.Simple qualified as Mempool
 
 import DMQ.Configuration
 import DMQ.Diffusion.NodeKernel.Types
 import DMQ.Diffusion.PeerSelection.PeerMetric (mkPeerMetric)
 import DMQ.Genesis
+import DMQ.Mempool (Mempool (..), MempoolSeq (..), WithIndex (..))
+import DMQ.Mempool qualified as Mempool
 import DMQ.NodeToClient.LocalStateQueryClient
 import DMQ.Policy qualified as Policy
 import DMQ.Protocol.SigSubmission.Type (Sig (sigExpiresAt, sigId), SigId)
@@ -88,7 +87,7 @@ newNodeKernel rng ShelleyGenesis {sgMaxKESEvolutions} = do
   keepAliveRegistry <- newKeepAliveRegistry
   peerSharingRegistry <- newPeerSharingRegistry
 
-  mempool <- Mempool.empty
+  mempool <- Mempool.empty sigId
   let (peerSharingRng, peerSelectionPolicyRng) = Random.splitGen rng
   peerSelectionPolicyRngVar <- newTVarIO peerSelectionPolicyRng
   sigSharedTxStateVar <- newSharedTxStateVar emptySharedTxState
