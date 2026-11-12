@@ -28,6 +28,7 @@ let
       # pkgs.setGitRev
       # (inputs.self.rev or inputs.self.dirtyShortRev)
       pkgs.dmq-node.hsPkgs.dmq-node.components.exes.dmq-node;
+    dmq-client = pkgs.dmq-node.hsPkgs.dmq-node.components.exes.dmq-client;
     default = dmq-node;
   } // lib.optionalAttrs (builtins.hasAttr buildSystem staticCrossTarget) {
     dmq-node-static =
@@ -63,6 +64,21 @@ let
 
   flake = pkgs.dmq-node.flake { };
   format = pkgs.callPackage ./formatting.nix pkgs;
+
+  # cardano-node 11.2.1, fetched only when the NixOS test is evaluated; as a
+  # flake input it would put its whole lock into ours.
+  cardano-node = builtins.getFlake
+    "github:IntersectMBO/cardano-node/90bc1cd9380a78a63091ff673f8c5693152c8f60?narHash=sha256-gCKN9f0VXLLvJL/yMb3hztsa%2B91PJ93N6EHOoKhV4AI%3D";
+
+  checks = lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+    nixos-dmq-node = import ./nixos/tests/dmq-node.nix {
+      inherit pkgs;
+      dmqModule = inputs.self.nixosModules.dmq-node;
+      cardanoNodeModule = cardano-node.nixosModules.cardano-node;
+      inherit (cardano-node.legacyPackages.${system}) cardanoNodePackages;
+      inherit (packages) dmq-client;
+    };
+  };
 
   ciJobs =
     flake.hydraJobs
@@ -116,6 +132,8 @@ let
         constituents = utils.collectDerivationsWithoutChecks nativeJobs;
       };
       required = utils.makeHydraRequiredJob ciJobs;
+      # Built by Hydra, outside `required`.
+      nixos-tests = checks;
     };
 
   hydraJobs =
@@ -131,6 +149,7 @@ in
 {
   inherit packages;
   inherit devShells;
+  inherit checks;
   inherit hydraJobs;
   legacyPackages = {
     format =

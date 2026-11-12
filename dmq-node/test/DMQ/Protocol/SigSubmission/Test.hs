@@ -398,7 +398,7 @@ instance ( Crypto crypto
               sigRawExpiresAt,
               sigRawKESSignature = undefined -- to be filled below
           }
-          signedBytes = CBOR.toStrictByteString (encodeSigPayload sigRaw)
+          signedBytes = CBOR.toStrictByteString (sigRawPayload sigRaw)
 
       -- evolve the key to the target period
       mbSnKESKey <- KES.updateKESTo () sigRawKESPeriod ocert (KES.SignKeyWithPeriodKES snKESKey 0)
@@ -475,7 +475,7 @@ shrinkSigRawWithSignedBytesFn SigRawWithSignedBytes { sigRaw } =
   [ SigRawWithSignedBytes { sigRaw = sigRaw',
                             sigRawSignedBytes = sigRawSignedBytes' }
   | sigRaw' <- shrinkSigRawFn sigRaw
-  , let sigRawSignedBytes' = CBOR.toLazyByteString (encodeSigPayload sigRaw')
+  , let sigRawSignedBytes' = CBOR.toLazyByteString (sigRawPayload sigRaw')
   ]
 
 
@@ -522,16 +522,9 @@ mkSig sigRawWithSignedBytes@SigRawWithSignedBytes { sigRaw } =
 
 
 -- encode the payload
-encodeSigPayload :: SigRaw crypto -> CBOR.Encoding
-encodeSigPayload SigRaw {
-    sigRawBody,
-    sigRawKESPeriod,
-    sigRawExpiresAt
-  }
-  =  CBOR.encodeListLen 3
-  <> CBOR.encodeBytes (getSigBody sigRawBody)
-  <> CBOR.encodeWord (unKESPeriod sigRawKESPeriod)
-  <> CBOR.encodeWord32 (floor sigRawExpiresAt)
+sigRawPayload :: SigRaw crypto -> CBOR.Encoding
+sigRawPayload SigRaw { sigRawBody, sigRawKESPeriod, sigRawExpiresAt } =
+  encodeSigPayload sigRawBody sigRawKESPeriod sigRawExpiresAt
 
 -- encode together with KES signature, OCert and cold key.
 encodeSigRaw :: Crypto crypto
@@ -540,7 +533,7 @@ encodeSigRaw :: Crypto crypto
 encodeSigRaw sigRaw@SigRaw { sigRawId, sigRawKESSignature, sigRawOpCertificate, sigRawColdKey } =
      CBOR.encodeListLen 5
   <> encodeSigId sigRawId
-  <> encodeSigPayload sigRaw
+  <> sigRawPayload sigRaw
   <> encodeFixedSized (getSigKESSignature sigRawKESSignature)
   <> encodeSigOpCertificate sigRawOpCertificate
   <> encodeFixedSized (getSigColdKey sigRawColdKey)
