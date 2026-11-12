@@ -14,7 +14,6 @@ import Data.Aeson ((.=))
 import Data.Aeson qualified as Aeson
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Maybe (fromJust)
-import Data.Traversable (mapAccumR)
 import Data.Word
 
 import DMQ.Protocol.LocalMsgNotification.Server
@@ -61,10 +60,11 @@ localMsgNotificationServer getMsgId tracer mdone maxMsgs0
           let process :: MempoolSnapshot msgid msg idx
                       -> (idx, HasMore, [msg]) -- last index and extracted messages
               process ms =
-                let f _lastIdx (_id, idx, _size) = (idx, fromJust $ mempoolLookupTx ms idx)
-                    (prefix, rest) = splitAt maxMsgs . mempoolTxIdsAfter ms $ lastIdx
+                let (prefix, rest) = splitAt maxMsgs . mempoolTxIdsAfter ms $ lastIdx
                     hasMore' = if null rest then DoesNotHaveMore else HasMore
-                    (lastIdx', msgs) = mapAccumR f lastIdx prefix
+                    idxOf (_id, idx, _size) = idx
+                    msgs = fromJust . mempoolLookupTx ms . idxOf <$> prefix
+                    lastIdx' = maybe lastIdx (idxOf . NonEmpty.last) (NonEmpty.nonEmpty prefix)
                 in (lastIdx', hasMore', msgs)
           case blocking of
             SingBlocking

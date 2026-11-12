@@ -26,6 +26,8 @@ import Test.QuickCheck qualified as QC
 import Test.Tasty
 import Test.Tasty.QuickCheck
 
+import DMQ.Mempool qualified as Mempool
+import DMQ.NodeToClient.LocalMsgNotification qualified as NtC
 import DMQ.Protocol.LocalMsgNotification.Client
 import DMQ.Protocol.LocalMsgNotification.Codec
 import DMQ.Protocol.LocalMsgNotification.Examples
@@ -59,6 +61,7 @@ tests =
       , testProperty "codec cbor"       prop_codec_cbor
       , testProperty "codec valid cbor" prop_codec_valid_cbor
       , testProperty "connect" prop_connect
+      , testProperty "dmq-node server over its mempool" prop_mempool_server
       , testProperty "direct"  prop_direct
       , testProperty "channel ST" prop_channel_ST
       , testProperty "channel IO" prop_channel_IO
@@ -105,6 +108,25 @@ prop_connect (Positive maxMsgs) (DistinctNEList msgs) =
 
     ((), msgs', TerminalStates SingDone SingDone) ->
       msgs' == NE.toList msgs
+
+-- | dmq-node's own notification server, reading its own mempool, hands out
+-- every message exactly once and in order, however the replies are split.
+prop_mempool_server :: Positive Word16 -> DistinctNEList Int -> Property
+prop_mempool_server (Positive maxMsgs) (DistinctNEList msgs) =
+    received === NE.toList msgs
+  where
+    received = runSimOrThrow $ do
+      mempool <- Mempool.empty id
+      let writer = Mempool.getWriter () id (\_ txs -> pure (Right <$> txs)) (\_ -> pure ()) mempool
+          reader = Mempool.getReader id (const 1) mempool
+      _ <- Mempool.mempoolAddTxs writer (NE.toList msgs)
+      (_, msgs', _) <-
+        connect
+          (localMsgNotificationServerPeer $
+            NtC.localMsgNotificationServer id nullTracer (pure ()) maxMsgs reader)
+          (localMsgNotificationClientPeer $
+            msgNotificationClient nullTracer maxMsgs)
+      pure msgs'
 
 --
 -- Properties using a channel
