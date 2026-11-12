@@ -182,7 +182,11 @@ from the attached node's flat configuration:
 `nix/nixos/dmq-node-service.nix` holds the module with no reference to this
 flake, so it can be imported by path. There `package` defaults to
 `pkgs.dmq-node`, which `overlays.default` adds; set `package` instead to pin
-another build.
+another build. The VM test runs with:
+
+```bash
+> nix build .#checks.x86_64-linux.nixos-dmq-node
+```
 
 ## Developing with Nix
 

@@ -11,6 +11,9 @@ module DMQ.NodeToClient
   , ntcApps
   , ntcHandshakeArguments
   , responders
+  , localMsgSubmissionMiniProtocolNum
+  , localMsgNotificationMiniProtocolNum
+  , localMiniProtocolLimits
   ) where
 
 import Data.ByteString.Lazy (ByteString)
@@ -223,6 +226,19 @@ responders Apps {
 -- shared implementation of tools that can analyse both protocols, e.g.
 -- wireshark plugins.
 --
+localMsgSubmissionMiniProtocolNum :: MiniProtocolNum
+localMsgSubmissionMiniProtocolNum = MiniProtocolNum 14
+
+localMsgNotificationMiniProtocolNum :: MiniProtocolNum
+localMsgNotificationMiniProtocolNum = MiniProtocolNum 15
+
+-- | Limits of both node-to-client mini-protocols.
+localMiniProtocolLimits :: MiniProtocolLimits
+localMiniProtocolLimits =
+  MiniProtocolLimits {
+    maximumIngressQueue = 0xffffffff
+  }
+
 nodeToClientProtocols
   :: Protocols appType ntcAddr bytes m a b
   -> NodeToClientVersion
@@ -240,18 +256,14 @@ nodeToClientProtocols protocols _version _versionData =
         ]
   where
     localMsgSubmission protocol = MiniProtocol {
-        miniProtocolNum    = MiniProtocolNum 14,
+        miniProtocolNum    = localMsgSubmissionMiniProtocolNum,
         miniProtocolStart  = StartOnDemand,
-        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolLimits = localMiniProtocolLimits,
         miniProtocolRun    = protocol
       }
     localMsgNotification protocol = MiniProtocol {
-        miniProtocolNum    = MiniProtocolNum 15,
+        miniProtocolNum    = localMsgNotificationMiniProtocolNum,
         miniProtocolStart  = StartOnDemand,
-        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolLimits = localMiniProtocolLimits,
         miniProtocolRun    = protocol
     }
-    maximumMiniProtocolLimits =
-      MiniProtocolLimits {
-        maximumIngressQueue = 0xffffffff
-      }
