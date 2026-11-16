@@ -224,7 +224,15 @@ runDMQ commandLineConfig = do
                                           -- different nodes; this is not
                                           -- the peer's fault.
                                           SigTooFrequent {} -> return ()
-                                          err               -> throwIO (SigValidationException sigid err)
+                                          err@InvalidSigId             -> throwIO (SigValidationException sigid err)
+                                          err@InvalidKESSignature {}   -> throwIO (SigValidationException sigid err)
+                                          err@InvalidSignatureOCERT {} -> throwIO (SigValidationException sigid err)
+                                          err@InvalidOCertCounter {}   -> throwIO (SigValidationException sigid err)
+                                          err@KESBeforeStartOCERT {}   -> throwIO (SigValidationException sigid err)
+                                          err@KESAfterEndOCERT {}      -> throwIO (SigValidationException sigid err)
+                                          err@SigExpiresAtTooFarInTheFuture {}
+                                                                       -> throwIO (SigValidationException sigid err)
+                                          err@SigResultOther {}        -> throwIO (SigValidationException sigid err)
                                       )
                                       (mempool nodeKernel)
                in ntnApps dmqTracers
