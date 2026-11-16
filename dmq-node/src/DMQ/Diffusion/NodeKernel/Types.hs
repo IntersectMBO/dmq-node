@@ -16,7 +16,6 @@ import Control.Monad.Class.MonadTime.SI
 
 import Data.Aeson qualified as Aeson
 import Data.Map.Strict (Map)
-import Data.OrdPSQ (OrdPSQ)
 import Data.Word
 import System.Random (StdGen)
 
@@ -31,6 +30,7 @@ import Ouroboros.Network.TxSubmission.Inbound.V2
 
 import DMQ.Diffusion.PeerSelection.PeerMetric (PeerMetric)
 import DMQ.Mempool (Mempool (..))
+import DMQ.Protocol.SigSubmission.SigSpacing (SigSpacing)
 import DMQ.Protocol.SigSubmission.Type (PoolId, Sig, SigId)
 
 
@@ -58,7 +58,10 @@ data NodeKernel crypto ntnAddr m =
   , stakePools                :: !(StakePools m)
   , readinessVar              :: !(StrictTVar m Readiness)
   , peerMetric                :: !(PeerMetric m SigId ntnAddr)
-  , lastSigByPoolIdVar        :: !(StrictTVar m (OrdPSQ PoolId Time ()))
+
+    -- | `sigExpiresAt` of recently accepted signatures, see
+    -- `DMQ.Protocol.SigSubmission.SigSpacing`.
+  , sigSpacingVar             :: !(StrictTVar m (SigSpacing PoolId))
   }
 
 data StakePools m = StakePools {
@@ -76,7 +79,7 @@ data StakePools m = StakePools {
     -- First argument is the current time inserted into `PoolValidationCtx`,
     -- other fields are read from share state available in `STM` action.
   , withPoolValidationCtx
-      :: forall a. UTCTime -> Time -> (PoolValidationCtx -> (a, PoolValidationCtx)) ->  STM m a
+      :: forall a. UTCTime -> (PoolValidationCtx -> (a, PoolValidationCtx)) ->  STM m a
 
      -- | provides only those big peers which provide SRV endpoints
      -- as otherwise those are cardano-nodes
@@ -90,29 +93,28 @@ data StakePools m = StakePools {
 
 data PoolValidationCtx =
   PoolValidationCtx {
-      vctxUTCNow          :: !UTCTime
+      vctxUTCNow         :: !UTCTime
       -- ^ current UTC time
-    , vctxNow             :: !Time
-      -- ^ current time
-    , vctxReadiness       :: !Readiness
+    , vctxReadiness      :: !Readiness
       -- ^ if pool validation ctx was initialised by local state query
       -- mini-prototocol
-    , vctxStakeMap        :: !(Map PoolId LedgerQuery.StakeSnapshot)
+    , vctxStakeMap       :: !(Map PoolId LedgerQuery.StakeSnapshot)
       -- ^ for signature validation
-    , vctxOcertMap        :: !(Map PoolId Word64)
+    , vctxOcertMap       :: !(Map PoolId Word64)
       -- ^ ocert counters to check monotonicity
-    , vctxPraosMaxKESEvo  :: !Word64
+    , vctxPraosMaxKESEvo :: !Word64
       -- ^ maximum number of KES iterations (read from the Shelley genesis file)
-    , vctxLastSigByPoolId :: !(OrdPSQ PoolId Time ())
-      -- ^ last valid signature by PoolId, to limit frequency of submitted
-      -- signatures
+    , vctxSigSpacing     :: !(SigSpacing PoolId)
+      -- ^ `sigExpiresAt` of recently accepted signatures, to limit how often
+      -- a pool can issue signatures
     }
   deriving Show
 
 
 newtype ValidationCfg = ValidationCfg {
     vcMinSigDelay :: DiffTime
-    -- ^ minimal delay between signatures created by the same SPO.  It can be
+    -- ^ minimal distance between `sigExpiresAt` of two signatures issued by
+    -- the same pool, see `DMQ.Protocol.SigSubmission.SigSpacing`.  It can be
     -- modified with an internal CLI option.  The default value is
     -- `DMQ.Policy.minSigDelay`.
   }

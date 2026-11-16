@@ -21,7 +21,6 @@ import "contra-tracer" Control.Tracer (nullTracer)
 
 import Data.Function (on)
 import Data.Map.Strict qualified as Map
-import Data.OrdPSQ qualified as OrdPSQ
 import Data.Proxy
 import Data.Sequence (Seq)
 import Data.Sequence qualified as Seq
@@ -69,6 +68,7 @@ import DMQ.Mempool (Mempool (..), MempoolSeq (..), WithIndex (..))
 import DMQ.Mempool qualified as Mempool
 import DMQ.NodeToClient.LocalStateQueryClient
 import DMQ.Policy qualified as Policy
+import DMQ.Protocol.SigSubmission.SigSpacing qualified as SigSpacing
 import DMQ.Protocol.SigSubmission.Type (Sig (sigExpiresAt, sigId), SigId)
 import DMQ.Tracer
 
@@ -98,27 +98,27 @@ newNodeKernel rng ShelleyGenesis {sgMaxKESEvolutions} = do
     stakePoolsVar,
     ledgerBigPeersVar,
     ledgerPeersVar,
-    lastSigByPoolIdVar)
+    sigSpacingVar)
     <- atomically $
     (,,,,,) <$> newTVar NotReady
             <*> newTVar Map.empty
             <*> newTVar Map.empty
             <*> newTVar Nothing
             <*> newEmptyTMVar
-            <*> newTVar OrdPSQ.empty
+            <*> newTVar SigSpacing.empty
 
   let withPoolValidationCtx
-        :: forall a. UTCTime -> Time -> (PoolValidationCtx -> (a, PoolValidationCtx)) -> STM m a
-      withPoolValidationCtx utcNow now f = do
-        ctx <- PoolValidationCtx utcNow now
+        :: forall a. UTCTime -> (PoolValidationCtx -> (a, PoolValidationCtx)) -> STM m a
+      withPoolValidationCtx utcNow f = do
+        ctx <- PoolValidationCtx utcNow
                 <$> readTVar readinessVar
                 <*> readTVar stakePoolsVar
                 <*> readTVar ocertCountersVar
                 <*> pure sgMaxKESEvolutions
-                <*> readTVar lastSigByPoolIdVar
-        let (a, PoolValidationCtx {vctxOcertMap, vctxLastSigByPoolId}) = f ctx
+                <*> readTVar sigSpacingVar
+        let (a, PoolValidationCtx {vctxOcertMap, vctxSigSpacing}) = f ctx
         writeTVar ocertCountersVar vctxOcertMap
-        writeTVar lastSigByPoolIdVar vctxLastSigByPoolId
+        writeTVar sigSpacingVar vctxSigSpacing
         return a
 
       stakePools = StakePools {
@@ -148,7 +148,7 @@ newNodeKernel rng ShelleyGenesis {sgMaxKESEvolutions} = do
                   , readinessVar
                   , stakePools
                   , peerMetric
-                  , lastSigByPoolIdVar
+                  , sigSpacingVar
                   }
 
 

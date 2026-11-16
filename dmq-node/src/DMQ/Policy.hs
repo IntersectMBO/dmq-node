@@ -54,7 +54,11 @@ maxSigBodySize :: SizeInBytes
 maxSigBodySize = 2000
 
 
--- | Minimum delay between signatures created by the same `PoolId`.
+-- | Minimum distance between `sigExpiresAt` of two signatures issued by the
+-- same `PoolId`, see `DMQ.Protocol.SigSubmission.SigSpacing`.
+--
+-- A pool can have at most @maxSigExpiresAtDelay / minSigDelay@ (@30@)
+-- signatures which have not expired.
 --
 minSigDelay :: DiffTime
 minSigDelay = 60

@@ -27,7 +27,6 @@ import Control.Monad.State.Strict qualified as State
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Map.Strict qualified as Map
-import Data.OrdPSQ qualified as OrdPSQ
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 
 import Cardano.Crypto.DSIGN.Class qualified as DSIGN
@@ -45,6 +44,7 @@ import Cardano.Ledger.Keys qualified as Ledger
 import DMQ.Diffusion.NodeKernel (PoolValidationCtx (..), Readiness (..),
            ValidationCfg (..))
 import DMQ.Policy qualified as Policy
+import DMQ.Protocol.SigSubmission.SigSpacing qualified as SigSpacing
 import DMQ.Protocol.SigSubmission.Type
 
 
@@ -121,29 +121,6 @@ validateSig ValidationCfg { vcMinSigDelay } sigs = State.runState (traverse (com
         let posixBound = utcTimeToPOSIXSeconds (Policy.maxSigExpiresAtDelay `addUTCTime` utcNow)
         sigExpiresAt < posixBound ?! SigExpiresAtTooFarInTheFuture
 
-      -- check if the PoolId doesn't forge signatures too frequently
-      (\st -> ( vctxNow st
-              , vctxLastSigByPoolId st
-              ))
-        <$> State.get >>= \(now, lastSigByPoolId) -> do
-        let fn :: Maybe (Time, ())
-               -> (Either DiffTime (), Maybe (Time, ()))
-            fn Nothing
-                = (Right (), Just (now, ()))
-
-            fn a@(Just (lastSeen, _))
-                | sinceLast >= vcMinSigDelay
-                = (Right (), Just (now, ()))
-
-                | otherwise
-                = (Left sinceLast, a)
-              where
-                sinceLast = now `diffTime` lastSeen
-
-            (r, lastSigByPoolId') = OrdPSQ.alter fn poolId lastSigByPoolId
-        r ?!: SigTooFrequent poolId
-        State.modify (\a -> a { vctxLastSigByPoolId = lastSigByPoolId' })
-
       -- TODO: if new cborg version is released, validation of SigId should be
       -- moved to the decoder, right now the decoder only verifies that we
       -- received the right amount of bytes.
@@ -210,6 +187,22 @@ validateSig ValidationCfg { vcMinSigDelay } sigs = State.runState (traverse (com
                 (LBS.toStrict signedBytes)
                 kesSig
          ?!: InvalidKESSignature ocertKESPeriod sigKESPeriod
+
+      --
+      -- verify that the pool does not issue signatures too frequently, see
+      -- `DMQ.Protocol.SigSubmission.SigSpacing`.
+
+      (\st -> (vctxUTCNow st, vctxSigSpacing st)) <$> State.get
+        >>= \(utcNow, sigSpacing) ->
+          case SigSpacing.insert vcMinSigDelay
+                                 (utcTimeToPOSIXSeconds utcNow)
+                                 poolId
+                                 sigExpiresAt
+                                 sigSpacing of
+            Left conflict ->
+              left (SigTooFrequent poolId (realToFrac (abs (sigExpiresAt - conflict))))
+            Right sigSpacing' ->
+              State.modify (\a -> a { vctxSigSpacing = sigSpacing' })
 
       return sig
       where

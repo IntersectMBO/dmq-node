@@ -203,11 +203,10 @@ runDMQ commandLineConfig = do
               let ntnMempoolWriter =
                     Mempool.getWriter SigDuplicate
                                       sigId
-                                      (\(utcNow, now) sigs ->
+                                      (\utcNow sigs ->
                                         withPoolValidationCtx
                                           (stakePools nodeKernel)
                                           utcNow
-                                          now
                                           (validateSig validationCfg sigs)
                                       )
                                       (traverse_ $ \(sigid, reason) -> do
@@ -218,6 +217,13 @@ runDMQ commandLineConfig = do
                                           NotInitialized    -> return ()
                                           PoolNotEligible   -> return ()
                                           UnrecognizedPool  -> return ()
+                                          -- the signature might conflict
+                                          -- with a signature received from
+                                          -- another peer, if the pool sent
+                                          -- conflicting signatures to
+                                          -- different nodes; this is not
+                                          -- the peer's fault.
+                                          SigTooFrequent {} -> return ()
                                           err               -> throwIO (SigValidationException sigid err)
                                       )
                                       (mempool nodeKernel)
@@ -236,11 +242,10 @@ runDMQ commandLineConfig = do
               let ntcMempoolWriter =
                     Mempool.getWriter SigDuplicate
                                       sigId
-                                      (\(utcNow, now) sigs ->
+                                      (\utcNow sigs ->
                                         withPoolValidationCtx
                                           (stakePools nodeKernel)
                                           utcNow
-                                          now
                                           (validateSig validationCfg sigs)
                                       )
                                       (traverse_ $ \(sigid, reason) ->

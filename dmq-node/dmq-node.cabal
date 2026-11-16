@@ -87,6 +87,7 @@ library
     DMQ.Protocol.LocalMsgSubmission.Server
     DMQ.Protocol.LocalMsgSubmission.Type
     DMQ.Protocol.SigSubmission.Codec
+    DMQ.Protocol.SigSubmission.SigSpacing
     DMQ.Protocol.SigSubmission.Type
     DMQ.Protocol.SigSubmission.Validate
     DMQ.Protocol.SigSubmissionV2.Codec
@@ -202,6 +203,7 @@ test-suite dmq-tests
     Test.DMQ.NodeToNode
     Test.DMQ.PeerSelection.PeerMetric
     Test.DMQ.SigSubmission.App
+    Test.DMQ.SigSubmission.SigSpacing
     Test.DMQ.SigSubmission.Types
 
   type: exitcode-stdio-1.0
