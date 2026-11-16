@@ -18,6 +18,7 @@ module DMQ.Protocol.SigSubmission.Codec
   , decodeSigId
   , encodeSigOpCertificate
   , decodeSigOpCertificate
+  , encodeSigPayload
   ) where
 
 import Control.Monad (when)
@@ -156,6 +157,15 @@ codecSigSubmission =
 
 encodeSig :: Sig crypto -> CBOR.Encoding
 encodeSig = Utils.encodeBytes . sigRawBytes
+
+-- | The part of a message the KES key signs, `[body, kesPeriod, expiresAt]`;
+-- `decodeSig` reads it back.
+encodeSigPayload :: SigBody -> KESPeriod -> POSIXTime -> CBOR.Encoding
+encodeSigPayload (SigBody body) (KESPeriod kesPeriod) expiresAt =
+     CBOR.encodeListLen 3
+  <> CBOR.encodeBytes body
+  <> CBOR.encodeWord kesPeriod
+  <> CBOR.encodeWord32 (floor expiresAt)
 
 decodeSig :: forall crypto s.
              ( Crypto crypto
