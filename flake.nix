@@ -41,7 +41,23 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = inputs: inputs.flake-utils.lib.eachDefaultSystem (system:
-    import ./nix/outputs.nix { inherit inputs system; }
-  );
+  outputs = inputs: inputs.flake-utils.lib.eachDefaultSystem
+    (system:
+      import ./nix/outputs.nix { inherit inputs system; }
+    ) // {
+    overlays.default = final: _prev: {
+      inherit (inputs.self.packages.${final.stdenv.hostPlatform.system}) dmq-node;
+    };
+
+    # Defaults `package` directly rather than adding the overlay: NixOS rejects
+    # `nixpkgs.overlays` when `nixpkgs.pkgs` is set from outside.
+    nixosModules = rec {
+      dmq-node = { lib, pkgs, ... }: {
+        imports = [ ./nix/nixos/dmq-node-service.nix ];
+        services.dmq-node.package = lib.mkDefault
+          inputs.self.packages.${pkgs.stdenv.hostPlatform.system}.dmq-node;
+      };
+      default = dmq-node;
+    };
+  };
 }

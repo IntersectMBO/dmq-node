@@ -157,6 +157,33 @@ By default all counters are prefixed with `dmq_node_`, this can be changed with
 }
 ```
 
+### NixOS
+
+The flake exports `nixosModules.dmq-node`, which configures
+`services.dmq-node`. It reads the Shelley genesis and the cardano network magic
+from the attached node's flat configuration:
+
+```nix
+{ config, ... }: {
+  imports = [ inputs.dmq-node.nixosModules.dmq-node ];
+  services.dmq-node = {
+    enable = true;
+    networkMagic = 2912307721;
+    cardanoNodeConfig = config.services.cardano-node.nodeConfig;
+    cardanoNodeSocketPath = config.services.cardano-node.socketPath 0;
+    hostAddr = "0.0.0.0";
+    openFirewall = true;
+    topology = { localRoots = [ ]; publicRoots = [ ]; useLedgerAfterSlot = -1; };
+    traceOptions."" = { backends = [ "Stdout MachineFormat" ]; severity = "Info"; };
+  };
+}
+```
+
+`nix/nixos/dmq-node-service.nix` holds the module with no reference to this
+flake, so it can be imported by path. There `package` defaults to
+`pkgs.dmq-node`, which `overlays.default` adds; set `package` instead to pin
+another build.
+
 ## Developing with Nix
 
 To enter a development shell with all dependencies available, use:
