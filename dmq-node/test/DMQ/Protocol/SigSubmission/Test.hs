@@ -134,12 +134,16 @@ tests =
       [ testGroup "MockCrypto"
         [ testProperty "KES sign verify"     prop_sign_verify_mockcrypto
         , testProperty "validateSig"         prop_validateSig_mockcrypto
+        , testProperty "validateSig forged ocert counter"
+                                             prop_validateSig_forgedOCertCounter_mockcrypto
         , testProperty "validateSig burst"   prop_validateSig_burst_mockcrypto
         ]
 #ifdef STANDARDCRYPTO_TESTS
       , testGroup "StandardCrypto"
         [ testProperty "KES sign verify"     prop_sign_verify_standardcrypto
         , testProperty "validateSig"         prop_validateSig_standardcrypto
+        , testProperty "validateSig forged ocert counter"
+                                             prop_validateSig_forgedOCertCounter_standardcrypto
         , testProperty "validateSig burst"   prop_validateSig_burst_standardcrypto
         ]
 #endif
@@ -1177,6 +1181,69 @@ prop_validateSig_standardcrypto
   -> Validity
   -> Property
 prop_validateSig_standardcrypto = prop_validateSig . getBlind
+
+
+-- | A signature whose operational certificate counter was forged, and is
+-- smaller than the last observed counter of the pool, is rejected with
+-- `InvalidSignatureOCERT`, which disconnects a node-to-node peer, rather than
+-- with `InvalidOCertCounter`, which does not: the counter is checked after the
+-- cryptographic checks.
+--
+prop_validateSig_forgedOCertCounter
+  :: ( Crypto crypto
+     , DSIGN crypto ~ Ledger.Keys.DSIGN
+     , DSIGN.Signable (DSIGN crypto) (KES.OCertSignable crypto)
+     , KES.ContextKES (KES crypto) ~ ()
+     , KES.Signable (KES crypto) ByteString
+     )
+  => WithConstrKES size kesCrypt (Sig crypto)
+  -> Property
+prop_validateSig_forgedOCertCounter constr = ioProperty do
+    sig@Sig { sigColdKey = SigColdKey coldKey,
+              sigOpCertificate = SigOpCertificate ocert@OCert { ocertN },
+              sigExpiresAt
+            } <- runWithConstr constr
+    let poolId = hashKey (VKey coldKey)
+
+        -- a counter which was not signed by the cold key, and which is
+        -- smaller than the last observed counter (`maxBound`)
+        forgedN | ocertN == 0 = 1
+                | otherwise   = ocertN - 1
+
+        forgedSig = sig { sigOpCertificate = SigOpCertificate ocert { ocertN = forgedN } }
+
+        validationCtx = PoolValidationCtx {
+            vctxUTCNow         = posixSecondsToUTCTime sigExpiresAt,
+            vctxReadiness      = Ready,
+            vctxStakeMap       = Map.fromList
+                                   [( poolId
+                                    , StakeSnapshot { ssMarkPool = mempty,
+                                                      ssSetPool  = succ mempty,
+                                                      ssGoPool   = mempty
+                                                    }
+                                    )],
+            vctxOcertMap       = Map.fromList [(poolId, maxBound)],
+            vctxPraosMaxKESEvo = maxKESEvo,
+            vctxSigSpacing     = SigSpacing.empty
+          }
+
+        validationCfg :: ValidationCfg
+        validationCfg = ValidationCfg { vcMinSigDelay = Policy.minSigDelay }
+
+    return . counterexample (show forgedSig)
+           $ case fst (validateSig validationCfg [forgedSig] validationCtx) of
+               [Left (_, InvalidSignatureOCERT {})] -> property True
+               r -> counterexample (show r) False
+
+prop_validateSig_forgedOCertCounter_mockcrypto
+  :: Blind (WithConstrKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (Sig MockCrypto))
+  -> Property
+prop_validateSig_forgedOCertCounter_mockcrypto = prop_validateSig_forgedOCertCounter . getBlind
+
+prop_validateSig_forgedOCertCounter_standardcrypto
+  :: Blind (WithConstrKES (SeedSizeKES (KES StandardCrypto)) (KES StandardCrypto) (Sig StandardCrypto))
+  -> Property
+prop_validateSig_forgedOCertCounter_standardcrypto = prop_validateSig_forgedOCertCounter . getBlind
 
 
 -- | Signatures issued by a single pool: the current time and `sigExpiresAt`

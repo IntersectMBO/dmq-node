@@ -224,10 +224,14 @@ runDMQ commandLineConfig = do
                                           -- different nodes; this is not
                                           -- the peer's fault.
                                           SigTooFrequent {} -> return ()
+                                          -- the peer might have received
+                                          -- the signature before one signed
+                                          -- with a newer operational
+                                          -- certificate.
+                                          InvalidOCertCounter {} -> return ()
                                           err@InvalidSigId             -> throwIO (SigValidationException sigid err)
                                           err@InvalidKESSignature {}   -> throwIO (SigValidationException sigid err)
                                           err@InvalidSignatureOCERT {} -> throwIO (SigValidationException sigid err)
-                                          err@InvalidOCertCounter {}   -> throwIO (SigValidationException sigid err)
                                           err@KESBeforeStartOCERT {}   -> throwIO (SigValidationException sigid err)
                                           err@KESAfterEndOCERT {}      -> throwIO (SigValidationException sigid err)
                                           err@SigExpiresAtTooFarInTheFuture {}

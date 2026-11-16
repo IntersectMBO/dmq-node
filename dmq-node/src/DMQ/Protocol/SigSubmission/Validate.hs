@@ -154,7 +154,28 @@ validateSig ValidationCfg { vcMinSigDelay } sigs = State.runState (traverse (com
           Just ZeroSetSnapshot -> left PoolNotEligible
 
       --
+      -- Cryptographic checks
+      --
+
+      -- validate OCert, which includes verifying its signature
+      validateOCert coldKey ocertVkHot ocert
+         ?!: InvalidSignatureOCERT ocertN sigKESPeriod
+
+      -- validate KES signature of the payload
+      verifyKES () ocertVkHot
+                (unKESPeriod sigKESPeriod - unKESPeriod startKESPeriod)
+                (LBS.toStrict signedBytes)
+                kesSig
+         ?!: InvalidKESSignature ocertKESPeriod sigKESPeriod
+
+      --
       -- verify that our observations of ocertN are strictly monotonic
+      --
+      -- NOTE: the result depends on the order in which signatures signed with
+      -- different operational certificates were received, so
+      -- `InvalidOCertCounter` does not disconnect a node-to-node peer.  It's
+      -- checked after the cryptographic checks, so that a forged signature is
+      -- not rejected with `InvalidOCertCounter`.
       --
 
       vctxOcertMap <$> State.get >>= \ocertMap ->
@@ -172,21 +193,6 @@ validateSig ValidationCfg { vcMinSigDelay } sigs = State.runState (traverse (com
 
             | otherwise
             -> left (InvalidOCertCounter prevOcertN ocertN)
-
-      --
-      -- Cryptographic checks
-      --
-
-      -- validate OCert, which includes verifying its signature
-      validateOCert coldKey ocertVkHot ocert
-         ?!: InvalidSignatureOCERT ocertN sigKESPeriod
-
-      -- validate KES signature of the payload
-      verifyKES () ocertVkHot
-                (unKESPeriod sigKESPeriod - unKESPeriod startKESPeriod)
-                (LBS.toStrict signedBytes)
-                kesSig
-         ?!: InvalidKESSignature ocertKESPeriod sigKESPeriod
 
       --
       -- verify that the pool does not issue signatures too frequently, see
