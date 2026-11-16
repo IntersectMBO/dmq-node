@@ -28,9 +28,9 @@ import Ouroboros.Network.PeerSelection.LedgerPeers.Type (LedgerPeerSnapshot,
            LedgerPeersKind (..))
 import Ouroboros.Network.PeerSharing (PeerSharingAPI, PeerSharingRegistry)
 import Ouroboros.Network.TxSubmission.Inbound.V2
-import Ouroboros.Network.TxSubmission.Mempool.Simple (Mempool (..))
 
 import DMQ.Diffusion.PeerSelection.PeerMetric (PeerMetric)
+import DMQ.Mempool (Mempool (..))
 import DMQ.Protocol.SigSubmission.Type (PoolId, Sig, SigId)
 
 
