@@ -134,6 +134,10 @@ sigSubmissionProtocolLimits = \case
         initiatorLimits = replyLimits,
         responderLimits = requestLimits
       }
+    NodeToNodeV_3 -> DirectionalLimits {
+        initiatorLimits = replyLimits,
+        responderLimits = requestLimits
+      }
   where
     -- A singleton body request takes 38 bytes including the 34-byte SigId.
     -- Separate requests to acknowledge one ID and request another take

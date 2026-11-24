@@ -198,7 +198,8 @@ runDMQ commandLineConfig = do
 
         let sigSize :: Sig StandardCrypto -> SizeInBytes
             sigSize = fromIntegral . BSL.length . sigRawBytes
-            mempoolReader = Mempool.getReader sigId sigSize (mempool nodeKernel)
+            ntcMempoolReader = Mempool.getReader sigId sigSize (mempool nodeKernel)
+            ntnMempoolReader = Mempool.getIndexedReader sigId sigSize (mempool nodeKernel)
             dmqNtNApps =
               let ntnMempoolWriter =
                     Mempool.getWriter SigDuplicate
@@ -241,7 +242,7 @@ runDMQ commandLineConfig = do
                                       (mempool nodeKernel)
                in ntnApps dmqTracers
                           dmqConfig
-                          mempoolReader
+                          ntnMempoolReader
                           ntnMempoolWriter
                           sigSize
                           nodeKernel
@@ -265,7 +266,7 @@ runDMQ commandLineConfig = do
                                       )
                                       (mempool nodeKernel)
                in NtC.ntcApps dmqTracers dmqConfig
-                              mempoolReader ntcMempoolWriter
+                              ntcMempoolReader ntcMempoolWriter
                               NtC.dmqCodecs
             dmqDiffusionArguments =
               diffusionArguments nullTracer

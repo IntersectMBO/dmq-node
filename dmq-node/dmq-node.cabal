@@ -76,6 +76,7 @@ library
     DMQ.NodeToClient.LocalStateQueryClient.Types
     DMQ.NodeToClient.Version
     DMQ.NodeToNode
+    DMQ.NodeToNode.SigSubmission
     DMQ.NodeToNode.Version
     DMQ.Policy
     DMQ.Protocol.LocalMsgNotification.Client
@@ -201,6 +202,7 @@ test-suite dmq-tests
     DMQ.Protocol.SigSubmissionV2.Test
     Test.DMQ.NodeToClient
     Test.DMQ.NodeToNode
+    Test.DMQ.NodeToNode.SigSubmission
     Test.DMQ.PeerSelection.PeerMetric
     Test.DMQ.SigSubmission.App
     Test.DMQ.SigSubmission.SigSpacing
@@ -211,6 +213,7 @@ test-suite dmq-tests
   main-is: Main.hs
   build-depends:
     QuickCheck,
+    aeson,
     base >=4.14 && <4.23,
     bytestring,
     cardano-binary,
@@ -229,6 +232,7 @@ test-suite dmq-tests
     psqueues,
     quickcheck-instances,
     serialise,
+    singletons,
     tasty,
     tasty-quickcheck,
     time,

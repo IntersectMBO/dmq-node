@@ -5,6 +5,7 @@
 {-# LANGUAGE PackageImports      #-}
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module DMQ.NodeToNode
   ( RemoteAddress
@@ -51,11 +52,15 @@ import Network.Mux.Types (Mode (..))
 import Network.Mux.Types qualified as Mx
 import Network.TypedProtocol.Codec (AnnotatedCodec, Codec)
 
+import Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm (hashVerKeyDSIGN))
 import Cardano.KESAgent.KES.Crypto (Crypto (..))
+import Cardano.Ledger.Hashes (ADDRHASH)
 
-import DMQ.Configuration (Configuration)
+import DMQ.Configuration (Configuration, Configuration' (dmqcMinSigDelay),
+           I (..))
 import DMQ.Diffusion.NodeKernel.Types (NodeKernel (..))
 import DMQ.Diffusion.PeerSelection.PeerMetric qualified as PeerMetric
+import DMQ.NodeToNode.SigSubmission qualified as SigSubmission
 import DMQ.NodeToNode.Version
 import DMQ.Policy qualified as Policy
 import DMQ.Protocol.SigSubmission.Codec (byteLimitsSigSubmission,
@@ -65,10 +70,8 @@ import DMQ.Protocol.SigSubmission.Type (NumTxIdsToAck (..), NumTxIdsToReq (..),
 import DMQ.Protocol.SigSubmissionV2.Codec
 import DMQ.Protocol.SigSubmissionV2.Inbound
            (sigSubmissionV2InboundPeerPipelined)
-import DMQ.Protocol.SigSubmissionV2.Outbound (sigSubmissionV2OutboundPeer)
 import DMQ.Protocol.SigSubmissionV2.Type
 import DMQ.SigSubmissionV2.Inbound (sigSubmissionInbound)
-import DMQ.SigSubmissionV2.Outbound (sigSubmissionOutbound)
 import DMQ.Tracer
 
 import Ouroboros.Network.BlockFetch.ClientRegistry (bracketKeepAliveClient)
@@ -112,10 +115,8 @@ import Ouroboros.Network.Protocol.PeerSharing.Codec (byteLimitsPeerSharing,
            codecPeerSharing, timeLimitsPeerSharing)
 import Ouroboros.Network.Protocol.PeerSharing.Server (peerSharingServerPeer)
 import Ouroboros.Network.Protocol.PeerSharing.Type qualified as Protocol
-import Ouroboros.Network.Protocol.TxSubmission2.Client (txSubmissionClientPeer)
 import Ouroboros.Network.Protocol.TxSubmission2.Server
            (txSubmissionServerPeerPipelined)
-import Ouroboros.Network.TxSubmission.Outbound (txSubmissionOutbound)
 
 
 -- TODO: if we add `versionNumber` to `ctx` we could use `RunMiniProtocolCb`.
@@ -162,6 +163,7 @@ data Apps addr m a b =
 ntnApps
   :: forall crypto m ntnAddr ntcAddr idx.
     ( Typeable crypto
+    , DSIGNAlgorithm (DSIGN crypto)
     , Alternative (STM m)
     , MonadAsync m
     , MonadDelay m
@@ -196,7 +198,7 @@ ntnApps
     , keepAliveProtocolTracer
     , peerSharingProtocolTracer
     }
-    _
+    config
     mempoolReader
     mempoolWriter
     sigSize
@@ -238,6 +240,9 @@ ntnApps
     , aPeerSharingServer
     }
   where
+    I minSigDelay = dmqcMinSigDelay config
+    poolKey = hashVerKeyDSIGN @(DSIGN crypto) @ADDRHASH . getSigColdKey . sigColdKey
+
     aSigSubmissionV2Client
       :: NodeToNodeVersion
       -> ExpandedInitiatorContext ntnAddr NoExtraFlags m
@@ -287,7 +292,7 @@ ntnApps
       -> ExpandedInitiatorContext ntnAddr NoExtraFlags m
       -> Channel m BL.ByteString
       -> m ((), Maybe BL.ByteString)
-    aSigSubmissionV1Client version
+    aSigSubmissionV1Client _version
                            ExpandedInitiatorContext {
                              eicConnectionId   = connId,
                              eicControlMessage = controlMessage
@@ -298,12 +303,10 @@ ntnApps
         sigSubmissionSizeLimitsV1
         sigSubmissionTimeLimitsV1
         channel
-        $ txSubmissionClientPeer
-        $ txSubmissionOutbound
+        $ SigSubmission.outboundV1 minSigDelay poolKey
             (Mx.WithBearer connId >$< sigSubmissionOutboundV1Tracer)
             (NumTxIdsToAck . getNumTxIdsToReq $ maxUnacknowledgedTxIds)
             mempoolReader
-            version
             controlMessage
 
 
@@ -319,12 +322,10 @@ ntnApps
          sigSubmissionSizeLimitsV2
          sigSubmissionTimeLimitsV2
          channel
-         $ sigSubmissionV2OutboundPeer
-         $ sigSubmissionOutbound
+         $ SigSubmission.outboundV2 version minSigDelay poolKey
              (Mx.WithBearer connId >$< sigSubmissionOutboundV2Tracer)
              (NumIdsAck . getNumTxIdsToReq $ maxUnacknowledgedTxIds)
              mempoolReader
-             version
 
     aSigSubmissionV1Server
       :: NodeToNodeVersion
@@ -554,7 +555,8 @@ initiatorProtocols limitsAndTimeouts
         InitiatorProtocolOnly
           (MiniProtocolCb (case version of
                              NodeToNodeV_1 -> aSigSubmissionV1Client version
-                             NodeToNodeV_2 -> aSigSubmissionV2Client version))
+                             NodeToNodeV_2 -> aSigSubmissionV2Client version
+                             NodeToNodeV_3 -> aSigSubmissionV2Client version))
     , keepAliveProtocol =
         InitiatorProtocolOnly (MiniProtocolCb (aKeepAliveClient version))
     , peerSharingProtocol =
@@ -563,7 +565,8 @@ initiatorProtocols limitsAndTimeouts
     version
 
 initiatorAndResponderProtocols
-  :: LimitsAndTimeouts crypto addr
+  :: forall crypto addr m a b.
+     LimitsAndTimeouts crypto addr
   -> Apps addr m a b
   -> NodeToNodeVersion
   -> NodeToNodeVersionData
@@ -585,14 +588,9 @@ initiatorAndResponderProtocols limitsAndTimeouts
     (Protocols {
       sigSubmissionProtocol =
         case version of
-          NodeToNodeV_1 ->
-            InitiatorAndResponderProtocol
-              (MiniProtocolCb (aSigSubmissionV1Client version))
-              (MiniProtocolCb (aSigSubmissionV1Server version))
-          NodeToNodeV_2 ->
-            InitiatorAndResponderProtocol
-              (MiniProtocolCb (aSigSubmissionV2Client version))
-              (MiniProtocolCb (aSigSubmissionV2Server version))
+          NodeToNodeV_1 -> sigSubmissionV1
+          NodeToNodeV_2 -> sigSubmissionV2
+          NodeToNodeV_3 -> sigSubmissionV2
     , keepAliveProtocol =
         InitiatorAndResponderProtocol
            (MiniProtocolCb (aKeepAliveClient version))
@@ -603,6 +601,25 @@ initiatorAndResponderProtocols limitsAndTimeouts
            (MiniProtocolCb (aPeerSharingServer version))
     })
     version
+  where
+    sigSubmissionV1,
+      sigSubmissionV2
+        :: RunMiniProtocol
+             InitiatorResponderMode
+             (ExpandedInitiatorContext addr NoExtraFlags m)
+             (ResponderContext addr)
+             BL.ByteString m a b
+
+    sigSubmissionV1 =
+      InitiatorAndResponderProtocol
+        (MiniProtocolCb (aSigSubmissionV1Client version))
+        (MiniProtocolCb (aSigSubmissionV1Server version))
+
+    sigSubmissionV2 =
+      InitiatorAndResponderProtocol
+        (MiniProtocolCb (aSigSubmissionV2Client version))
+        (MiniProtocolCb (aSigSubmissionV2Server version))
+
 
 data Codecs crypto addr m =
   Codecs {

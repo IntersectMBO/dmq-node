@@ -41,6 +41,8 @@ import Ouroboros.Network.OrphanInstances ()
 data NodeToNodeVersion
   = NodeToNodeV_1
   | NodeToNodeV_2
+  | NodeToNodeV_3
+    -- ^ SigSubmissionV2 with support for bursts of signatures from a pool.
   deriving (Eq, Ord, Enum, Bounded, Show, Generic, NFData)
 
 instance PrettyShow NodeToNodeVersion where
@@ -48,6 +50,7 @@ instance PrettyShow NodeToNodeVersion where
 instance Aeson.ToJSON NodeToNodeVersion where
   toJSON NodeToNodeV_1 = Aeson.toJSON (1 :: Int)
   toJSON NodeToNodeV_2 = Aeson.toJSON (2 :: Int)
+  toJSON NodeToNodeV_3 = Aeson.toJSON (3 :: Int)
 instance Aeson.ToJSONKey NodeToNodeVersion where
 
 nodeToNodeVersionCodec :: CodecCBORTerm (Text, Maybe Int) NodeToNodeVersion
@@ -55,9 +58,11 @@ nodeToNodeVersionCodec = CodecCBORTerm { encodeTerm, decodeTerm }
   where
     encodeTerm NodeToNodeV_1 = CBOR.TInt 1
     encodeTerm NodeToNodeV_2 = CBOR.TInt 2
+    encodeTerm NodeToNodeV_3 = CBOR.TInt 3
 
     decodeTerm (CBOR.TInt 1) = Right NodeToNodeV_1
     decodeTerm (CBOR.TInt 2) = Right NodeToNodeV_2
+    decodeTerm (CBOR.TInt 3) = Right NodeToNodeV_3
     decodeTerm (CBOR.TInt n) = Left ( T.pack "decode NodeToNodeVersion: unknown tag: "
                                         <> T.pack (show n)
                                     , Just n
@@ -128,6 +133,7 @@ nodeToNodeCodecCBORTerm =
   \case
     NodeToNodeV_1 -> v1
     NodeToNodeV_2 -> v1
+    NodeToNodeV_3 -> v1
 
   where
     v1 = CodecCBORTerm { encodeTerm = encodeTerm1, decodeTerm = decodeTerm1 }
