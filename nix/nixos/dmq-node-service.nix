@@ -67,6 +67,9 @@ let
         configFile
         "--topology-file"
         topologyFile
+        "+RTS"
+        "-T"
+        "-RTS"
       ]}
     '';
   };
@@ -172,7 +175,10 @@ in
     traceOptions = mkOption {
       inherit (json) type;
       example = {
-        "" = { backends = [ "Stdout MachineFormat" ]; severity = "Info"; };
+        "" = {
+          backends = [ "Stdout MachineFormat" "PrometheusSimple suffix 127.0.0.1 12800" ];
+          severity = "Info";
+        };
         "Net.PeerSelection" = { severity = "Debug"; };
       };
       description = ''
@@ -181,8 +187,9 @@ in
         defaults the others refine. See the Configuration section of
         <https://github.com/IntersectMBO/hermod-tracing/blob/master/trace-dispatcher/doc/trace-dispatcher.md#configuration>.
 
-        Required: dmq-node rejects a configuration file without it. A
-        `PrometheusSimple` backend exposes metrics, prefixed `dmq_node_`.
+        dmq-node requires this option. The example serves DMQ metrics
+        (`dmq_node_*`) and GHC runtime statistics (`rts_gc_*`) at
+        `http://127.0.0.1:12800/metrics`.
       '';
     };
 
