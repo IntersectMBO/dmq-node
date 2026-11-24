@@ -58,8 +58,8 @@ import Text.Read (readMaybe)
 
 import Ouroboros.Network.Diffusion.Configuration (BlockProducerOrRelay (..),
            defaultAcceptedConnectionsLimit, defaultDeadlineChurnInterval,
-           defaultDeadlineTargets, defaultProtocolIdleTimeout,
-           defaultTimeWaitTimeout)
+           defaultDeadlineTargets, defaultMuxCountersInterval,
+           defaultProtocolIdleTimeout, defaultTimeWaitTimeout)
 import Ouroboros.Network.Diffusion.Topology (NetworkTopology (..),
            producerAddresses)
 import Ouroboros.Network.Diffusion.Types qualified as Diffusion
@@ -442,6 +442,7 @@ mkDiffusionConfiguration
       , Diffusion.dcBulkChurnInterval        = churnInterval
       , Diffusion.dcMuxForkPolicy            = Diffusion.noBindForkPolicy -- TODO: Make option flag for responderForkPolicy
       , Diffusion.dcLocalMuxForkPolicy       = Diffusion.noBindForkPolicy -- TODO: Make option flag for responderForkPolicy
+      , Diffusion.dcMuxCountersInterval      = defaultMuxCountersInterval
       , Diffusion.dcEgressPollInterval       = 0                          -- TODO: Make option flag for egress poll interval
       }
   where
