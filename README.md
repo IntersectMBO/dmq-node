@@ -149,8 +149,8 @@ The `Prometheus` requires a different port number than `cardano-node`'s
 }
 ```
 
-By default all counters are prefixed with `dmq_node_`, this can be changed with
-`TraceOptionMetricsPrefix` option in the configuration file, e.g.
+DMQ metrics use the prefix `dmq_node_` by default. To change it, set
+`TraceOptionMetricsPrefix` in the configuration file, e.g.
 ```json
 {
   "TraceOptionMetricsPrefix": "dmq_aggregator."
@@ -174,10 +174,28 @@ from the attached node's flat configuration:
     hostAddr = "0.0.0.0";
     openFirewall = true;
     topology = { localRoots = [ ]; publicRoots = [ ]; useLedgerAfterSlot = -1; };
-    traceOptions."" = { backends = [ "Stdout MachineFormat" ]; severity = "Info"; };
+    traceOptions."" = {
+      backends = [ "Stdout MachineFormat" "PrometheusSimple suffix 127.0.0.1 12800" ];
+      severity = "Info";
+    };
   };
 }
 ```
+
+With this configuration, a Prometheus instance on the same host can scrape
+`127.0.0.1:12800` at its default path, `/metrics`. To inspect it directly:
+
+```sh
+curl -fsS http://127.0.0.1:12800/metrics
+```
+
+`dmq_node_peerSelection_ActivePeers_int` reports the current active peer count.
+For messages received from peers, look for `dmq_node_txSubmission_txsReceived_int`,
+`dmq_node_txSubmission_txsAccepted_int` and `dmq_node_txSubmission_txsRejected_int`.
+The V2 submission worker checks for changed totals every seven seconds, so these
+series can be absent from an early scrape. The NixOS service enables GHC runtime
+statistics with `+RTS -T -RTS`, including `rts_gc_bytes_allocated` and
+`rts_gc_num_gcs`.
 
 `nix/nixos/dmq-node-service.nix` holds the module with no reference to this
 flake, so it can be imported by path. There `package` defaults to
