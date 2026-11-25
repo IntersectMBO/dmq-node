@@ -113,13 +113,13 @@ validateSig ValidationCfg { vcMinSigDelay } sigs = State.runState (traverse (com
                        sigExpiresAt
                      } = do
       -- check if sig expired
-      vctxUTCNow <$> State.get >>= \utcNow -> do
-        let posixNow = utcTimeToPOSIXSeconds utcNow
-        posixNow <= sigExpiresAt ?! SigExpired
+      PoolValidationCtx { vctxUTCNow = utcNow, vctxSigSpacing = sigSpacing } <- State.get
+      let posixNow = utcTimeToPOSIXSeconds utcNow
+      SigSpacing.expiryFloor posixNow sigSpacing <= sigExpiresAt ?! SigExpired
 
-        -- check if sigExpiresAt is not too far in the future
-        let posixBound = utcTimeToPOSIXSeconds (Policy.maxSigExpiresAtDelay `addUTCTime` utcNow)
-        sigExpiresAt < posixBound ?! SigExpiresAtTooFarInTheFuture
+      -- check if sigExpiresAt is not too far in the future
+      let posixBound = utcTimeToPOSIXSeconds (Policy.maxSigExpiresAtDelay `addUTCTime` utcNow)
+      sigExpiresAt < posixBound ?! SigExpiresAtTooFarInTheFuture
 
       -- TODO: if new cborg version is released, validation of SigId should be
       -- moved to the decoder, right now the decoder only verifies that we
@@ -198,17 +198,11 @@ validateSig ValidationCfg { vcMinSigDelay } sigs = State.runState (traverse (com
       -- verify that the pool does not issue signatures too frequently, see
       -- `DMQ.Protocol.SigSubmission.SigSpacing`.
 
-      (\st -> (vctxUTCNow st, vctxSigSpacing st)) <$> State.get
-        >>= \(utcNow, sigSpacing) ->
-          case SigSpacing.insert vcMinSigDelay
-                                 (utcTimeToPOSIXSeconds utcNow)
-                                 poolId
-                                 sigExpiresAt
-                                 sigSpacing of
-            Left conflict ->
-              left (SigTooFrequent poolId (realToFrac (abs (sigExpiresAt - conflict))))
-            Right sigSpacing' ->
-              State.modify (\a -> a { vctxSigSpacing = sigSpacing' })
+      case SigSpacing.insert vcMinSigDelay posixNow poolId sigExpiresAt sigSpacing of
+        Left conflict ->
+          left (SigTooFrequent poolId (realToFrac (abs (sigExpiresAt - conflict))))
+        Right sigSpacing' ->
+          State.modify (\a -> a { vctxSigSpacing = sigSpacing' })
 
       return sig
       where

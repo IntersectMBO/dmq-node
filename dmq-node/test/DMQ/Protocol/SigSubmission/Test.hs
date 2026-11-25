@@ -137,6 +137,7 @@ tests =
         , testProperty "validateSig forged ocert counter"
                                              prop_validateSig_forgedOCertCounter_mockcrypto
         , testProperty "validateSig burst"   prop_validateSig_burst_mockcrypto
+        , testProperty "validateSig with an older clock sample" prop_validateSig_staleTime
         ]
 #ifdef STANDARDCRYPTO_TESTS
       , testGroup "StandardCrypto"
@@ -1345,6 +1346,92 @@ prop_validateSig_burst_standardcrypto
   -> SigsBurst
   -> Property
 prop_validateSig_burst_standardcrypto = prop_validateSig_burst . getBlind
+
+
+-- | An older clock sample must respect the expiry floor committed by a writer
+-- validating a signature from another pool.
+prop_validateSig_staleTime
+  :: Blind (WithConstrKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (CryptoCtx MockCrypto))
+  -> Blind (WithConstrKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (CryptoCtx MockCrypto))
+  -> SigBody
+  -> Property
+prop_validateSig_staleTime (Blind genA) (Blind genB) body = once $ ioProperty do
+    poolA <- runWithConstr genA
+    poolB <- runWithConstr genB
+
+    let start, pruneTime, olderSample :: NominalDiffTime
+        start = 1000
+        pruneTime = start + nominalMinSigDelay
+        olderSample = pruneTime - 1
+
+        sign :: CryptoCtx MockCrypto -> NominalDiffTime -> IO (Sig MockCrypto)
+        sign issuer expiresAt = mkSig <$> signSigRaw issuer body 0 expiresAt
+
+        poolId :: CryptoCtx MockCrypto -> Ledger.Keys.KeyHash kd
+        poolId issuer = hashKey (VKey (deriveVerKeyDSIGN (coldKey issuer)))
+
+        stake = StakeSnapshot {
+          ssMarkPool = mempty,
+          ssSetPool = succ mempty,
+          ssGoPool = mempty
+        }
+        initialCtx = PoolValidationCtx {
+            vctxUTCNow         = posixSecondsToUTCTime start,
+            vctxReadiness      = Ready,
+            vctxStakeMap       = Map.fromList [(poolId poolA, stake), (poolId poolB, stake)],
+            vctxOcertMap       = Map.empty,
+            vctxPraosMaxKESEvo = maxKESEvo,
+            vctxSigSpacing     = SigSpacing.empty
+          }
+
+        validateAt
+          :: NominalDiffTime
+          -> [Sig MockCrypto]
+          -> PoolValidationCtx
+          -> ( [Either (SigId, SigValidationError) (Sig MockCrypto)]
+             , PoolValidationCtx
+             )
+        validateAt time sigs ctx' =
+          validateSig (ValidationCfg Policy.minSigDelay) sigs
+                      ctx' { vctxUTCNow = posixSecondsToUTCTime time }
+
+    firstA   <- sign poolA start                              -- 1000
+    firstB   <- sign poolB pruneTime                          -- 1060
+    nextB    <- sign poolB (pruneTime + nominalMinSigDelay)   -- 1120
+    expiredA <- sign poolA olderSample                        -- 1059
+    atFloorA <- sign poolA pruneTime                          -- 1060
+    tooFarA  <- sign poolA (olderSample + Policy.maxSigExpiresAtDelay)
+                                                              -- 2859
+
+    let (initial, withA) = validateAt start [firstA] initialCtx
+        (newer, pruned) = validateAt pruneTime [firstB] withA
+        -- Accepting a live signature with an older sample must preserve the floor.
+        (older, afterOlderWriter) = validateAt olderSample [nextB] pruned
+        -- A later rejected submission leaves the committed floor at pruneTime.
+        (rejected, afterRejection) = validateAt (pruneTime + 1) [atFloorA] afterOlderWriter
+        (results, _) = validateAt olderSample [expiredA, atFloorA, tooFarA] afterRejection
+
+    return
+      $ poolId poolA /= poolId poolB ==> conjoin
+      [ fmap sigId `map` (initial ++ newer ++ older)
+        ===
+        (Right . sigId) `map` [firstA, firstB, nextB]
+
+      , SigSpacing.toList (vctxSigSpacing pruned)
+        ===
+        [(poolId poolB, [pruneTime])]
+
+      , lefts rejected
+        ===
+        [(sigId atFloorA, SigExpired)]
+
+      , fmap sigId `map` results
+        ===
+        [ Left (sigId expiredA, SigExpired)
+        , Right (sigId atFloorA)
+        , Left (sigId tooFarA, SigExpiresAtTooFarInTheFuture)
+        ]
+      ]
 
 
 -- | Sign & verify a payload with KES keys.

@@ -23,6 +23,7 @@
 module DMQ.Protocol.SigSubmission.SigSpacing
   ( SigSpacing
   , empty
+  , expiryFloor
   , insert
   , toList
   ) where
@@ -43,26 +44,35 @@ import Data.Time.Clock.POSIX (POSIXTime)
 -- * every set is non-empty;
 -- * the priority of a key is the maximum of its set.
 --
-newtype SigSpacing poolId = SigSpacing (OrdPSQ poolId POSIXTime (Set POSIXTime))
+data SigSpacing poolId = SigSpacing
+    !(Maybe POSIXTime) -- latest validation time used to prune the history
+    !(OrdPSQ poolId POSIXTime (Set POSIXTime))
   deriving Show
 
 
 empty :: SigSpacing poolId
-empty = SigSpacing OrdPSQ.empty
+empty = SigSpacing Nothing OrdPSQ.empty
+
+
+-- | Earliest expiry a writer may accept. Its clock sample can predate the
+-- transaction that last pruned the shared history.
+expiryFloor :: POSIXTime -> SigSpacing poolId -> POSIXTime
+expiryFloor sampledNow (SigSpacing lastPrunedAt _) =
+    maybe sampledNow (max sampledNow) lastPrunedAt
 
 
 -- | Record `sigExpiresAt` of a signature issued by @poolId@, unless it is
 -- closer than @minSigDelay@ to `sigExpiresAt` of another signature issued by
 -- the same @poolId@.
 --
--- Values which are not larger than @now - minSigDelay@ are forgotten: they
--- cannot conflict with a signature which has not expired.
+-- The caller checks the expiry against 'expiryFloor' before insertion.
+-- Values at least @minSigDelay@ below that floor can then be forgotten.
 --
 insert :: Ord poolId
        => DiffTime
        -- ^ @minSigDelay@
        -> POSIXTime
-       -- ^ current time
+       -- ^ time sampled by the writer
        -> poolId
        -> POSIXTime
        -- ^ `sigExpiresAt`
@@ -70,7 +80,7 @@ insert :: Ord poolId
        -> Either POSIXTime (SigSpacing poolId)
        -- ^ either `sigExpiresAt` of a conflicting signature or the updated
        -- `SigSpacing`
-insert minSigDelay now poolId expiresAt (SigSpacing psq) =
+insert minSigDelay sampledNow poolId expiresAt spacing@(SigSpacing _ psq) =
     case Set.lookupGT (max horizon (expiresAt - delay)) values of
       Just conflict | conflict < expiresAt + delay -> Left conflict
       _ ->
@@ -83,8 +93,10 @@ insert minSigDelay now poolId expiresAt (SigSpacing psq) =
                     . snd
                     . OrdPSQ.atMostView horizon
                     $ psq
-        in Right (SigSpacing psq')
+        in Right (SigSpacing (Just now) psq')
   where
+    !now = expiryFloor sampledNow spacing
+
     delay :: POSIXTime
     delay = realToFrac minSigDelay
 
@@ -96,11 +108,11 @@ insert minSigDelay now poolId expiresAt (SigSpacing psq) =
     values = maybe Set.empty snd (OrdPSQ.lookup poolId psq)
 
 
--- | All recorded values, in ascending order of keys and values.  Some values
--- not larger than @now - minSigDelay@ might still be present.
+-- | All recorded values, in ascending order of keys and values. Some values
+-- at or below the last pruning cutoff might still be present.
 --
 toList :: SigSpacing key -> [(key, [POSIXTime])]
-toList (SigSpacing psq) =
+toList (SigSpacing _ psq) =
   [ (key, Set.toAscList values)
   | (key, _, values) <- OrdPSQ.toAscList psq
   ]
