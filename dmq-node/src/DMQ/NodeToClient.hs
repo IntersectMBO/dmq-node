@@ -32,6 +32,7 @@ import Network.TypedProtocol.Codec hiding (decode, encode)
 import Network.TypedProtocol.Codec.CBOR qualified as CBOR
 
 import DMQ.Configuration
+import DMQ.Mempool (TxSubmissionMempoolWriter (..))
 import DMQ.NodeToClient.LocalMsgNotification
 import DMQ.NodeToClient.LocalMsgSubmission
 import DMQ.NodeToClient.Version
@@ -54,7 +55,6 @@ import Ouroboros.Network.Protocol.Handshake (HandshakeArguments (..))
 import Ouroboros.Network.Protocol.Handshake.Codec (codecHandshake,
            mkVersionedCodecCBORTerm, noTimeLimitsHandshake)
 import Ouroboros.Network.TxSubmission.Mempool.Reader
-import Ouroboros.Network.TxSubmission.Mempool.Simple
 import Ouroboros.Network.Util.ShowProxy
 
 ntcHandshakeArguments
