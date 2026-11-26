@@ -2,7 +2,10 @@
 
 module DMQ.Policy
   ( sigDecisionPolicy
-  , sigSubmissionIngressLimit
+  , sigSubmissionProtocolLimits
+  , keepAliveProtocolLimits
+  , peerSharingProtocolLimits
+  , localProtocolLimits
   , peerMetricConfiguration
   , maxSigSize
   , minSigBodySize
@@ -21,11 +24,13 @@ import Cardano.Chain.Slotting (EpochSlots (..))
 
 import DMQ.Diffusion.NodeKernel.Types (ValidationCfg (..))
 import DMQ.Diffusion.PeerSelection.PeerMetric (PeerMetricConfiguration (..))
+import DMQ.NodeToNode.Version (NodeToNodeVersion (..))
 import DMQ.Protocol.SigSubmission.Type (NumTxIdsToReq)
 
-import Network.Mux.Types (MiniProtocolLimits (..))
-
 import Ouroboros.Network.Magic (NetworkMagic (..))
+import Ouroboros.Network.Mux (DirectionalLimits (..), MiniProtocolLimits (..),
+           symmetricLimits)
+import Ouroboros.Network.Protocol.Limits (smallByteLimit)
 import Ouroboros.Network.SizeInBytes (SizeInBytes)
 import Ouroboros.Network.TxSubmission.Inbound.V2
 
@@ -73,7 +78,7 @@ defaultValidationCfg = ValidationCfg {
 -- * `sigDecisionPolicy`
 -- * `byteLimitsSigSubmission`,
 -- * `byteLimitsSigSubmissionV2`, and
--- * `sigSubmissionIngressLimit`
+-- * `sigSubmissionProtocolLimits`
 --
 -- NOTE: Since `maxSigsInflight` or `maxSigSize` are used by the codec size
 -- limits and ingress limit, changes might require a new `node-to-node`
@@ -111,19 +116,52 @@ sigDecisionPolicy = TxDecisionPolicy {
   }
 
 
--- | Ingress limit for SigSubmission mini-protocol, derived from
--- `sigDecisionPolicy` (`txsSizeInflightPerPeer`).
---
-sigSubmissionIngressLimit :: MiniProtocolLimits
-sigSubmissionIngressLimit = MiniProtocolLimits {
-    maximumIngressQueue = addMargin (fromIntegral sigSizeInflight)
-  }
-  where
-    TxDecisionPolicy { txsSizeInflightPerPeer = sigSizeInflight }
-      = sigDecisionPolicy
 
-    addMargin :: Int -> Int
-    addMargin = \x -> x + x `div` 10
+-- | V1 delivers signatures to the responder and V2 delivers them to the
+-- initiator. The peer serving signatures receives requests for IDs and bodies.
+sigSubmissionProtocolLimits :: NodeToNodeVersion -> DirectionalLimits
+sigSubmissionProtocolLimits = \case
+    NodeToNodeV_1 -> DirectionalLimits {
+        initiatorLimits = requestLimits,
+        responderLimits = replyLimits
+      }
+    -- `NodeToNodeV_2` swapped the client/server roles
+    NodeToNodeV_2 -> DirectionalLimits {
+        initiatorLimits = replyLimits,
+        responderLimits = requestLimits
+      }
+  where
+    -- A singleton body request takes 38 bytes including the 34-byte SigId.
+    -- Separate requests to acknowledge one ID and request another take
+    -- 5 bytes each. All 132 outstanding IDs fit in 6,336 bytes this way.
+    requestLimits = ingressLimitWithMargin (fromIntegral smallByteLimit)
+
+    -- Allow for all signature bodies in flight from this peer.
+    replyLimits = ingressLimitWithMargin (fromIntegral (txsSizeInflightPerPeer sigDecisionPolicy))
+
+-- | Keep-alive has one small message outstanding in either direction.
+keepAliveProtocolLimits :: DirectionalLimits
+keepAliveProtocolLimits = symmetricLimits (ingressLimitWithMargin 1280)
+
+-- | A peer-sharing reply can list up to 255 peers. Allow four TCP segments
+-- for the reply and one segment plus a margin for the small, unpipelined request.
+peerSharingProtocolLimits :: DirectionalLimits
+peerSharingProtocolLimits = DirectionalLimits {
+    initiatorLimits = MiniProtocolLimits { maximumIngressQueue = 4 * 1440 },
+    responderLimits = ingressLimitWithMargin 1440
+  }
+
+-- | Local socket protocols use a 32-bit byte limit in both directions,
+-- capped at the largest queue size the platform can represent.
+localProtocolLimits :: DirectionalLimits
+localProtocolLimits = symmetricLimits MiniProtocolLimits {
+    maximumIngressQueue = fromInteger (min 0xffffffff (toInteger (maxBound :: Int)))
+  }
+
+ingressLimitWithMargin :: Int -> MiniProtocolLimits
+ingressLimitWithMargin bytes = MiniProtocolLimits {
+    maximumIngressQueue = bytes + bytes `div` 10
+  }
 
 
 peerMetricConfiguration :: PeerMetricConfiguration

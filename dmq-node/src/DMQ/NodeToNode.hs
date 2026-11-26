@@ -84,11 +84,10 @@ import Ouroboros.Network.Handshake.Queryable (Queryable (..))
 import Ouroboros.Network.KeepAlive (KeepAliveInterval (..), keepAliveClient,
            keepAliveServer)
 import Ouroboros.Network.Magic (NetworkMagic (..))
-import Ouroboros.Network.Mux (MiniProtocol (..), MiniProtocolCb (..),
-           MiniProtocolLimits (..), OuroborosBundle,
-           OuroborosBundleWithExpandedCtx, RunMiniProtocol (..),
-           StartOnDemandOrEagerly (..), TemperatureBundle (..),
-           WithProtocolTemperature (..))
+import Ouroboros.Network.Mux (DirectionalLimits, MiniProtocol (..),
+           MiniProtocolCb (..), OuroborosBundle, OuroborosBundleWithExpandedCtx,
+           RunMiniProtocol (..), StartOnDemandOrEagerly (..),
+           TemperatureBundle (..), WithProtocolTemperature (..))
 import Ouroboros.Network.PeerSelection (PeerSharing (..))
 import Ouroboros.Network.PeerSharing (bracketPeerSharingClient,
            peerSharingClient, peerSharingServer)
@@ -494,7 +493,7 @@ nodeToNodeProtocols LimitsAndTimeouts {
                     , keepAliveProtocol
                     , peerSharingProtocol
                     }
-                    _version
+                    version
                     NodeToNodeVersionData {
                       peerSharing
                     }
@@ -505,7 +504,7 @@ nodeToNodeProtocols LimitsAndTimeouts {
         MiniProtocol {
           miniProtocolNum    = sigSubmissionMiniProtocolNum
         , miniProtocolStart  = StartOnDemandAny
-        , miniProtocolLimits = sigSubmissionLimits
+        , miniProtocolLimits = sigSubmissionLimits version
         , miniProtocolRun    = sigSubmissionProtocol
         }
       ])
@@ -635,7 +634,7 @@ data LimitsAndTimeouts crypto addr =
   LimitsAndTimeouts {
     -- sig-submission
     sigSubmissionLimits
-      :: MiniProtocolLimits
+      :: NodeToNodeVersion -> DirectionalLimits
   , sigSubmissionSizeLimitsV1
       :: ProtocolSizeLimits (SigSubmission crypto) BL.ByteString
   , sigSubmissionTimeLimitsV1
@@ -647,7 +646,7 @@ data LimitsAndTimeouts crypto addr =
 
     -- keep-alive
   , keepAliveLimits
-      :: MiniProtocolLimits
+      :: DirectionalLimits
   , keepAliveSizeLimits
       :: ProtocolSizeLimits KeepAlive BL.ByteString
   , keepAliveTimeLimits
@@ -655,7 +654,7 @@ data LimitsAndTimeouts crypto addr =
 
     -- peer sharing
   , peerSharingLimits
-      :: MiniProtocolLimits
+      :: DirectionalLimits
   , peerSharingTimeLimits
       :: ProtocolTimeLimits (Protocol.PeerSharing addr)
   , peerSharingSizeLimits
@@ -665,7 +664,7 @@ data LimitsAndTimeouts crypto addr =
 dmqLimitsAndTimeouts :: LimitsAndTimeouts crypto addr
 dmqLimitsAndTimeouts =
     LimitsAndTimeouts {
-      sigSubmissionLimits = Policy.sigSubmissionIngressLimit
+      sigSubmissionLimits = Policy.sigSubmissionProtocolLimits
 
     , sigSubmissionTimeLimitsV1 = timeLimitsSigSubmission
     , sigSubmissionTimeLimitsV2 = timeLimitsSigSubmissionV2
@@ -673,25 +672,11 @@ dmqLimitsAndTimeouts =
     , sigSubmissionSizeLimitsV1 = byteLimitsSigSubmission size
     , sigSubmissionSizeLimitsV2 = byteLimitsSigSubmissionV2 size
 
-    , keepAliveLimits     =
-        MiniProtocolLimits {
-          -- One small outstanding message.
-          maximumIngressQueue = addSafetyMargin 1280
-        }
-
+    , keepAliveLimits     = Policy.keepAliveProtocolLimits
     , keepAliveTimeLimits = timeLimitsKeepAlive
     , keepAliveSizeLimits = byteLimitsKeepAlive size
 
-    , peerSharingLimits   =
-        MiniProtocolLimits {
-          -- This protocol does not need to be pipelined and a peer can only ask
-          -- for a maximum of 255 peers each time. Hence a reply can have up to
-          -- 255 IP (IPv4 or IPv6) addresses so 255 * 16 = 4080. TCP has an initial
-          -- window size of 4 and a TCP segment is 1440, which gives us 4 * 1440 =
-          -- 5760 bytes to fit into a single RTT. So setting the maximum ingress
-          -- queue to be a single RTT should be enough to cover for CBOR overhead.
-          maximumIngressQueue = 4 * 1440
-        }
+    , peerSharingLimits   = Policy.peerSharingProtocolLimits
     , peerSharingTimeLimits = timeLimitsPeerSharing
     , peerSharingSizeLimits = byteLimitsPeerSharing size
     }
@@ -733,9 +718,3 @@ stdVersionDataNTN networkMagic diffusionMode peerSharing =
 
 _SIG_SUBMISSION_INIT_DELAY :: TxSubmissionInitDelay
 _SIG_SUBMISSION_INIT_DELAY = NoTxSubmissionInitDelay
-
-
--- TODO: this is duplicated code, similar function is in
--- `Cardano.Network.NodeToNode` module.
-addSafetyMargin :: Int -> Int
-addSafetyMargin x = x + x `div` 10

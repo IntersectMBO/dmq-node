@@ -36,6 +36,7 @@ import DMQ.Mempool (TxSubmissionMempoolWriter (..))
 import DMQ.NodeToClient.LocalMsgNotification
 import DMQ.NodeToClient.LocalMsgSubmission
 import DMQ.NodeToClient.Version
+import DMQ.Policy qualified as Policy
 import DMQ.Protocol.LocalMsgNotification.Codec
 import DMQ.Protocol.LocalMsgNotification.Server
 import DMQ.Protocol.LocalMsgNotification.Type
@@ -242,16 +243,12 @@ nodeToClientProtocols protocols _version _versionData =
     localMsgSubmission protocol = MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 14,
         miniProtocolStart  = StartOnDemand,
-        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolLimits = Policy.localProtocolLimits,
         miniProtocolRun    = protocol
       }
     localMsgNotification protocol = MiniProtocol {
         miniProtocolNum    = MiniProtocolNum 15,
         miniProtocolStart  = StartOnDemand,
-        miniProtocolLimits = maximumMiniProtocolLimits,
+        miniProtocolLimits = Policy.localProtocolLimits,
         miniProtocolRun    = protocol
     }
-    maximumMiniProtocolLimits =
-      MiniProtocolLimits {
-        maximumIngressQueue = 0xffffffff
-      }

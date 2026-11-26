@@ -279,6 +279,11 @@ mkDMQTracers ekgStore dmqConfigFilePath = do
     stdoutTrace trForward mbTrEkg
     ["Net", "Mux", "Remote"]
 
+  !dtMuxCountersTracer <- mkLoggingTracer
+    traceConfig configReflection
+    stdoutTrace trForward mbTrEkg
+    ["Net", "Mux", "Counters"]
+
   !dtChannelTracer <- mkLoggingTracer
     traceConfig configReflection
     stdoutTrace trForward mbTrEkg
@@ -401,6 +406,7 @@ mkDMQTracers ekgStore dmqConfigFilePath = do
 
   let dmqDifussionTracers = Diffusion.Tracers {
         Diffusion.dtMuxTracer                         = mkTracer $ Logging.traceWith dtMuxTracer,
+        Diffusion.dtMuxCountersTracer                 = mkTracer $ Logging.traceWith dtMuxCountersTracer,
         Diffusion.dtChannelTracer                     = mkTracer $ Logging.traceWith dtChannelTracer,
         Diffusion.dtBearerTracer                      = mkTracer $ Logging.traceWith dtBearerTracer,
         Diffusion.dtHandshakeTracer                   = mkTracer $ Logging.traceWith dtHandshakeTracer,

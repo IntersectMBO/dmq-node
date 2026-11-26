@@ -254,10 +254,7 @@ withNodeKernel DMQTracers { sigSubmissionLogicTracer,
                   [ Mx.MiniProtocol
                       { Mx.miniProtocolNum = Mx.MiniProtocolNum 7
                       , Mx.miniProtocolStart = Mx.StartEagerly
-                      , Mx.miniProtocolLimits =
-                          Mx.MiniProtocolLimits
-                            { Mx.maximumIngressQueue = 0xffffffff
-                            }
+                      , Mx.miniProtocolLimits = Policy.localProtocolLimits
                       , Mx.miniProtocolRun =
                           Mx.InitiatorProtocolOnly
                             . Mx.mkMiniProtocolCbFromPeerSt
