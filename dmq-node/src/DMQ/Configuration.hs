@@ -222,7 +222,7 @@ defaultConfiguration = Configuration {
       dmqcProtocolIdleTimeout               = I defaultProtocolIdleTimeout,
       dmqcChurnInterval                     = I defaultDeadlineChurnInterval,
       dmqcPeerSharing                       = I PeerSharingEnabled,
-      dmqcLedgerPeers                       = I False,
+      dmqcLedgerPeers                       = I True,
 
       dmqcMinSigDelay                       = I Policy.minSigDelay,
 

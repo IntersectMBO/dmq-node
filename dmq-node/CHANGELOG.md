@@ -34,6 +34,7 @@
 - Define directional mux ingress limits for signature submission and peer sharing in DMQ's policy.
   Signature replies use the larger queue on the V1 responder and the V2 initiator.
 - Trace node-wide mux counters under `Net.Mux.Counters` at the diffusion default interval.
+- LedgerPeers are now enabled by default.
 
 ### Patch
 
