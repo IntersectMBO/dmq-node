@@ -96,6 +96,9 @@ prop_nodeToNodeCodec ntnVersion ntnData =
       CodecCBORTerm { encodeTerm, decodeTerm } = nodeToNodeCodecCBORTerm ntnVersion
 
 
+-- | TODO: this test should generate requests that fill allowed pipelining
+-- depth, use production codec and then check that mux with the current limits
+-- is not overflowing.
 prop_nodeToNodeIngressLimits :: NodeToNodeVersion -> NodeToNodeVersionData -> Property
 prop_nodeToNodeIngressLimits version versionData =
     [ (num, Mux.maximumIngressQueue initiatorLimits, Mux.maximumIngressQueue responderLimits)
