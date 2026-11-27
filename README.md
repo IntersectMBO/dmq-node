@@ -161,24 +161,32 @@ DMQ metrics use the prefix `dmq_node_` by default. To change it, set
 
 The flake exports `nixosModules.dmq-node`, which configures
 `services.dmq-node`. It reads the Shelley genesis and the cardano network magic
-from the attached node's flat configuration:
+from the attached node's flat configuration. dmq-node connects to the node
+socket through the node's group, so that socket must be group-writable; the
+example uses socket activation for this, and the `cardanoNodeSocketGroup`
+option lists the alternatives. In a flake's `nixosSystem`:
 
 ```nix
-{ config, ... }: {
-  imports = [ inputs.dmq-node.nixosModules.dmq-node ];
-  services.dmq-node = {
-    enable = true;
-    networkMagic = 2912307721;
-    cardanoNodeConfig = config.services.cardano-node.nodeConfig;
-    cardanoNodeSocketPath = config.services.cardano-node.socketPath 0;
-    hostAddr = "0.0.0.0";
-    openFirewall = true;
-    topology = { localRoots = [ ]; publicRoots = [ ]; useLedgerAfterSlot = -1; };
-    traceOptions."" = {
-      backends = [ "Stdout MachineFormat" "PrometheusSimple suffix 127.0.0.1 12800" ];
-      severity = "Info";
-    };
-  };
+nixpkgs.lib.nixosSystem {
+  modules = [
+    inputs.dmq-node.nixosModules.dmq-node
+    ({ config, ... }: {
+      services.cardano-node.systemdSocketActivation = true;
+      services.dmq-node = {
+        enable = true;
+        networkMagic = 2912307721;
+        cardanoNodeConfig = config.services.cardano-node.nodeConfig;
+        cardanoNodeSocketPath = config.services.cardano-node.socketPath 0;
+        hostAddr = "0.0.0.0";
+        openFirewall = true;
+        topology = { localRoots = [ ]; publicRoots = [ ]; useLedgerAfterSlot = -1; };
+        traceOptions."" = {
+          backends = [ "Stdout MachineFormat" "PrometheusSimple suffix 127.0.0.1 12800" ];
+          severity = "Info";
+        };
+      };
+    })
+  ];
 }
 ```
 
