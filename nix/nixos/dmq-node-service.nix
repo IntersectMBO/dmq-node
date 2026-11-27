@@ -9,6 +9,8 @@ let
 
   cfg = config.services.dmq-node;
   json = pkgs.formats.json { };
+  # json.type also accepts a path, which json.generate writes as a string.
+  jsonObject = types.attrsOf json.type;
 
   # The unit's only writable path under ProtectSystem = "strict".
   runtimeDirectory = "dmq-node";
@@ -20,14 +22,24 @@ let
     cfg.cardanoNodeConfig.${key} or (throw
       "services.dmq-node.cardanoNodeConfig has no `${key}`; it must be a flat cardano-node config, such as services.cardano-node.nodeConfig or cardanoLib.environments.<env>.nodeConfig");
 
-  shelleyGenesisFile = requiredNodeConfigKey "ShelleyGenesisFile";
+  # cardano-node resolves a relative genesis path against its config file,
+  # whose location an attrset no longer carries.
+  shelleyGenesisFile =
+    let file = requiredNodeConfigKey "ShelleyGenesisFile";
+    in
+    if types.path.check file then file
+    else
+      throw
+        "services.dmq-node.cardanoNodeConfig.ShelleyGenesisFile must be an absolute path, got `${file}`; override it, e.g. `// { ShelleyGenesisFile = ./${file}; }`";
   shelleyGenesis = builtins.fromJSON (builtins.readFile shelleyGenesisFile);
 
   generatedSettings = {
     NetworkMagic = cfg.networkMagic;
     CardanoNetworkMagic = shelleyGenesis.networkMagic;
     ShelleyGenesisFile = "${shelleyGenesisFile}";
-    ShelleyGenesisHash = requiredNodeConfigKey "ShelleyGenesisHash";
+    # Optional for cardano-node and dmq-node alike: without it, neither
+    # verifies the genesis file.
+    ShelleyGenesisHash = cfg.cardanoNodeConfig.ShelleyGenesisHash or null;
     IPv4 = cfg.hostAddr;
     IPv6 = cfg.ipv6HostAddr;
     PortNumber = cfg.port;
@@ -35,6 +47,20 @@ let
     CardanoNodeSocket = cfg.cardanoNodeSocketPath;
     TraceOptions = cfg.traceOptions;
   };
+
+  # Sandbox settings the unit enables, with the directories each one hides.
+  sandboxHides = {
+    PrivateTmp = [ "/tmp/" "/var/tmp/" ];
+    ProtectHome = [ "/home/" "/root/" "/run/user/" ];
+  };
+  hiddenSocketDirs = lib.filter
+    (dir: lib.hasPrefix dir cfg.cardanoNodeSocketPath)
+    (lib.concatLists (lib.attrValues sandboxHides));
+
+  # Ports below 1024 need the capability under the kernel's default
+  # ip_unprivileged_port_start. A string, not a list: NixOS writes no line for
+  # an empty list, while an empty assignment is systemd's empty set.
+  capabilities = lib.optionalString (cfg.port < 1024) "CAP_NET_BIND_SERVICE";
 
   duplicatedKeys = lib.intersectLists
     (lib.attrNames generatedSettings)
@@ -49,15 +75,23 @@ let
   # its ledger replay is done (hours on mainnet). Waiting here, as the main
   # process, keeps the unit active and out of systemd's start limits.
   # Connecting, not just testing for the file: a stopped node leaves its socket
-  # file behind.
+  # file behind. Connecting needs write permission, which no wait grants, so a
+  # socket we cannot write fails the start instead.
   dmqNode = pkgs.writeShellApplication {
     name = "dmq-node-when-cardano-node-listens";
     runtimeInputs = [ pkgs.socat ];
     text = ''
       socket=${lib.escapeShellArg cfg.cardanoNodeSocketPath}
-      if ! socat -u /dev/null "UNIX-CONNECT:$socket" 2>/dev/null; then
+      connect() {
+        if [ -S "$socket" ] && [ ! -w "$socket" ]; then
+          echo "$socket is not writable by group ${cfg.cardanoNodeSocketGroup}; see services.dmq-node.cardanoNodeSocketGroup" >&2
+          exit 1
+        fi
+        socat -u /dev/null "UNIX-CONNECT:$socket" 2>/dev/null
+      }
+      if ! connect; then
         echo "Waiting for cardano-node to listen on $socket ..."
-        until socat -u /dev/null "UNIX-CONNECT:$socket" 2>/dev/null; do
+        until connect; do
           sleep 5
         done
       fi
@@ -81,7 +115,7 @@ in
     package = mkPackageOption pkgs "dmq-node" { };
 
     networkMagic = mkOption {
-      type = types.ints.unsigned;
+      type = types.ints.u32;
       description = "Network magic of the DMQ network (CIP-137); mainnet is 2912307721.";
     };
 
@@ -90,11 +124,17 @@ in
       example = lib.literalExpression "config.services.cardano-node.nodeConfig";
       description = ''
         The flat cardano-node configuration of the node this DMQ node attaches
-        to. `ShelleyGenesisFile` and `ShelleyGenesisHash` are read from it, and
-        the cardano network magic is read from that genesis file.
+        to. `ShelleyGenesisFile` and, if present, `ShelleyGenesisHash` are read
+        from it, and the cardano network magic is read from that genesis file.
 
         cardano-node keeps this attrset flat under both `configFormat` dialects
         and envelopes it only when writing its config file.
+
+        `services.cardano-node.nodeConfig` is the base configuration only. If
+        the node overrides its genesis through `extraNodeConfig` or
+        `extraNodeInstanceConfig`, pass the merged attrset instead:
+        `lib.recursiveUpdate (lib.recursiveUpdate nodeConfig extraNodeConfig) (extraNodeInstanceConfig 0)`.
+        A `nodeConfigFile` replaces all three.
       '';
     };
 
@@ -115,6 +155,15 @@ in
         Group owning the cardano-node socket; the service joins it as a
         supplementary group to connect. The default is the group that
         cardano-node's NixOS module runs as, so its socket has that group.
+
+        Connecting needs the socket to be group-writable, which it is not by
+        default (mode 0755). Make it so on the cardano-node side with one of:
+        - `services.cardano-node.systemdSocketActivation = true`
+          (socket mode 0660 with `services.cardano-node.socketGroup`);
+        - `services.cardano-node.shareNodeSocket = true` under cardano-parts;
+        - `systemd.services.cardano-node.serviceConfig.UMask = "0007"`.
+
+        The service fails to start while the socket is not writable.
       '';
     };
 
@@ -149,7 +198,7 @@ in
     };
 
     topology = mkOption {
-      inherit (json) type;
+      type = jsonObject;
       example = {
         localRoots = [{
           accessPoints = [{ address = "dmq.example.org"; port = 3141; }];
@@ -163,6 +212,7 @@ in
       description = ''
         Peers to connect to, in cardano-node's topology syntax:
         <https://developers.cardano.org/docs/get-started/infrastructure/node/topology/>.
+        To use a topology file, pass `lib.importJSON ./topology.json`.
 
         The access points are other dmq-nodes (port 3141 by default), not
         cardano-nodes. `bootstrapPeers` and `peerSnapshotFile` are not
@@ -173,7 +223,7 @@ in
     };
 
     traceOptions = mkOption {
-      inherit (json) type;
+      type = jsonObject;
       example = {
         "" = {
           backends = [ "Stdout MachineFormat" "PrometheusSimple suffix 127.0.0.1 12800" ];
@@ -219,7 +269,7 @@ in
     };
 
     extraSettings = mkOption {
-      inherit (json) type;
+      type = jsonObject;
       default = { };
       example = { LedgerPeers = true; PeerSharing = false; };
       description = ''
@@ -234,6 +284,10 @@ in
       {
         assertion = cfg.hostAddr != null || cfg.ipv6HostAddr != null;
         message = "services.dmq-node: set hostAddr, ipv6HostAddr or both.";
+      }
+      {
+        assertion = hiddenSocketDirs == [ ];
+        message = "services.dmq-node.cardanoNodeSocketPath is under ${toString hiddenSocketDirs}, which the service's sandbox hides; move the cardano-node socket, e.g. to /run/cardano-node/node.socket.";
       }
       {
         assertion = duplicatedKeys == [ ];
@@ -266,7 +320,7 @@ in
       # dmq-node failed after a few node restarts.
       startLimitIntervalSec = 0;
 
-      serviceConfig = {
+      serviceConfig = lib.mapAttrs (_: _: true) sandboxHides // {
         ExecStart = lib.getExe dmqNode;
         Restart = "always";
         RestartSec = "10s";
@@ -275,14 +329,14 @@ in
         Group = cfg.group;
         SupplementaryGroups = [ cfg.cardanoNodeSocketGroup ];
         NoNewPrivileges = true;
+        AmbientCapabilities = capabilities;
+        CapabilityBoundingSet = capabilities;
         RuntimeDirectory = runtimeDirectory;
         RuntimeDirectoryMode = "0750";
         # The node-to-client socket must be group-writable for clients.
         UMask = "0007";
 
         ProtectSystem = "strict";
-        ProtectHome = true;
-        PrivateTmp = true;
         PrivateDevices = true;
         ProtectKernelTunables = true;
         ProtectKernelModules = true;
