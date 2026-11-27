@@ -11,6 +11,8 @@ module DMQ.NodeToClient
   , ntcApps
   , ntcHandshakeArguments
   , responders
+  , localMsgSubmissionMiniProtocolNum
+  , localMsgNotificationMiniProtocolNum
   ) where
 
 import Data.ByteString.Lazy (ByteString)
@@ -224,6 +226,12 @@ responders Apps {
 -- shared implementation of tools that can analyse both protocols, e.g.
 -- wireshark plugins.
 --
+localMsgSubmissionMiniProtocolNum :: MiniProtocolNum
+localMsgSubmissionMiniProtocolNum = MiniProtocolNum 14
+
+localMsgNotificationMiniProtocolNum :: MiniProtocolNum
+localMsgNotificationMiniProtocolNum = MiniProtocolNum 15
+
 nodeToClientProtocols
   :: Protocols appType ntcAddr bytes m a b
   -> NodeToClientVersion
@@ -241,13 +249,13 @@ nodeToClientProtocols protocols _version _versionData =
         ]
   where
     localMsgSubmission protocol = MiniProtocol {
-        miniProtocolNum    = MiniProtocolNum 14,
+        miniProtocolNum    = localMsgSubmissionMiniProtocolNum,
         miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = Policy.localProtocolLimits,
         miniProtocolRun    = protocol
       }
     localMsgNotification protocol = MiniProtocol {
-        miniProtocolNum    = MiniProtocolNum 15,
+        miniProtocolNum    = localMsgNotificationMiniProtocolNum,
         miniProtocolStart  = StartOnDemand,
         miniProtocolLimits = Policy.localProtocolLimits,
         miniProtocolRun    = protocol
