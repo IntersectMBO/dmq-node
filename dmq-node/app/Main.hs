@@ -198,16 +198,16 @@ runDMQ commandLineConfig = do
 
         let sigSize :: Sig StandardCrypto -> SizeInBytes
             sigSize = fromIntegral . BSL.length . sigRawBytes
-            mempoolReader = Mempool.getReader sigId sigSize (mempool nodeKernel)
+            ntcMempoolReader = Mempool.getReader sigId sigSize (mempool nodeKernel)
+            ntnMempoolReader = Mempool.getIndexedReader sigId sigSize (mempool nodeKernel)
             dmqNtNApps =
               let ntnMempoolWriter =
                     Mempool.getWriter SigDuplicate
                                       sigId
-                                      (\(utcNow, now) sigs ->
+                                      (\utcNow sigs ->
                                         withPoolValidationCtx
                                           (stakePools nodeKernel)
                                           utcNow
-                                          now
                                           (validateSig validationCfg sigs)
                                       )
                                       (traverse_ $ \(sigid, reason) -> do
@@ -218,12 +218,31 @@ runDMQ commandLineConfig = do
                                           NotInitialized    -> return ()
                                           PoolNotEligible   -> return ()
                                           UnrecognizedPool  -> return ()
-                                          err               -> throwIO (SigValidationException sigid err)
+                                          -- the signature might conflict
+                                          -- with a signature received from
+                                          -- another peer, if the pool sent
+                                          -- conflicting signatures to
+                                          -- different nodes; this is not
+                                          -- the peer's fault.
+                                          SigTooFrequent {} -> return ()
+                                          -- the peer might have received
+                                          -- the signature before one signed
+                                          -- with a newer operational
+                                          -- certificate.
+                                          InvalidOCertCounter {} -> return ()
+                                          err@InvalidSigId             -> throwIO (SigValidationException sigid err)
+                                          err@InvalidKESSignature {}   -> throwIO (SigValidationException sigid err)
+                                          err@InvalidSignatureOCERT {} -> throwIO (SigValidationException sigid err)
+                                          err@KESBeforeStartOCERT {}   -> throwIO (SigValidationException sigid err)
+                                          err@KESAfterEndOCERT {}      -> throwIO (SigValidationException sigid err)
+                                          err@SigExpiresAtTooFarInTheFuture {}
+                                                                       -> throwIO (SigValidationException sigid err)
+                                          err@SigResultOther {}        -> throwIO (SigValidationException sigid err)
                                       )
                                       (mempool nodeKernel)
                in ntnApps dmqTracers
                           dmqConfig
-                          mempoolReader
+                          ntnMempoolReader
                           ntnMempoolWriter
                           sigSize
                           nodeKernel
@@ -236,11 +255,10 @@ runDMQ commandLineConfig = do
               let ntcMempoolWriter =
                     Mempool.getWriter SigDuplicate
                                       sigId
-                                      (\(utcNow, now) sigs ->
+                                      (\utcNow sigs ->
                                         withPoolValidationCtx
                                           (stakePools nodeKernel)
                                           utcNow
-                                          now
                                           (validateSig validationCfg sigs)
                                       )
                                       (traverse_ $ \(sigid, reason) ->
@@ -248,7 +266,7 @@ runDMQ commandLineConfig = do
                                       )
                                       (mempool nodeKernel)
                in NtC.ntcApps dmqTracers dmqConfig
-                              mempoolReader ntcMempoolWriter
+                              ntcMempoolReader ntcMempoolWriter
                               NtC.dmqCodecs
             dmqDiffusionArguments =
               diffusionArguments nullTracer

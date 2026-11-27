@@ -137,7 +137,8 @@ data Configuration' f =
     dmqcTargetOfEstablishedBigLedgerPeers :: f Int,
     dmqcTargetOfActiveBigLedgerPeers      :: f Int,
 
-    -- | Minimal delay between signatures from the same peer.
+    -- | Minimal distance between `sigExpiresAt` of two signatures issued by
+    -- the same pool, see `DMQ.Protocol.SigSubmission.SigSpacing`.
     --
     dmqcMinSigDelay                       :: f DiffTime,
 
@@ -221,7 +222,7 @@ defaultConfiguration = Configuration {
       dmqcProtocolIdleTimeout               = I defaultProtocolIdleTimeout,
       dmqcChurnInterval                     = I defaultDeadlineChurnInterval,
       dmqcPeerSharing                       = I PeerSharingEnabled,
-      dmqcLedgerPeers                       = I False,
+      dmqcLedgerPeers                       = I True,
 
       dmqcMinSigDelay                       = I Policy.minSigDelay,
 

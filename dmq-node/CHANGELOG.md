@@ -2,6 +2,62 @@
 
 <!-- scriv-insert-here -->
 
+<a id='changelog-0.8.0.0'></a>
+## 0.8.0.0 -- 2026-11-27
+
+### Breaking
+
+- Signatures issued by the same pool are rate limited by their `sigExpiresAt`
+  rather than by the time they were received: `sigExpiresAt` of any two
+  signatures of a pool must be at least `minSigDelay` apart
+  (`DMQ.Protocol.SigSubmission.SigSpacing`).  A burst of well-spaced signatures
+  passes the spacing check in any order if none of its signed expiries conflicts
+  with the receiver's history for that pool.  A node can still reject a
+  signature whose OCert counter is below one it already accepted.
+  Previously a burst of signatures which accumulated in a node's mempool was
+  rejected with `SigTooFrequent` by its peers, which disconnected them
+  (issue #82).
+- `NodeToNodeV_3` supports sending these bursts over `SigSubmissionV2`.
+  On V1 and V2 connections, the sender waits `minSigDelay` after the peer
+  acknowledges a signature ID before announcing another from the same pool.
+  Upgraded nodes apply the same signature validation rules on every connection.
+- `SigTooFrequent` is checked after the cryptographic checks, and it no
+  longer disconnects a node-to-node peer: the pool might have sent conflicting
+  signatures to different nodes, which is not the peer's fault.
+- `PoolValidationCtx`: removed `vctxNow`, `vctxLastSigByPoolId` was replaced
+  with `vctxSigSpacing`; `withPoolValidationCtx` takes only `UTCTime`.
+- `NodeKernel`: `lastSigByPoolIdVar` was replaced with `sigSpacingVar`.
+- `DMQ.Mempool` re-exports `getWriter` from `ouroboros-network`.
+
+### Non-Breaking
+
+- Define directional mux ingress limits for signature submission and peer sharing in DMQ's policy.
+  Signature replies use the larger queue on the V1 responder and the V2 initiator.
+- Trace node-wide mux counters under `Net.Mux.Counters` at the diffusion default interval.
+- LedgerPeers are now enabled by default.
+
+### Patch
+
+- Updated `ouroboros-consensus` to version `5.1.0.1`.
+
+- Updated `ouroboros-consensus` to version `5.2`, `ouroboros-network` to version `2.0` and `network-mux` to version `1.0`.
+
+- The first sig a node accepted was never diffused nor delivered over
+  `LocalMsgNotification`: `Mempool.empty` gave it index -1, the same as
+  `mempoolZeroIdx`. The mempool now starts at index 0.
+- `LocalMsgNotification` sent messages again on the next request: the server
+  kept the index of the first message of a reply, not of the last.
+
+- `InvalidOCertCounter` no longer disconnects a node-to-node peer: whether it
+  fails depends on the order in which a node received signatures signed with
+  different operational certificates, so the peer might have accepted the
+  signature legitimately.  The counter is now checked after the cryptographic
+  checks, so a forged signature is still rejected with an error which
+  disconnects the peer.
+
+- Update to `ouroboros-network-2.1.0.0`, `cardano-diffusion-1.4.0.0`,
+  `network-mux-1.1.0.0` and the compatible `ouroboros-consensus-5.4.0.1` revision.
+
 <a id='changelog-0.7.2.1'></a>
 ## 0.7.2.1 -- 2026-10-12
 

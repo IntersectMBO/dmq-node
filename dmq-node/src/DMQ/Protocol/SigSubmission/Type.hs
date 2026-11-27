@@ -347,6 +347,9 @@ data SigValidationError =
   | SigExpiresAtTooFarInTheFuture
   | SigResultOther Text
   | SigTooFrequent PoolId DiffTime
+  -- ^ The pool issued another signature whose `sigExpiresAt` is closer than
+  -- `DMQ.Policy.minSigDelay`; `DiffTime` is the distance between the two
+  -- `sigExpiresAt` values.  See `DMQ.Protocol.SigSubmission.SigSpacing`.
   deriving (Eq, Show)
 
 instance ShowProxy SigValidationError where

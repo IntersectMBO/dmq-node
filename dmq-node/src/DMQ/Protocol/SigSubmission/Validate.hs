@@ -27,7 +27,6 @@ import Control.Monad.State.Strict qualified as State
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Map.Strict qualified as Map
-import Data.OrdPSQ qualified as OrdPSQ
 import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds)
 
 import Cardano.Crypto.DSIGN.Class qualified as DSIGN
@@ -45,6 +44,7 @@ import Cardano.Ledger.Keys qualified as Ledger
 import DMQ.Diffusion.NodeKernel (PoolValidationCtx (..), Readiness (..),
            ValidationCfg (..))
 import DMQ.Policy qualified as Policy
+import DMQ.Protocol.SigSubmission.SigSpacing qualified as SigSpacing
 import DMQ.Protocol.SigSubmission.Type
 
 
@@ -113,36 +113,13 @@ validateSig ValidationCfg { vcMinSigDelay } sigs = State.runState (traverse (com
                        sigExpiresAt
                      } = do
       -- check if sig expired
-      vctxUTCNow <$> State.get >>= \utcNow -> do
-        let posixNow = utcTimeToPOSIXSeconds utcNow
-        posixNow <= sigExpiresAt ?! SigExpired
+      PoolValidationCtx { vctxUTCNow = utcNow, vctxSigSpacing = sigSpacing } <- State.get
+      let posixNow = utcTimeToPOSIXSeconds utcNow
+      SigSpacing.expiryFloor posixNow sigSpacing <= sigExpiresAt ?! SigExpired
 
-        -- check if sigExpiresAt is not too far in the future
-        let posixBound = utcTimeToPOSIXSeconds (Policy.maxSigExpiresAtDelay `addUTCTime` utcNow)
-        sigExpiresAt < posixBound ?! SigExpiresAtTooFarInTheFuture
-
-      -- check if the PoolId doesn't forge signatures too frequently
-      (\st -> ( vctxNow st
-              , vctxLastSigByPoolId st
-              ))
-        <$> State.get >>= \(now, lastSigByPoolId) -> do
-        let fn :: Maybe (Time, ())
-               -> (Either DiffTime (), Maybe (Time, ()))
-            fn Nothing
-                = (Right (), Just (now, ()))
-
-            fn a@(Just (lastSeen, _))
-                | sinceLast >= vcMinSigDelay
-                = (Right (), Just (now, ()))
-
-                | otherwise
-                = (Left sinceLast, a)
-              where
-                sinceLast = now `diffTime` lastSeen
-
-            (r, lastSigByPoolId') = OrdPSQ.alter fn poolId lastSigByPoolId
-        r ?!: SigTooFrequent poolId
-        State.modify (\a -> a { vctxLastSigByPoolId = lastSigByPoolId' })
+      -- check if sigExpiresAt is not too far in the future
+      let posixBound = utcTimeToPOSIXSeconds (Policy.maxSigExpiresAtDelay `addUTCTime` utcNow)
+      sigExpiresAt < posixBound ?! SigExpiresAtTooFarInTheFuture
 
       -- TODO: if new cborg version is released, validation of SigId should be
       -- moved to the decoder, right now the decoder only verifies that we
@@ -177,7 +154,28 @@ validateSig ValidationCfg { vcMinSigDelay } sigs = State.runState (traverse (com
           Just ZeroSetSnapshot -> left PoolNotEligible
 
       --
+      -- Cryptographic checks
+      --
+
+      -- validate OCert, which includes verifying its signature
+      validateOCert coldKey ocertVkHot ocert
+         ?!: InvalidSignatureOCERT ocertN sigKESPeriod
+
+      -- validate KES signature of the payload
+      verifyKES () ocertVkHot
+                (unKESPeriod sigKESPeriod - unKESPeriod startKESPeriod)
+                (LBS.toStrict signedBytes)
+                kesSig
+         ?!: InvalidKESSignature ocertKESPeriod sigKESPeriod
+
+      --
       -- verify that our observations of ocertN are strictly monotonic
+      --
+      -- NOTE: the result depends on the order in which signatures signed with
+      -- different operational certificates were received, so
+      -- `InvalidOCertCounter` does not disconnect a node-to-node peer.  It's
+      -- checked after the cryptographic checks, so that a forged signature is
+      -- not rejected with `InvalidOCertCounter`.
       --
 
       vctxOcertMap <$> State.get >>= \ocertMap ->
@@ -197,19 +195,14 @@ validateSig ValidationCfg { vcMinSigDelay } sigs = State.runState (traverse (com
             -> left (InvalidOCertCounter prevOcertN ocertN)
 
       --
-      -- Cryptographic checks
-      --
+      -- verify that the pool does not issue signatures too frequently, see
+      -- `DMQ.Protocol.SigSubmission.SigSpacing`.
 
-      -- validate OCert, which includes verifying its signature
-      validateOCert coldKey ocertVkHot ocert
-         ?!: InvalidSignatureOCERT ocertN sigKESPeriod
-
-      -- validate KES signature of the payload
-      verifyKES () ocertVkHot
-                (unKESPeriod sigKESPeriod - unKESPeriod startKESPeriod)
-                (LBS.toStrict signedBytes)
-                kesSig
-         ?!: InvalidKESSignature ocertKESPeriod sigKESPeriod
+      case SigSpacing.insert vcMinSigDelay posixNow poolId sigExpiresAt sigSpacing of
+        Left conflict ->
+          left (SigTooFrequent poolId (realToFrac (abs (sigExpiresAt - conflict))))
+        Right sigSpacing' ->
+          State.modify (\a -> a { vctxSigSpacing = sigSpacing' })
 
       return sig
       where

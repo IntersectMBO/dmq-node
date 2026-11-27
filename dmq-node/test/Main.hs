@@ -8,6 +8,7 @@ import Test.DMQ.NodeToClient qualified
 import Test.DMQ.NodeToNode qualified
 import Test.DMQ.PeerSelection.PeerMetric qualified
 import Test.DMQ.SigSubmission.App qualified
+import Test.DMQ.SigSubmission.SigSpacing qualified
 
 import DMQ.Protocol.LocalMsgNotification.Test qualified
 import DMQ.Protocol.LocalMsgSubmission.Test qualified
@@ -30,6 +31,7 @@ tests =
   , Test.DMQ.NodeToNode.tests
   , Test.DMQ.PeerSelection.PeerMetric.tests
   , Test.DMQ.SigSubmission.App.tests
+  , Test.DMQ.SigSubmission.SigSpacing.tests
 
     -- protocols
   , DMQ.Protocol.SigSubmission.Test.tests

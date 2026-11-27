@@ -1,18 +1,32 @@
 {-# LANGUAGE NamedFieldPuns     #-}
 {-# LANGUAGE NumericUnderscores #-}
+{-# LANGUAGE OverloadedStrings  #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module Test.DMQ.NodeToNode (tests) where
 
+import Codec.CBOR.Term qualified as CBOR
+import Control.Monad.Class.MonadAsync (concurrently)
+import Control.Monad.IOSim (IOSim, runSimOrThrow)
+import Control.Tracer (nullTracer)
+import Data.Aeson qualified as Aeson
 import Data.Foldable (fold)
 
+import Ouroboros.Network.Channel (createConnectedChannels)
 import Ouroboros.Network.CodecCBORTerm
 import Ouroboros.Network.DiffusionMode
+import Ouroboros.Network.Driver.Simple (runPeer)
 import Ouroboros.Network.Magic (NetworkMagic (..))
 import Ouroboros.Network.Mux qualified as Mux
 import Ouroboros.Network.PeerSelection.PeerSharing (PeerSharing (..))
+import Ouroboros.Network.Protocol.Handshake (Acceptable (acceptableVersion),
+           HandshakeResult (..), codecHandshake, combineVersions,
+           simpleSingletonVersions)
+import Ouroboros.Network.Protocol.Handshake.Client (handshakeClientPeer)
+import Ouroboros.Network.Protocol.Handshake.Server (handshakeServerPeer)
 
 import DMQ.NodeToNode
+import Test.DMQ.NodeToNode.SigSubmission qualified as SigSubmission
 
 import Test.QuickCheck
 import Test.Tasty (TestTree, testGroup)
@@ -24,6 +38,8 @@ tests = testGroup "DMQ.Network.NodeToNode"
     [ testProperty "nodeToNodeVersionCodec"  prop_nodeToNodeVersionCodec
     , testProperty "nodeToNodeCodecCBORTerm" prop_nodeToNodeCodec
     , testProperty "mini-protocol ingress limits" prop_nodeToNodeIngressLimits
+    , testProperty "negotiates the highest common version" prop_handshake
+    , SigSubmission.tests
     ]
 
 instance Arbitrary NodeToNodeVersion where
@@ -46,26 +62,43 @@ instance Arbitrary NodeToNodeVersionData where
         <*> arbitrary
 
 
-prop_nodeToNodeVersionCodec :: NodeToNodeVersion
-                            -> Bool
-prop_nodeToNodeVersionCodec version =
-    case decodeTerm (encodeTerm version) of
-        Right version' -> version == version'
-        Left {}        -> False
+prop_nodeToNodeVersionCodec :: Property
+prop_nodeToNodeVersionCodec = once $ conjoin
+    [ counterexample (show version) $ conjoin
+        [ encodeTerm version
+          ===
+          CBOR.TInt tag
+
+        , decodeTerm (CBOR.TInt tag)
+          ===
+          Right version
+
+        , Aeson.toJSON version
+          ===
+          Aeson.toJSON tag
+        ]
+    | version <- [minBound..maxBound]
+    , let tag = versionTag version
+    ]
   where
-      CodecCBORTerm { encodeTerm, decodeTerm } = nodeToNodeVersionCodec
+    versionTag :: NodeToNodeVersion -> Int
+    versionTag NodeToNodeV_1 = 1
+    versionTag NodeToNodeV_2 = 2
+    versionTag NodeToNodeV_3 = 3
+
+    CodecCBORTerm { encodeTerm, decodeTerm } = nodeToNodeVersionCodec
 
 
 prop_nodeToNodeCodec :: NodeToNodeVersion -> NodeToNodeVersionData -> Bool
 prop_nodeToNodeCodec ntnVersion ntnData =
-      case decodeTerm (encodeTerm ntnData) of
-        Right ntnData' -> networkMagic  ntnData' == networkMagic  ntnData
-                       && diffusionMode ntnData' == diffusionMode ntnData
-        Left {}        -> False
+      decodeTerm (encodeTerm ntnData) == Right ntnData
     where
       CodecCBORTerm { encodeTerm, decodeTerm } = nodeToNodeCodecCBORTerm ntnVersion
 
 
+-- | TODO: this test should generate requests that fill allowed pipelining
+-- depth, use production codec and then check that mux with the current limits
+-- is not overflowing.
 prop_nodeToNodeIngressLimits :: NodeToNodeVersion -> NodeToNodeVersionData -> Property
 prop_nodeToNodeIngressLimits version versionData =
     [ (num, Mux.maximumIngressQueue initiatorLimits, Mux.maximumIngressQueue responderLimits)
@@ -79,8 +112,47 @@ prop_nodeToNodeIngressLimits version versionData =
     sigLimits = case version of
       NodeToNodeV_1 -> (11, 72_088, 101_640)
       NodeToNodeV_2 -> (11, 101_640, 72_088)
+      NodeToNodeV_3 -> (11, 101_640, 72_088)
 
     bundle = nodeToNodeProtocols dmqLimitsAndTimeouts (Protocols run run run) version versionData
     run = Mux.InitiatorAndResponderProtocol peer peer
     peer = Mux.MiniProtocolCb $ \_ _ -> pure ((), Nothing) :: IO ((), Maybe ())
 
+prop_handshake :: Property
+prop_handshake = once $ conjoin
+    [ counterexample (show (clientMax, serverMax)) $
+        let expected = Just (clientMax `min` serverMax) in
+        runSimOrThrow (negotiate clientMax serverMax)
+        ===
+        (expected, expected)
+    | clientMax <- [minBound .. maxBound]
+    , serverMax <- [minBound .. maxBound]
+    ]
+  where
+    negotiate :: NodeToNodeVersion -> NodeToNodeVersion
+              -> IOSim s (Maybe NodeToNodeVersion, Maybe NodeToNodeVersion)
+    negotiate clientMax serverMax = do
+      (client, server) <- createConnectedChannels
+      let dataCodec = mkVersionedCodecCBORTerm nodeToNodeCodecCBORTerm
+      (clientResult, serverResult) <- concurrently
+        (runPeer nullTracer (codec clientMax) client $
+           handshakeClientPeer dataCodec acceptableVersion (versions clientMax))
+        (runPeer nullTracer (codec serverMax) server $
+           handshakeServerPeer dataCodec acceptableVersion query (versions serverMax))
+      pure (agreedVersion clientResult, agreedVersion serverResult)
+
+    agreedVersion (Right (HandshakeNegotiationResult _ v _), _) = Just v
+    agreedVersion _                                             = Nothing
+
+    versions highest = combineVersions
+      [ simpleSingletonVersions v versionData (const ())
+      | v <- [minBound .. highest] ]
+    versionData = stdVersionDataNTN (NetworkMagic 42) InitiatorAndResponderDiffusionMode
+                                    PeerSharingDisabled
+
+    -- A legacy decoder also sees the unknown tags in a newer peer's offer.
+    codec highest = codecHandshake nodeToNodeVersionCodec {
+        decodeTerm = \term -> do
+          v <- decodeTerm nodeToNodeVersionCodec term
+          if v <= highest then Right v else Left ("unknown version", Nothing)
+      }

@@ -111,15 +111,24 @@ documentation][topology-file].  However, the fields:  `bootstrapPeers` and
 
 ### Ledger Peers
 
-To use ledger peers, as `cardano-node` does there are additional requrements:
+`dmq-node` requires node-to-client V23, available since `cardano-node` 10.7,
+to fetch stake data for signature validation. By default, it also fetches a
+ledger peer snapshot on each stake refresh. Set `"LedgerPeers": false` in the
+DMQ configuration file to skip the snapshot query.
 
-* You need `cardano-node-10.7` or newer to support ledger peer snapshot query
-  over `cardano-node`'s node-to-client protocol.
-* You need to configure `cardano-node` & `dmq-node` to use SRV records according to [CIP#155]
-* You need to set `LedgerPeers: true` in the configuration file.
+The topology field `useLedgerAfterSlot` controls when DMQ uses ledger peers.
+Set it to `0` to allow them immediately, or to a positive slot number to use
+snapshots from that slot onward. Set it to `-1` or omit it to disable ledger
+peer selection.
 
-Currently ledger peers are disabled by default, but in a near future we will
-enable them by default.
+To advertise a DMQ relay, publish a DNS SRV record at
+`_dmq._mithril._cardano._tcp.<domain>`, where `<domain>` is registered as an
+SRV relay for your stake pool. See [CIP#155].
+
+With a positive `useLedgerAfterSlot`, DMQ currently uses the big ledger peer
+snapshot even for ordinary peer requests. To bootstrap when only smaller
+pools advertise DMQ relays, add a reachable DMQ relay to the `localRoots`
+group in your topology. See the [example topology](./dmq-node/topology.json).
 
 ### Tracing
 
@@ -128,14 +137,11 @@ the new tracing system for `cardano-node`).
 
 ### Configuration example
 
-Note: it requires `cardano-node-10.7.x` for `LedgerPeers`, if you're running it
-against an earlier `cardano-node` turn the option off.
-
 The `Prometheus` requires a different port number than `cardano-node`'s
 `Prometheus`.
 
 ```json
-{ "LedgerPeers": true,
+{
   "CardanoNodeSocket": "/var/run/cardano-node.socket",
   "TraceOptions": {
     "": {

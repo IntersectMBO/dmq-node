@@ -54,7 +54,11 @@ maxSigBodySize :: SizeInBytes
 maxSigBodySize = 2000
 
 
--- | Minimum delay between signatures created by the same `PoolId`.
+-- | Minimum distance between `sigExpiresAt` of two signatures issued by the
+-- same `PoolId`, see `DMQ.Protocol.SigSubmission.SigSpacing`.
+--
+-- A pool can have at most @maxSigExpiresAtDelay / minSigDelay@ (@30@)
+-- signatures which have not expired.
 --
 minSigDelay :: DiffTime
 minSigDelay = 60
@@ -127,6 +131,10 @@ sigSubmissionProtocolLimits = \case
       }
     -- `NodeToNodeV_2` swapped the client/server roles
     NodeToNodeV_2 -> DirectionalLimits {
+        initiatorLimits = replyLimits,
+        responderLimits = requestLimits
+      }
+    NodeToNodeV_3 -> DirectionalLimits {
         initiatorLimits = replyLimits,
         responderLimits = requestLimits
       }

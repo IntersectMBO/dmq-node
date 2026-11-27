@@ -33,10 +33,9 @@ import Data.Bifunctor (second)
 import Data.ByteString (ByteString)
 import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as BL
+import Data.Either (lefts)
 import Data.List.NonEmpty qualified as NonEmpty
 import Data.Map qualified as Map
-import Data.OrdPSQ (OrdPSQ)
-import Data.OrdPSQ qualified as OrdPSQ
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Typeable
 import Data.Word (Word32, Word64)
@@ -47,8 +46,7 @@ import Network.TypedProtocol.Codec
 import Network.TypedProtocol.Codec.Properties hiding (prop_codec)
 
 import Cardano.Binary.FixedSizeCodec (encodeFixedSized)
-import Cardano.Crypto.DSIGN.Class (DSIGNAlgorithm, SignKeyDSIGN,
-           deriveVerKeyDSIGN)
+import Cardano.Crypto.DSIGN.Class (SignKeyDSIGN, deriveVerKeyDSIGN)
 import Cardano.Crypto.DSIGN.Class qualified as DSIGN
 import Cardano.Crypto.Hash.Blake2b (Blake2b_256)
 import Cardano.Crypto.Hash.Class (Hash, castHash, hashFromBytes, hashSize,
@@ -71,6 +69,8 @@ import Test.Crypto.Instances
 import DMQ.Diffusion.NodeKernel (PoolValidationCtx (..), Readiness (..))
 import DMQ.Policy qualified as Policy
 import DMQ.Protocol.SigSubmission.Codec
+import DMQ.Protocol.SigSubmission.SigSpacing (SigSpacing)
+import DMQ.Protocol.SigSubmission.SigSpacing qualified as SigSpacing
 import DMQ.Protocol.SigSubmission.Type
 import DMQ.Protocol.SigSubmission.Validate
 
@@ -134,11 +134,18 @@ tests =
       [ testGroup "MockCrypto"
         [ testProperty "KES sign verify"     prop_sign_verify_mockcrypto
         , testProperty "validateSig"         prop_validateSig_mockcrypto
+        , testProperty "validateSig forged ocert counter"
+                                             prop_validateSig_forgedOCertCounter_mockcrypto
+        , testProperty "validateSig burst"   prop_validateSig_burst_mockcrypto
+        , testProperty "validateSig with an older clock sample" prop_validateSig_staleTime
         ]
 #ifdef STANDARDCRYPTO_TESTS
       , testGroup "StandardCrypto"
         [ testProperty "KES sign verify"     prop_sign_verify_standardcrypto
         , testProperty "validateSig"         prop_validateSig_standardcrypto
+        , testProperty "validateSig forged ocert counter"
+                                             prop_validateSig_forgedOCertCounter_standardcrypto
+        , testProperty "validateSig burst"   prop_validateSig_burst_standardcrypto
         ]
 #endif
       ]
@@ -364,8 +371,6 @@ instance ( Crypto crypto
          , ContextKES kesCrypto ~ ()
          , size ~ SeedSizeKES kesCrypto
          , Signable kesCrypto ByteString
-         , dsignCrypto ~ DSIGN crypto
-         , DSIGNAlgorithm dsignCrypto
          , Arbitrary (WithConstrKES size kesCrypto (CryptoCtx crypto))
          )
       => Arbitrary (WithConstrKES size kesCrypto (SigRawWithSignedBytes crypto)) where
@@ -378,47 +383,67 @@ instance ( Crypto crypto
     kesOffset <- arbitrary `suchThat` (< fromIntegral maxKESEvo)
     sigRawBody <- arbitrary
     crypto <- arbitrary
-    return $ withConstrBind crypto \CryptoCtx {ocert, coldKey, snKESKey} -> do
-      let sigRawOpCertificate :: SigOpCertificate crypto
-          sigRawOpCertificate = SigOpCertificate ocert
-
-          sigRawColdKey :: SigColdKey crypto
-          sigRawColdKey = SigColdKey $ deriveVerKeyDSIGN coldKey
-
-          sigRawKESPeriod :: KESPeriod
-          sigRawKESPeriod = KESPeriod $ unKESPeriod (ocertKESPeriod ocert)
-                                      + kesOffset
-
-          sigRaw = SigRaw {
-              sigRawId = undefined, -- to be filled below
-              sigRawBody,
-              sigRawKESPeriod,
-              sigRawOpCertificate,
-              sigRawColdKey,
-              sigRawExpiresAt,
-              sigRawKESSignature = undefined -- to be filled below
-          }
-          signedBytes = CBOR.toStrictByteString (encodeSigPayload sigRaw)
-
-      -- evolve the key to the target period
-      mbSnKESKey <- KES.updateKESTo () sigRawKESPeriod ocert (KES.SignKeyWithPeriodKES snKESKey 0)
-      case mbSnKESKey of
-        Just (KES.SignKeyWithPeriodKES snKESKey' _) -> do
-          let sigRawId = SigId (castHash $ hashWith id signedBytes)
-          -- signed bytes with the snKESKey'
-          sigRawKESSignature
-             <- SigKESSignature
-            <$> KES.signKES () kesOffset signedBytes snKESKey'
-          return SigRawWithSignedBytes {
-              sigRawSignedBytes = BL.fromStrict signedBytes,
-              sigRaw = sigRaw { sigRawId,
-                                sigRawKESSignature }
-            }
-        Nothing ->
-          error $ "arbitrary SigRawWithSignedBytes: could not evolve KES key to the target period by KES offset: "
-               ++ show kesOffset
+    return $ withConstrBind crypto \cryptoCtx ->
+      signSigRaw cryptoCtx sigRawBody kesOffset sigRawExpiresAt
 
   shrink = shrinkWithConstrSigRawWithSignedBytes
+
+
+-- | Create a signature of a payload with the keys of a `CryptoCtx`.
+--
+signSigRaw
+  :: forall crypto.
+     ( Crypto crypto
+     , ContextKES (KES crypto) ~ ()
+     , Signable (KES crypto) ByteString
+     )
+  => CryptoCtx crypto
+  -> SigBody
+  -> Word
+  -- ^ KES period offset since `ocertKESPeriod`
+  -> POSIXTime
+  -- ^ `sigExpiresAt`
+  -> IO (SigRawWithSignedBytes crypto)
+signSigRaw CryptoCtx { ocert, coldKey, snKESKey }
+           sigRawBody kesOffset sigRawExpiresAt = do
+    -- evolve the key to the target period
+    mbSnKESKey <- KES.updateKESTo () sigRawKESPeriod ocert (KES.SignKeyWithPeriodKES snKESKey 0)
+    case mbSnKESKey of
+      Just (KES.SignKeyWithPeriodKES snKESKey' _) -> do
+        let sigRawId = SigId (castHash $ hashWith id signedBytes)
+        -- signed bytes with the snKESKey'
+        sigRawKESSignature
+           <- SigKESSignature
+          <$> KES.signKES () kesOffset signedBytes snKESKey'
+        return SigRawWithSignedBytes {
+            sigRawSignedBytes = BL.fromStrict signedBytes,
+            sigRaw = sigRaw { sigRawId,
+                              sigRawKESSignature }
+          }
+      Nothing ->
+        error $ "signSigRaw: could not evolve KES key to the target period by KES offset: "
+             ++ show kesOffset
+  where
+    sigRawOpCertificate :: SigOpCertificate crypto
+    sigRawOpCertificate = SigOpCertificate ocert
+
+    sigRawColdKey :: SigColdKey crypto
+    sigRawColdKey = SigColdKey $ deriveVerKeyDSIGN coldKey
+
+    sigRawKESPeriod :: KESPeriod
+    sigRawKESPeriod = KESPeriod $ unKESPeriod (ocertKESPeriod ocert)
+                                + kesOffset
+
+    sigRaw = SigRaw {
+        sigRawId = undefined, -- to be filled above
+        sigRawBody,
+        sigRawKESPeriod,
+        sigRawOpCertificate,
+        sigRawColdKey,
+        sigRawExpiresAt,
+        sigRawKESSignature = undefined -- to be filled above
+    }
+    signedBytes = CBOR.toStrictByteString (encodeSigPayload sigRaw)
 
 
 -- Shrinking function for the above instance.  It's easier to get its type
@@ -888,37 +913,44 @@ prop_codec_valid_cbor_standardcrypto = prop_codec_valid_cbor . getBlind
 
 -- | Context which decides if a signature is valid or not.
 --
--- `currentDiffTime`: diff between current time and `expiresAt` (if negative then
--- a signature is valid)
+-- `currentTimeDiff`: diff between current time and `expiresAt` (if negative
+-- then a signature is valid)
+--
+-- `otherExpiresAtDiff`: the same pool issued another signature, which was
+-- already accepted, whose `sigExpiresAt` is `sigExpiresAt` of the validated
+-- signature plus `otherExpiresAtDiff`.  The two signatures conflict if its
+-- absolute value is smaller than `Policy.minSigDelay`.  Signatures which are
+-- invalid for other reasons might conflict too: the spacing rule is checked
+-- last, so the other validation error is expected.
 --
 data Validity =
     Valid {
-       currentTimeDiff :: NominalDiffTime,
-       lastSigTimeDiff :: DiffTime
+       currentTimeDiff    :: NominalDiffTime,
+       otherExpiresAtDiff :: NominalDiffTime
       }
   | InvalidViaNotInitialized {
-        currentTimeDiff :: NominalDiffTime,
-        lastSigTimeDiff :: DiffTime
+        currentTimeDiff    :: NominalDiffTime,
+        otherExpiresAtDiff :: NominalDiffTime
       }
   | InvalidViaUnrecognizedPool {
-        currentTimeDiff :: NominalDiffTime,
-        lastSigTimeDiff :: DiffTime
+        currentTimeDiff    :: NominalDiffTime,
+        otherExpiresAtDiff :: NominalDiffTime
       }
   | InvalidViaSigExpired {
-        currentTimeDiff :: NominalDiffTime,
-        lastSigTimeDiff :: DiffTime
+        currentTimeDiff    :: NominalDiffTime,
+        otherExpiresAtDiff :: NominalDiffTime
       }
   | InvalidViaPoolNotEligible {
-        currentTimeDiff :: NominalDiffTime,
-        lastSigTimeDiff :: DiffTime
+        currentTimeDiff    :: NominalDiffTime,
+        otherExpiresAtDiff :: NominalDiffTime
       }
   | InvalidViaOCertCounter {
-        currentTimeDiff :: NominalDiffTime,
-        lastSigTimeDiff :: DiffTime
+        currentTimeDiff    :: NominalDiffTime,
+        otherExpiresAtDiff :: NominalDiffTime
       }
   | InvalidViaTooRecentSig {
-        currentTimeDiff :: NominalDiffTime,
-        lastSigTimeDiff :: DiffTime
+        currentTimeDiff    :: NominalDiffTime,
+        otherExpiresAtDiff :: NominalDiffTime
       }
   deriving (Eq, Show)
 
@@ -933,47 +965,87 @@ labelValidity = \case
     InvalidViaTooRecentSig {}              -> label "InvalidViaTooRecentSig"
 
 
+-- | `Policy.minSigDelay` as `NominalDiffTime`.
+--
+nominalMinSigDelay :: NominalDiffTime
+nominalMinSigDelay = realToFrac Policy.minSigDelay
+
+-- | `otherExpiresAtDiff` which does not conflict with the validated signature.
+--
+genFarExpiresAtDiff :: Gen NominalDiffTime
+genFarExpiresAtDiff = do
+    sign  <- elements [1, -1]
+    extra <- realToFrac <$> choose (0, 3600 :: Double)
+    return (sign * (nominalMinSigDelay + extra))
+
+-- | `otherExpiresAtDiff` which conflicts with the validated signature.
+--
+genNearExpiresAtDiff :: Gen NominalDiffTime
+genNearExpiresAtDiff =
+    (realToFrac <$> choose (-d, d)) `suchThat` (\a -> abs a < nominalMinSigDelay)
+  where
+    d :: Double
+    d = realToFrac Policy.minSigDelay
+
+genAnyExpiresAtDiff :: Gen NominalDiffTime
+genAnyExpiresAtDiff = oneof [genFarExpiresAtDiff, genNearExpiresAtDiff]
+
+-- | Make `otherExpiresAtDiff` non-conflicting, preserving its sign.
+--
+toFarExpiresAtDiff :: NominalDiffTime -> NominalDiffTime
+toFarExpiresAtDiff a
+  | abs a >= nominalMinSigDelay = a
+  | a < 0                       = -nominalMinSigDelay
+  | otherwise                   =  nominalMinSigDelay
+
 instance Arbitrary Validity where
     arbitrary = oneof
       [ Valid
           <$> arbitrary `suchThat` (<= 0)
-          <*> arbitrary `suchThat` (<= -Policy.minSigDelay)
+          <*> genFarExpiresAtDiff
       , InvalidViaNotInitialized
           <$> arbitrary `suchThat` (<= 0)
-          <*> arbitrary `suchThat` (<= -Policy.minSigDelay)
+          <*> genAnyExpiresAtDiff
       , InvalidViaUnrecognizedPool
           <$> arbitrary `suchThat` (<= 0)
-          <*> arbitrary `suchThat` (<= -Policy.minSigDelay)
+          <*> genAnyExpiresAtDiff
       , InvalidViaSigExpired
           <$> arbitrary `suchThat` (> 0)
-          <*> arbitrary `suchThat` (<= -Policy.minSigDelay)
+          <*> genAnyExpiresAtDiff
       , InvalidViaPoolNotEligible
           <$> arbitrary `suchThat` (<= 0)
-          <*> arbitrary `suchThat` (<= -Policy.minSigDelay)
+          <*> genAnyExpiresAtDiff
       , InvalidViaOCertCounter
           <$> arbitrary `suchThat` (<= 0)
-          <*> arbitrary `suchThat` (<= -Policy.minSigDelay)
+          <*> genAnyExpiresAtDiff
       , InvalidViaTooRecentSig
           <$> arbitrary `suchThat` (<= 0)
-          <*> arbitrary `suchThat` (\a -> a > -Policy.minSigDelay && a <= 0)
+          <*> genNearExpiresAtDiff
       ]
 
     shrink a@Valid { currentTimeDiff }
       =  [ a { currentTimeDiff = t } | t <- shrink currentTimeDiff, t <= 0 ]
-    shrink (InvalidViaNotInitialized { currentTimeDiff, lastSigTimeDiff })
-      =  [ Valid { currentTimeDiff, lastSigTimeDiff } ]
-    shrink (InvalidViaUnrecognizedPool { currentTimeDiff, lastSigTimeDiff })
-      =  [ Valid { currentTimeDiff, lastSigTimeDiff } ]
-    shrink a@InvalidViaSigExpired { currentTimeDiff, lastSigTimeDiff }
+    shrink (InvalidViaNotInitialized { currentTimeDiff, otherExpiresAtDiff })
+      =  [ Valid { currentTimeDiff,
+                   otherExpiresAtDiff = toFarExpiresAtDiff otherExpiresAtDiff } ]
+    shrink (InvalidViaUnrecognizedPool { currentTimeDiff, otherExpiresAtDiff })
+      =  [ Valid { currentTimeDiff,
+                   otherExpiresAtDiff = toFarExpiresAtDiff otherExpiresAtDiff } ]
+    shrink a@InvalidViaSigExpired { currentTimeDiff, otherExpiresAtDiff }
       =  [ a { currentTimeDiff = t } | t <- shrink currentTimeDiff, t > 0 ]
-      ++ [ Valid { currentTimeDiff = 0, lastSigTimeDiff } ]
-    shrink a@InvalidViaPoolNotEligible { currentTimeDiff, lastSigTimeDiff }
+      ++ [ Valid { currentTimeDiff = 0,
+                   otherExpiresAtDiff = toFarExpiresAtDiff otherExpiresAtDiff } ]
+    shrink a@InvalidViaPoolNotEligible { currentTimeDiff, otherExpiresAtDiff }
       =  [ a { currentTimeDiff = t } | t <- shrink currentTimeDiff, t <= 0 ]
-      ++ [ Valid { currentTimeDiff, lastSigTimeDiff } ]
-    shrink InvalidViaOCertCounter { currentTimeDiff, lastSigTimeDiff }
-      =  [ Valid { currentTimeDiff, lastSigTimeDiff } ]
-    shrink InvalidViaTooRecentSig { currentTimeDiff, lastSigTimeDiff }
-      =  [ Valid { currentTimeDiff, lastSigTimeDiff = lastSigTimeDiff - 30 } ]
+      ++ [ Valid { currentTimeDiff,
+                   otherExpiresAtDiff = toFarExpiresAtDiff otherExpiresAtDiff } ]
+    shrink InvalidViaOCertCounter { currentTimeDiff, otherExpiresAtDiff }
+      =  [ Valid { currentTimeDiff,
+                   otherExpiresAtDiff = toFarExpiresAtDiff otherExpiresAtDiff } ]
+    shrink a@InvalidViaTooRecentSig { currentTimeDiff, otherExpiresAtDiff }
+      =  [ a { otherExpiresAtDiff = 0 } | otherExpiresAtDiff /= 0 ]
+      ++ [ Valid { currentTimeDiff,
+                   otherExpiresAtDiff = toFarExpiresAtDiff otherExpiresAtDiff } ]
 
 
 -- | Check that the KES signature is valid.
@@ -1020,15 +1092,17 @@ prop_validateSig constr validity = labelValidity validity $ ioProperty do
         vctxUTCNow :: UTCTime
         vctxUTCNow = posixSecondsToUTCTime posixNow
 
-        vctxNow :: Time
-        vctxNow = Time 0
-
-        vctxLastSigByPoolId :: OrdPSQ PoolId Time ()
-        vctxLastSigByPoolId =
-          case validity of
-            InvalidViaTooRecentSig { lastSigTimeDiff } ->
-                  OrdPSQ.fromList [(poolId, lastSigTimeDiff `addTime` vctxNow, ())]
-            _ ->  OrdPSQ.fromList [(poolId, lastSigTimeDiff validity `addTime` vctxNow, ())]
+        -- another signature issued by the same pool, which was accepted
+        -- before
+        vctxSigSpacing :: SigSpacing PoolId
+        vctxSigSpacing =
+          case SigSpacing.insert Policy.minSigDelay
+                                 posixNow
+                                 poolId
+                                 (sigExpiresAt + otherExpiresAtDiff validity)
+                                 SigSpacing.empty of
+            Right a -> a
+            Left  _ -> error "prop_validateSig: invariant violation"
 
         vctxReadiness :: Readiness
         vctxReadiness = case validity of
@@ -1049,13 +1123,12 @@ prop_validateSig constr validity = labelValidity validity $ ioProperty do
             _ -> Map.fromList [(poolId, ocertN)]
 
         validationCtx = PoolValidationCtx {
-            vctxNow,
             vctxUTCNow,
             vctxReadiness,
             vctxStakeMap,
             vctxOcertMap,
             vctxPraosMaxKESEvo = maxKESEvo, -- hard coded Shelley value for testing
-            vctxLastSigByPoolId
+            vctxSigSpacing
           }
 
         validationCfg :: ValidationCfg
@@ -1109,6 +1182,256 @@ prop_validateSig_standardcrypto
   -> Validity
   -> Property
 prop_validateSig_standardcrypto = prop_validateSig . getBlind
+
+
+-- | A signature whose operational certificate counter was forged, and is
+-- smaller than the last observed counter of the pool, is rejected with
+-- `InvalidSignatureOCERT`, which disconnects a node-to-node peer, rather than
+-- with `InvalidOCertCounter`, which does not: the counter is checked after the
+-- cryptographic checks.
+--
+prop_validateSig_forgedOCertCounter
+  :: ( Crypto crypto
+     , DSIGN crypto ~ Ledger.Keys.DSIGN
+     , DSIGN.Signable (DSIGN crypto) (KES.OCertSignable crypto)
+     , KES.ContextKES (KES crypto) ~ ()
+     , KES.Signable (KES crypto) ByteString
+     )
+  => WithConstrKES size kesCrypt (Sig crypto)
+  -> Property
+prop_validateSig_forgedOCertCounter constr = ioProperty do
+    sig@Sig { sigColdKey = SigColdKey coldKey,
+              sigOpCertificate = SigOpCertificate ocert@OCert { ocertN },
+              sigExpiresAt
+            } <- runWithConstr constr
+    let poolId = hashKey (VKey coldKey)
+
+        -- a counter which was not signed by the cold key, and which is
+        -- smaller than the last observed counter (`maxBound`)
+        forgedN | ocertN == 0 = 1
+                | otherwise   = ocertN - 1
+
+        forgedSig = sig { sigOpCertificate = SigOpCertificate ocert { ocertN = forgedN } }
+
+        validationCtx = PoolValidationCtx {
+            vctxUTCNow         = posixSecondsToUTCTime sigExpiresAt,
+            vctxReadiness      = Ready,
+            vctxStakeMap       = Map.fromList
+                                   [( poolId
+                                    , StakeSnapshot { ssMarkPool = mempty,
+                                                      ssSetPool  = succ mempty,
+                                                      ssGoPool   = mempty
+                                                    }
+                                    )],
+            vctxOcertMap       = Map.fromList [(poolId, maxBound)],
+            vctxPraosMaxKESEvo = maxKESEvo,
+            vctxSigSpacing     = SigSpacing.empty
+          }
+
+        validationCfg :: ValidationCfg
+        validationCfg = ValidationCfg { vcMinSigDelay = Policy.minSigDelay }
+
+    return . counterexample (show forgedSig)
+           $ case fst (validateSig validationCfg [forgedSig] validationCtx) of
+               [Left (_, InvalidSignatureOCERT {})] -> property True
+               r -> counterexample (show r) False
+
+prop_validateSig_forgedOCertCounter_mockcrypto
+  :: Blind (WithConstrKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (Sig MockCrypto))
+  -> Property
+prop_validateSig_forgedOCertCounter_mockcrypto = prop_validateSig_forgedOCertCounter . getBlind
+
+prop_validateSig_forgedOCertCounter_standardcrypto
+  :: Blind (WithConstrKES (SeedSizeKES (KES StandardCrypto)) (KES StandardCrypto) (Sig StandardCrypto))
+  -> Property
+prop_validateSig_forgedOCertCounter_standardcrypto = prop_validateSig_forgedOCertCounter . getBlind
+
+
+-- | Signatures issued by a single pool: the current time and `sigExpiresAt`
+-- offsets (in seconds) since the current time.  The offsets are at least
+-- `Policy.minSigDelay` apart, smaller than `Policy.maxSigExpiresAtDelay` and
+-- in an arbitrary order.
+--
+data SigsBurst = SigsBurst {
+    burstNow     :: Word32,
+    burstOffsets :: [Word32]
+  }
+  deriving Show
+
+instance Arbitrary SigsBurst where
+    arbitrary = do
+      burstNow <- choose (0, maxBound - maxDelay)
+      start    <- choose (0, minDelay - 1)
+      gaps     <- listOf (choose (minDelay, 3 * minDelay))
+      burstOffsets <- shuffle (takeWhile (< maxDelay) (scanl (+) start gaps))
+      return SigsBurst { burstNow, burstOffsets }
+      where
+        minDelay, maxDelay :: Word32
+        minDelay = floor Policy.minSigDelay
+        maxDelay = floor Policy.maxSigExpiresAtDelay
+
+    -- removing offsets preserves the invariants
+    shrink burst@SigsBurst { burstOffsets } =
+      [ burst { burstOffsets = burstOffsets' }
+      | burstOffsets' <- shrinkList (const []) burstOffsets
+      ]
+
+
+-- | Validate a burst from one pool at a fixed time with an empty spacing
+-- history.  The signatures use the same OCert and have expiries in the validity
+-- window at least `Policy.minSigDelay` apart, so the burst passes in any order.
+-- Such a burst can accumulate in another node's mempool.  See
+-- https://github.com/IntersectMBO/dmq-node/issues/82.
+--
+prop_validateSig_burst
+  :: forall crypto.
+     ( Crypto crypto
+     , DSIGN crypto ~ Ledger.Keys.DSIGN
+     , DSIGN.Signable (DSIGN crypto) (KES.OCertSignable crypto)
+     , KES.ContextKES (KES crypto) ~ ()
+     , KES.Signable (KES crypto) ByteString
+     )
+  => WithConstrKES (SeedSizeKES (KES crypto)) (KES crypto) (CryptoCtx crypto)
+  -> SigBody
+  -> SigsBurst
+  -> Property
+prop_validateSig_burst constr sigBody SigsBurst { burstNow, burstOffsets } =
+    ioProperty do
+      cryptoCtx@CryptoCtx { coldKey, ocert = OCert { ocertN } }
+        <- runWithConstr constr
+      sigs <- traverse (\offset -> mkSig <$> signSigRaw cryptoCtx sigBody 0
+                                                        (posixNow + fromIntegral offset))
+                       burstOffsets
+      let poolId = hashKey (VKey (deriveVerKeyDSIGN coldKey))
+
+          validationCtx = PoolValidationCtx {
+              vctxUTCNow         = posixSecondsToUTCTime posixNow,
+              vctxReadiness      = Ready,
+              vctxStakeMap       = Map.fromList
+                                     [( poolId
+                                      , StakeSnapshot { ssMarkPool = mempty,
+                                                        ssSetPool  = succ mempty,
+                                                        ssGoPool   = mempty
+                                                      }
+                                      )],
+              vctxOcertMap       = Map.fromList [(poolId, ocertN)],
+              vctxPraosMaxKESEvo = maxKESEvo,
+              vctxSigSpacing     = SigSpacing.empty
+            }
+
+          validationCfg :: ValidationCfg
+          validationCfg = ValidationCfg { vcMinSigDelay = Policy.minSigDelay }
+
+          rejected :: [Sig crypto] -> [(SigId, SigValidationError)]
+          rejected sigs' =
+            lefts (fst (validateSig validationCfg sigs' validationCtx))
+
+      return . counterexample (show sigs)
+             $ counterexample "rejected" (rejected sigs === [])
+          .&&. counterexample "rejected in reverse order" (rejected (reverse sigs) === [])
+  where
+    posixNow :: POSIXTime
+    posixNow = fromIntegral burstNow
+
+prop_validateSig_burst_mockcrypto
+  :: Blind (WithConstrKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (CryptoCtx MockCrypto))
+  -> SigBody
+  -> SigsBurst
+  -> Property
+prop_validateSig_burst_mockcrypto = prop_validateSig_burst . getBlind
+
+prop_validateSig_burst_standardcrypto
+  :: Blind (WithConstrKES (SeedSizeKES (KES StandardCrypto)) (KES StandardCrypto) (CryptoCtx StandardCrypto))
+  -> SigBody
+  -> SigsBurst
+  -> Property
+prop_validateSig_burst_standardcrypto = prop_validateSig_burst . getBlind
+
+
+-- | An older clock sample must respect the expiry floor committed by a writer
+-- validating a signature from another pool.
+prop_validateSig_staleTime
+  :: Blind (WithConstrKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (CryptoCtx MockCrypto))
+  -> Blind (WithConstrKES (SeedSizeKES (KES MockCrypto)) (KES MockCrypto) (CryptoCtx MockCrypto))
+  -> SigBody
+  -> Property
+prop_validateSig_staleTime (Blind genA) (Blind genB) body = once $ ioProperty do
+    poolA <- runWithConstr genA
+    poolB <- runWithConstr genB
+
+    let start, pruneTime, olderSample :: NominalDiffTime
+        start = 1000
+        pruneTime = start + nominalMinSigDelay
+        olderSample = pruneTime - 1
+
+        sign :: CryptoCtx MockCrypto -> NominalDiffTime -> IO (Sig MockCrypto)
+        sign issuer expiresAt = mkSig <$> signSigRaw issuer body 0 expiresAt
+
+        poolId :: CryptoCtx MockCrypto -> Ledger.Keys.KeyHash kd
+        poolId issuer = hashKey (VKey (deriveVerKeyDSIGN (coldKey issuer)))
+
+        stake = StakeSnapshot {
+          ssMarkPool = mempty,
+          ssSetPool = succ mempty,
+          ssGoPool = mempty
+        }
+        initialCtx = PoolValidationCtx {
+            vctxUTCNow         = posixSecondsToUTCTime start,
+            vctxReadiness      = Ready,
+            vctxStakeMap       = Map.fromList [(poolId poolA, stake), (poolId poolB, stake)],
+            vctxOcertMap       = Map.empty,
+            vctxPraosMaxKESEvo = maxKESEvo,
+            vctxSigSpacing     = SigSpacing.empty
+          }
+
+        validateAt
+          :: NominalDiffTime
+          -> [Sig MockCrypto]
+          -> PoolValidationCtx
+          -> ( [Either (SigId, SigValidationError) (Sig MockCrypto)]
+             , PoolValidationCtx
+             )
+        validateAt time sigs ctx' =
+          validateSig (ValidationCfg Policy.minSigDelay) sigs
+                      ctx' { vctxUTCNow = posixSecondsToUTCTime time }
+
+    firstA   <- sign poolA start                              -- 1000
+    firstB   <- sign poolB pruneTime                          -- 1060
+    nextB    <- sign poolB (pruneTime + nominalMinSigDelay)   -- 1120
+    expiredA <- sign poolA olderSample                        -- 1059
+    atFloorA <- sign poolA pruneTime                          -- 1060
+    tooFarA  <- sign poolA (olderSample + Policy.maxSigExpiresAtDelay)
+                                                              -- 2859
+
+    let (initial, withA) = validateAt start [firstA] initialCtx
+        (newer, pruned) = validateAt pruneTime [firstB] withA
+        -- Accepting a live signature with an older sample must preserve the floor.
+        (older, afterOlderWriter) = validateAt olderSample [nextB] pruned
+        -- A later rejected submission leaves the committed floor at pruneTime.
+        (rejected, afterRejection) = validateAt (pruneTime + 1) [atFloorA] afterOlderWriter
+        (results, _) = validateAt olderSample [expiredA, atFloorA, tooFarA] afterRejection
+
+    return
+      $ poolId poolA /= poolId poolB ==> conjoin
+      [ fmap sigId `map` (initial ++ newer ++ older)
+        ===
+        (Right . sigId) `map` [firstA, firstB, nextB]
+
+      , SigSpacing.toList (vctxSigSpacing pruned)
+        ===
+        [(poolId poolB, [pruneTime])]
+
+      , lefts rejected
+        ===
+        [(sigId atFloorA, SigExpired)]
+
+      , fmap sigId `map` results
+        ===
+        [ Left (sigId expiredA, SigExpired)
+        , Right (sigId atFloorA)
+        , Left (sigId tooFarA, SigExpiresAtTooFarInTheFuture)
+        ]
+      ]
 
 
 -- | Sign & verify a payload with KES keys.
